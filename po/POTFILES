@@ -1,0 +1,15 @@
+src/main.cpp
+qml/Main.qml
+qml/components/AppCard.qml
+qml/components/AppOfTheDayCard.qml
+qml/components/CategoryChip.qml
+qml/components/HeroCarousel.qml
+qml/components/HorizontalAppList.qml
+qml/components/ProgressOverlay.qml
+qml/components/RatingSummary.qml
+qml/components/ReviewCard.qml
+qml/components/SettingsDialog.qml
+qml/components/WelcomeCard.qml
+qml/pages/AppDetailPage.qml
+qml/pages/InstalledPage.qml
+qml/pages/ShopfrontPage.qml

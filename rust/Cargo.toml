@@ -1,0 +1,37 @@
+[package]
+name = "libkiosque"
+version = "0.1.0"
+edition = "2024"
+authors = ["Kiosque Contributors"]
+description = "Rust backend for the Kiosque Flatpak storefront"
+
+[lib]
+name = "kiosque"
+crate-type = ["staticlib"]
+
+[dependencies]
+cxx = "1.0.122"
+cxx-qt = "0.8.1"
+cxx-qt-lib = { version = "0.8.1", features = ["full"] }
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync"] }
+
+# HTTP client for Flathub API
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error Handling
+thiserror = "1"
+
+# D-Bus (Flatpak availability check, signal monitoring)
+zbus = { version = "4", features = ["tokio"] }
+dirs = "5"
+chrono = "0.4.45"
+
+[build-dependencies]
+cxx-qt-build = "0.8.1"
+

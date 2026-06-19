@@ -1,0 +1,21 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource prefix="/">
+    <file>qml/Main.qml</file>
+    <file>qml/components/AppCard.qml</file>
+    <file>qml/components/AppOfTheDayCard.qml</file>
+    <file>qml/components/CategoryChip.qml</file>
+    <file>qml/components/HeroCarousel.qml</file>
+    <file>qml/components/HorizontalAppList.qml</file>
+    <file>qml/components/ProgressOverlay.qml</file>
+    <file>qml/components/RatingSummary.qml</file>
+    <file>qml/components/ReviewCard.qml</file>
+    <file>qml/components/WelcomeCard.qml</file>
+    <file>qml/pages/AppDetailPage.qml</file>
+    <file>qml/pages/SettingsPage.qml</file>
+    <file>qml/pages/CategoriesPage.qml</file>
+    <file>qml/pages/CategoryAppListPage.qml</file>
+    <file>qml/pages/InstalledPage.qml</file>
+    <file>qml/pages/ShopfrontPage.qml</file>
+        <file>qml/pages/TestPage.qml</file>
+</qresource>
+</RCC>

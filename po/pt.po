@@ -1,0 +1,369 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: kiosque\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-17 12:00-0300\n"
+"PO-Revision-Date: 2026-06-17 12:00-0300\n"
+"Last-Translator: Kiosque Contributors\n"
+"Language-Team: Portuguese\n"
+"Language: pt\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Language: _US\n"
+"X-Source-Language: C\n"
+
+msgid "Kiosque"
+msgstr "Kiosque"
+
+msgid "Installed"
+msgstr "Instalados"
+
+msgid "Menu"
+msgstr "Menu"
+
+msgid "Settings…"
+msgstr "Configurações…"
+
+msgid "Add Repository…"
+msgstr "Adicionar repositório…"
+
+msgid "About Kiosque…"
+msgstr "Sobre o Kiosque…"
+
+msgid "All Categories"
+msgstr "Todas as categorias"
+
+msgid "Audio & Video"
+msgstr "Áudio e vídeo"
+
+msgid "Games"
+msgstr "Jogos"
+
+msgid "Office"
+msgstr "Escritório"
+
+msgid "Graphics"
+msgstr "Gráficos"
+
+msgid "Development"
+msgstr "Desenvolvimento"
+
+msgid "Internet"
+msgstr "Internet"
+
+msgid "Utilities"
+msgstr "Utilitários"
+
+msgid "Education"
+msgstr "Educação"
+
+msgid "System"
+msgstr "Sistema"
+
+msgid "Science"
+msgstr "Ciência"
+
+msgid "Emulators"
+msgstr "Emuladores"
+
+msgid "Game Launchers"
+msgstr "Iniciadores de jogos"
+
+msgid "Game Tools"
+msgstr "Ferramentas de jogos"
+
+msgid "Players"
+msgstr "Reprodutores"
+
+msgid "Recorders"
+msgstr "Gravadores"
+
+msgid "Editors & Creators"
+msgstr "Editores e criadores"
+
+msgid "Developer Tools"
+msgstr "Ferramentas de desenvolvedor"
+
+msgid "IDEs"
+msgstr "IDEs"
+
+msgid "Debuggers"
+msgstr "Depuradores"
+
+msgid "Web Development"
+msgstr "Desenvolvimento web"
+
+msgid "3D Graphics"
+msgstr "Gráficos 3D"
+
+msgid "Vector Graphics"
+msgstr "Gráficos vetoriais"
+
+msgid "Raster Graphics"
+msgstr "Gráficos rasterizados"
+
+msgid "Photography"
+msgstr "Fotografia"
+
+msgid "Word Processors"
+msgstr "Processadores de texto"
+
+msgid "Spreadsheets"
+msgstr "Planilhas"
+
+msgid "Presentations"
+msgstr "Apresentações"
+
+msgid "Finance"
+msgstr "Finanças"
+
+msgid "Add Flatpak Repository"
+msgstr "Adicionar repositório Flatpak"
+
+msgid ""
+"Add a new Flatpak remote repository. User-scoped repositories do not require "
+"administrator privileges."
+msgstr ""
+"Adicione um novo repositório Flatpak remoto. Repositórios de escopo do "
+"usuário não exigem privilégios de administrador."
+
+msgid "Name:"
+msgstr "Nome:"
+
+msgid "URL:"
+msgstr "URL:"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Add"
+msgstr "Adicionar"
+
+msgid "Repository Status"
+msgstr "Status do repositório"
+
+msgid "About Kiosque"
+msgstr "Sobre o Kiosque"
+
+msgid "A modern, lightweight Flatpak software center for KDE Plasma."
+msgstr "Um centro de aplicativos Flatpak moderno e leve para o KDE Plasma."
+
+msgid "View Details"
+msgstr "Ver detalhes"
+
+msgid "App of the Day"
+msgstr "Aplicativo do dia"
+
+msgid "FEATURED"
+msgstr "DESTAQUE"
+
+msgid "Preparing…"
+msgstr "Preparando…"
+
+#, c-format
+msgid "%1 Review"
+msgid_plural "%1 Reviews"
+msgstr[0] "%1 avaliação"
+
+msgid "Anonymous"
+msgstr "Anônimo"
+
+#, qt-format
+msgid "v%1"
+msgstr "v%1"
+
+msgid "Settings"
+msgstr "Configurações"
+
+msgid "Automatic Updates:"
+msgstr "Atualizações automáticas:"
+
+msgid "Frequency:"
+msgstr "Frequência:"
+
+msgid "Daily"
+msgstr "Diariamente"
+
+msgid "Weekly"
+msgstr "Semanalmente"
+
+msgid "Time (HH:MM):"
+msgstr "Hora (HH:MM):"
+
+msgid "Save"
+msgstr "Salvar"
+
+msgid "Welcome to Kiosque"
+msgstr "Bem-vindo ao Kiosque"
+
+msgid ""
+"Discover, install, and update your applications effortlessly. Kiosque "
+"provides a modern, fast experience for managing your Flatpaks, inspired by "
+"Flathub."
+msgstr ""
+"Descubra, instale e atualize seus aplicativos sem esforço. O Kiosque oferece "
+"uma experiência moderna e rápida para gerenciar seus Flatpaks, inspirada no "
+"Flathub."
+
+msgid "No special permissions required (Fully Sandboxed)"
+msgstr "Nenhuma permissão especial necessária (totalmente isolado em sandbox)"
+
+msgid "Shared:"
+msgstr "Compartilhado:"
+
+msgid "Sockets:"
+msgstr "Sockets:"
+
+msgid "Devices:"
+msgstr "Dispositivos:"
+
+msgid "Filesystems:"
+msgstr "Sistemas de arquivos:"
+
+msgid "Persistent Paths:"
+msgstr "Caminhos persistentes:"
+
+msgid "Session Bus:"
+msgstr "Barramento de sessão:"
+
+msgid "Fully Sandboxed or permissions unavailable"
+msgstr "Totalmente isolado em sandbox ou permissões indisponíveis"
+
+msgid "Unknown Developer"
+msgstr "Desenvolvedor desconhecido"
+
+msgid "Loading…"
+msgstr "Carregando…"
+
+msgid "Remove"
+msgstr "Remover"
+
+msgid "Install"
+msgstr "Instalar"
+
+msgid "Sandbox Permissions"
+msgstr "Permissões de sandbox"
+
+msgid "Links & Resources"
+msgstr "Links e recursos"
+
+msgid "Website"
+msgstr "Site"
+
+msgid "Source Code"
+msgstr "Código-fonte"
+
+msgid "Flatpak Manifest"
+msgstr "Manifesto Flatpak"
+
+msgid "Report an Issue"
+msgstr "Relatar um problema"
+
+msgid "Documentation"
+msgstr "Documentação"
+
+msgid "Donate / Support"
+msgstr "Doar / Apoiar"
+
+#, qt-format
+msgid "More by %1"
+msgstr "Mais de %1"
+
+msgid "Developer"
+msgstr "Desenvolvedor"
+
+msgid "Similar Applications"
+msgstr "Aplicativos semelhantes"
+
+msgid "Ratings & Reviews"
+msgstr "Avaliações e comentários"
+
+msgid "Write a Review"
+msgstr "Escrever uma avaliação"
+
+msgid ""
+"Submitting reviews requires generating a unique identity hash with ODRS. "
+"This feature is currently in development and will be available in a future "
+"update."
+msgstr ""
+"O envio de avaliações requer a geração de um hash de identidade exclusivo "
+"com o ODRS. Este recurso está em desenvolvimento e estará disponível em uma "
+"atualização futura."
+
+msgid "Application Permissions"
+msgstr "Permissões do aplicativo"
+
+msgid "Refresh"
+msgstr "Atualizar"
+
+msgid "No Flatpak Applications Installed"
+msgstr "Nenhum aplicativo Flatpak instalado"
+
+msgid "Install applications from the Storefront tab"
+msgstr "Instale aplicativos a partir da aba Loja"
+
+msgid "Search installed applications…"
+msgstr "Pesquisar aplicativos instalados…"
+
+msgid "Sort by:"
+msgstr "Ordenar por:"
+
+msgid "Name"
+msgstr "Nome"
+
+msgid "Size"
+msgstr "Tamanho"
+
+msgid "Ascending"
+msgstr "Crescente"
+
+msgid "Descending"
+msgstr "Decrescente"
+
+msgid "Sort Ascending"
+msgstr "Ordenar de forma crescente"
+
+msgid "Sort Descending"
+msgstr "Ordenar de forma decrescente"
+
+msgid "Launch"
+msgstr "Iniciar"
+
+msgid "Uninstall"
+msgstr "Desinstalar"
+
+msgid "Storefront"
+msgstr "Loja"
+
+msgid "Search applications…"
+msgstr "Pesquisar aplicativos…"
+
+msgid "Popular Applications"
+msgstr "Aplicativos populares"
+
+msgid "New & Noteworthy"
+msgstr "Novidades e destaques"
+
+msgid "Recently Updated"
+msgstr "Atualizados recentemente"
+
+msgid "Search Results"
+msgstr "Resultados da pesquisa"
+
+msgid "Category: "
+msgstr "Categoria: "
+
+#, qt-format
+msgid "Category: %1"
+msgstr "Categoria: %1"
+
+msgid "Applications"
+msgstr "Aplicativos"
+
+msgid "No Applications Found"
+msgstr "Nenhum aplicativo encontrado"
+
+msgid "Try a different search term or category"
+msgstr "Tente um termo de pesquisa ou categoria diferente"
