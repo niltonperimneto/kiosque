@@ -34,8 +34,9 @@ Built with Rust and Kirigami.
 
 %install
 %meson_install
+%find_lang %{name}
 
-%files
+%files -f %{name}.lang
 %{_bindir}/kiosque
 %{_bindir}/kiosque-update
 %{_datadir}/applications/org.kiosque.Kiosque.desktop
