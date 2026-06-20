@@ -25,7 +25,7 @@ jobs:
       - name: Install KDE Sdk & Platform
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub org.kde.Sdk//6.7 org.kde.Platform//6.7
+          flatpak install --user -y flathub org.kde.Sdk//6.7 org.kde.Platform//6.7 org.freedesktop.Sdk.Extension.rust-stable//23.08
 
       - name: Build Flatpak
         run: |

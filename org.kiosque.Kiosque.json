@@ -3,6 +3,9 @@
     "runtime": "org.kde.Platform",
     "runtime-version": "6.7",
     "sdk": "org.kde.Sdk",
+    "sdk-extensions": [
+        "org.freedesktop.Sdk.Extension.rust-stable"
+    ],
     "command": "kiosque",
     "finish-args": [
         "--share=ipc",
@@ -12,6 +15,12 @@
         "--filesystem=host",
         "--share=network"
     ],
+    "build-options": {
+        "append-path": "/usr/lib/sdk/rust-stable/bin",
+        "env": {
+            "CARGO_HOME": "/run/build/kiosque/cargo-home"
+        }
+    },
     "modules": [
         {
             "name": "kiosque",
