@@ -66,7 +66,12 @@ Kirigami.ApplicationWindow {
 
     // ── Global Navigation Drawer ────────────────────────────────────────
     globalDrawer: Kirigami.GlobalDrawer {
+        id: mainDrawer
         isMenu: false
+
+        property real customWidth: Kirigami.Units.gridUnit * 16
+        width: !collapsed ? customWidth : collapsedSize
+
 
         actions: [
             Kirigami.Action {
@@ -375,11 +380,16 @@ Kirigami.ApplicationWindow {
         contentItem: ColumnLayout {
             spacing: Kirigami.Units.largeSpacing
 
-            Kirigami.Icon {
+            Image {
                 id: aboutLogo
-                source: "application-x-executable"
-                implicitWidth: Kirigami.Units.iconSizes.huge * 1.5
-                implicitHeight: Kirigami.Units.iconSizes.huge * 1.5
+                source: "qrc:/qml/images/logo.svg"
+                Layout.preferredWidth: Kirigami.Units.iconSizes.huge * 1.5
+                Layout.preferredHeight: Kirigami.Units.iconSizes.huge * 1.5
+                sourceSize.width: 512
+                sourceSize.height: 512
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                mipmap: true
                 Layout.alignment: Qt.AlignHCenter
                 Layout.topMargin: Kirigami.Units.largeSpacing
             }
@@ -399,7 +409,7 @@ Kirigami.ApplicationWindow {
             }
 
             Controls.Label {
-                text: i18n("A modern, lightweight Flatpak software center for KDE Plasma.")
+                text: i18n("A beautiful, fast, and modern Flatpak storefront for the KDE Plasma desktop, inspired by GNOME's software curation aesthetics.")
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
                 Layout.alignment: Qt.AlignHCenter
@@ -407,7 +417,7 @@ Kirigami.ApplicationWindow {
             }
 
             Controls.Label {
-                text: i18n("Built with Rust and Kirigami, designed to provide a fast and seamless experience for discovering and managing your applications.")
+                text: i18n("Kiosque was built to bring a curation-focused storefront to the Qt/KDE ecosystem, showcasing applications in their best light. It integrates a high-performance Rust backend with a modern Qt6/Kirigami frontend.")
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
                 color: Kirigami.Theme.disabledTextColor
@@ -416,6 +426,7 @@ Kirigami.ApplicationWindow {
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 22
                 Layout.topMargin: Kirigami.Units.smallSpacing
             }
+
 
             Kirigami.Separator {
                 Layout.fillWidth: true
@@ -431,13 +442,13 @@ Kirigami.ApplicationWindow {
                     icon.name: "code-context"
                     text: i18n("Source Code")
                     flat: true
-                    onClicked: Qt.openUrlExternally("https://github.com/Kiosque/kiosque")
+                    onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque")
                 }
                 Controls.Button {
                     icon.name: "tools-report-bug"
                     text: i18n("Report Bug")
                     flat: true
-                    onClicked: Qt.openUrlExternally("https://github.com/Kiosque/kiosque/issues")
+                    onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque/issues")
                 }
             }
         }
@@ -449,5 +460,48 @@ Kirigami.ApplicationWindow {
         featuredModel.refresh();
         appListModel.refresh();
         installedModel.refresh();
+    }
+
+    // ── Resizable Sidebar Handle ────────────────────────────────────────
+    Rectangle {
+        id: drawerResizeHandle
+        parent: root.overlay
+        x: mainDrawer.position * mainDrawer.width - width / 2
+        y: 0
+        width: Kirigami.Units.smallSpacing * 2
+        height: parent.height
+        color: Kirigami.Theme.highlightColor
+        opacity: handleMouseArea.containsMouse || handleMouseArea.drag.active ? 0.3 : 0.0
+        visible: !mainDrawer.collapsed && mainDrawer.position > 0 && !mainDrawer.modal
+        z: 9999
+
+        MouseArea {
+            id: handleMouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.SplitHCursor
+            drag.target: dummyDragItem
+            drag.axis: Drag.XAxis
+            
+            property real startWidth: 0
+            
+            onPressed: {
+                startWidth = mainDrawer.customWidth
+            }
+            onPositionChanged: {
+                if (drag.active) {
+                    let newWidth = startWidth + dummyDragItem.x
+                    if (newWidth > Kirigami.Units.gridUnit * 12 && newWidth < Kirigami.Units.gridUnit * 40) {
+                        mainDrawer.customWidth = newWidth
+                    }
+                }
+            }
+            onReleased: {
+                dummyDragItem.x = 0
+            }
+        }
+        Item {
+            id: dummyDragItem
+        }
     }
 }

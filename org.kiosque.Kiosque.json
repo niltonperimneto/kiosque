@@ -1,0 +1,35 @@
+{
+    "app-id": "org.kiosque.Kiosque",
+    "runtime": "org.kde.Platform",
+    "runtime-version": "6.7",
+    "sdk": "org.kde.Sdk",
+    "command": "kiosque",
+    "finish-args": [
+        "--share=ipc",
+        "--socket=fallback-x11",
+        "--socket=wayland",
+        "--device=dri",
+        "--filesystem=host",
+        "--share=network"
+    ],
+    "modules": [
+        {
+            "name": "kiosque",
+            "buildsystem": "meson",
+            "config-opts": [
+                "--buildtype=release"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": "."
+                }
+            ],
+            "build-options": {
+                "build-args": [
+                    "--share=network"
+                ]
+            }
+        }
+    ]
+}

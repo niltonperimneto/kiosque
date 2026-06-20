@@ -22,6 +22,7 @@ int main(int argc, char *argv[])
     QGuiApplication::setOrganizationDomain(QStringLiteral("kiosque.app"));
     QGuiApplication::setApplicationDisplayName(QStringLiteral("Kiosque"));
     QGuiApplication::setDesktopFileName(QStringLiteral("com.kiosque.app"));
+    QGuiApplication::setWindowIcon(QIcon(":/qml/images/logo.svg"));
 
     // Allow loading translations from the build directory for testing/development
     QDir localeDir(QCoreApplication::applicationDirPath() + QStringLiteral("/../po"));

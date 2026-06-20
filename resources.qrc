@@ -17,5 +17,6 @@
     <file>qml/pages/InstalledPage.qml</file>
     <file>qml/pages/ShopfrontPage.qml</file>
         <file>qml/pages/TestPage.qml</file>
+    <file>qml/images/logo.svg</file>
 </qresource>
 </RCC>

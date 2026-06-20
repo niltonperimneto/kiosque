@@ -3,10 +3,10 @@ msgstr ""
 "Project-Id-Version: kiosque\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-06-17 12:00-0300\n"
-"PO-Revision-Date: 2026-06-17 12:00-0300\n"
+"PO-Revision-Date: 2026-06-19 22:40-0300\n"
 "Last-Translator: Kiosque Contributors\n"
-"Language-Team: Portuguese\n"
-"Language: pt\n"
+"Language-Team: Italian\n"
+"Language: it\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -18,116 +18,116 @@ msgid "Kiosque"
 msgstr "Kiosque"
 
 msgid "Installed"
-msgstr "Instalados"
+msgstr "Installato"
 
 msgid "Menu"
 msgstr "Menu"
 
 msgid "Settings…"
-msgstr "Configurações…"
+msgstr "Impostazioni…"
 
 msgid "Add Repository…"
-msgstr "Adicionar repositório…"
+msgstr "Aggiungi repository…"
 
 msgid "About Kiosque…"
-msgstr "Sobre o Kiosque…"
+msgstr "Informazioni su Kiosque…"
 
 msgid "All Categories"
-msgstr "Todas as categorias"
+msgstr "Tutte le categorie"
 
 msgid "Audio & Video"
-msgstr "Áudio e vídeo"
+msgstr "Audio e video"
 
 msgid "Games"
-msgstr "Jogos"
+msgstr "Giochi"
 
 msgid "Office"
-msgstr "Escritório"
+msgstr "Ufficio"
 
 msgid "Graphics"
-msgstr "Gráficos"
+msgstr "Grafica"
 
 msgid "Development"
-msgstr "Desenvolvimento"
+msgstr "Sviluppo"
 
 msgid "Internet"
 msgstr "Internet"
 
 msgid "Utilities"
-msgstr "Utilitários"
+msgstr "Utilità"
 
 msgid "Education"
-msgstr "Educação"
+msgstr "Istruzione"
 
 msgid "System"
 msgstr "Sistema"
 
 msgid "Science"
-msgstr "Ciência"
+msgstr "Scienza"
 
 msgid "Emulators"
-msgstr "Emuladores"
+msgstr "Emulatori"
 
 msgid "Game Launchers"
-msgstr "Iniciadores de jogos"
+msgstr "Avviatori di giochi"
 
 msgid "Game Tools"
-msgstr "Ferramentas de jogos"
+msgstr "Strumenti di gioco"
 
 msgid "Players"
-msgstr "Reprodutores"
+msgstr "Riproduttori"
 
 msgid "Recorders"
-msgstr "Gravadores"
+msgstr "Registratori"
 
 msgid "Editors & Creators"
-msgstr "Editores e criadores"
+msgstr "Editori e creatori"
 
 msgid "Developer Tools"
-msgstr "Ferramentas de desenvolvedor"
+msgstr "Strumenti di sviluppo"
 
 msgid "IDEs"
-msgstr "IDEs"
+msgstr "IDE"
 
 msgid "Debuggers"
-msgstr "Depuradores"
+msgstr "Debugger"
 
 msgid "Web Development"
-msgstr "Desenvolvimento web"
+msgstr "Sviluppo web"
 
 msgid "3D Graphics"
-msgstr "Gráficos 3D"
+msgstr "Grafica 3D"
 
 msgid "Vector Graphics"
-msgstr "Gráficos vetoriais"
+msgstr "Grafica vettoriale"
 
 msgid "Raster Graphics"
-msgstr "Gráficos rasterizados"
+msgstr "Grafica raster"
 
 msgid "Photography"
 msgstr "Fotografia"
 
 msgid "Word Processors"
-msgstr "Processadores de texto"
+msgstr "Elaboratori di testi"
 
 msgid "Spreadsheets"
-msgstr "Planilhas"
+msgstr "Fogli di calcolo"
 
 msgid "Presentations"
-msgstr "Apresentações"
+msgstr "Presentazioni"
 
 msgid "Finance"
-msgstr "Finanças"
+msgstr "Finanza"
 
 msgid "Add Flatpak Repository"
-msgstr "Adicionar repositório Flatpak"
+msgstr "Aggiungi repository Flatpak"
 
 msgid ""
 "Add a new Flatpak remote repository. User-scoped repositories do not require "
 "administrator privileges."
 msgstr ""
-"Adicione um novo repositório Flatpak remoto. Repositórios de escopo do "
-"usuário não exigem privilégios de administrador."
+"Aggiungi un nuovo repository Flatpak remoto. I repository a livello utente non richiedono "
+"i privilegi di amministratore."
 
 msgid "Name:"
 msgstr "Nome:"
@@ -136,189 +136,190 @@ msgid "URL:"
 msgstr "URL:"
 
 msgid "Cancel"
-msgstr "Cancelar"
+msgstr "Annulla"
 
 msgid "Add"
-msgstr "Adicionar"
+msgstr "Aggiungi"
 
 msgid "Repository Status"
-msgstr "Status do repositório"
+msgstr "Stato del repository"
 
 msgid "About Kiosque"
-msgstr "Sobre o Kiosque"
+msgstr "Informazioni su Kiosque"
 
 msgid "A beautiful, fast, and modern Flatpak storefront for the KDE Plasma desktop, inspired by GNOME's software curation aesthetics."
-msgstr "Uma loja de aplicativos Flatpak bonita, rápida e moderna para o desktop KDE Plasma, inspirada na estética de curadoria do GNOME."
+msgstr "Una vetrina Flatpak bella, veloce e moderna per il desktop KDE Plasma, ispirata all'estetica di curatela del software di GNOME."
 
 msgid "Kiosque was built to bring a curation-focused storefront to the Qt/KDE ecosystem, showcasing applications in their best light. It integrates a high-performance Rust backend with a modern Qt6/Kirigami frontend."
-msgstr "O Kiosque foi criado para trazer uma loja focada em curadoria para o ecossistema Qt/KDE, exibindo aplicativos em sua melhor luz. Ele integra um backend Rust de alto desempenho com um frontend Qt6/Kirigami moderno."
+msgstr "Kiosque è stato creato per portare una vetrina focalizzata sulla curatela nel mondo Qt/KDE, mostrando le applicazioni sotto la luce migliore. Integra un backend in Rust ad alte prestazioni con un frontend Qt6/Kirigami moderno."
 
 
 msgid "View Details"
-msgstr "Ver detalhes"
+msgstr "Visualizza dettagli"
 
 msgid "App of the Day"
-msgstr "Aplicativo do dia"
+msgstr "Applicazione del giorno"
 
 msgid "FEATURED"
-msgstr "DESTAQUE"
+msgstr "IN EVIDENZA"
 
 msgid "Preparing…"
-msgstr "Preparando…"
+msgstr "Preparazione in corso…"
 
 #, c-format
 msgid "%1 Review"
 msgid_plural "%1 Reviews"
-msgstr[0] "%1 avaliação"
+msgstr[0] "%1 recensione"
+msgstr[1] "%1 recensioni"
 
 msgid "Anonymous"
-msgstr "Anônimo"
+msgstr "Anonimo"
 
 #, qt-format
 msgid "v%1"
 msgstr "v%1"
 
 msgid "Settings"
-msgstr "Configurações"
+msgstr "Impostazioni"
 
 msgid "Automatic Updates:"
-msgstr "Atualizações automáticas:"
+msgstr "Aggiornamenti automatici:"
 
 msgid "Frequency:"
-msgstr "Frequência:"
+msgstr "Frequenza:"
 
 msgid "Daily"
-msgstr "Diariamente"
+msgstr "Giornaliero"
 
 msgid "Weekly"
-msgstr "Semanalmente"
+msgstr "Settimane"
 
 msgid "Time (HH:MM):"
-msgstr "Hora (HH:MM):"
+msgstr "Ora (HH:MM):"
 
 msgid "Save"
-msgstr "Salvar"
+msgstr "Salva"
 
 msgid "Welcome to Kiosque"
-msgstr "Bem-vindo ao Kiosque"
+msgstr "Benvenuto in Kiosque"
 
 msgid ""
 "Discover, install, and update your applications effortlessly. Kiosque "
 "provides a modern, fast experience for managing your Flatpaks, inspired by "
 "Flathub."
 msgstr ""
-"Descubra, instale e atualize seus aplicativos sem esforço. O Kiosque oferece "
-"uma experiência moderna e rápida para gerenciar seus Flatpaks, inspirada no "
+"Scopri, installa e aggiorna le tue applicazioni senza sforzo. Kiosque "
+"offre un'esperienza moderna e veloce per la gestione dei tuoi Flatpak, ispirata a "
 "Flathub."
 
 msgid "No special permissions required (Fully Sandboxed)"
-msgstr "Nenhuma permissão especial necessária (totalmente isolado em sandbox)"
+msgstr "Nessun permesso speciale richiesto (completamente in sandbox)"
 
 msgid "Shared:"
-msgstr "Compartilhado:"
+msgstr "Condiviso:"
 
 msgid "Sockets:"
-msgstr "Sockets:"
+msgstr "Socket:"
 
 msgid "Devices:"
-msgstr "Dispositivos:"
+msgstr "Dispositivi:"
 
 msgid "Filesystems:"
-msgstr "Sistemas de arquivos:"
+msgstr "Filesystem:"
 
 msgid "Persistent Paths:"
-msgstr "Caminhos persistentes:"
+msgstr "Percorsi persistenti:"
 
 msgid "Session Bus:"
-msgstr "Barramento de sessão:"
+msgstr "Session Bus:"
 
 msgid "Fully Sandboxed or permissions unavailable"
-msgstr "Totalmente isolado em sandbox ou permissões indisponíveis"
+msgstr "Completamente in sandbox o permessi non disponibili"
 
 msgid "Unknown Developer"
-msgstr "Desenvolvedor desconhecido"
+msgstr "Sviluppatore sconosciuto"
 
 msgid "Loading…"
-msgstr "Carregando…"
+msgstr "Caricamento…"
 
 msgid "Remove"
-msgstr "Remover"
+msgstr "Rimuovi"
 
 msgid "Install"
-msgstr "Instalar"
+msgstr "Installa"
 
 msgid "Sandbox Permissions"
-msgstr "Permissões de sandbox"
+msgstr "Permessi della sandbox"
 
 msgid "Links & Resources"
-msgstr "Links e recursos"
+msgstr "Collegamenti e risorse"
 
 msgid "Website"
-msgstr "Site"
+msgstr "Sito web"
 
 msgid "Source Code"
-msgstr "Código-fonte"
+msgstr "Codice sorgente"
 
 msgid "Flatpak Manifest"
 msgstr "Manifesto Flatpak"
 
 msgid "Report an Issue"
-msgstr "Relatar um problema"
+msgstr "Segnala un problema"
 
 msgid "Documentation"
-msgstr "Documentação"
+msgstr "Documentazione"
 
 msgid "Donate / Support"
-msgstr "Doar / Apoiar"
+msgstr "Dona / Sostieni"
 
 #, qt-format
 msgid "More by %1"
-msgstr "Mais de %1"
+msgstr "Altri di %1"
 
 msgid "Developer"
-msgstr "Desenvolvedor"
+msgstr "Sviluppatore"
 
 msgid "Similar Applications"
-msgstr "Aplicativos semelhantes"
+msgstr "Applicazioni simili"
 
 msgid "Ratings & Reviews"
-msgstr "Avaliações e comentários"
+msgstr "Valutazioni e recensioni"
 
 msgid "Write a Review"
-msgstr "Escrever uma avaliação"
+msgstr "Scrivi una recensione"
 
 msgid ""
 "Submitting reviews requires generating a unique identity hash with ODRS. "
 "This feature is currently in development and will be available in a future "
 "update."
 msgstr ""
-"O envio de avaliações requer a geração de um hash de identidade exclusivo "
-"com o ODRS. Este recurso está em desenvolvimento e estará disponível em uma "
-"atualização futura."
+"L'invio delle recensioni richiede la generazione di un hash di identità unico "
+"con ODRS. Questa funzione è attualmente in fase di sviluppo e sarà disponibile "
+"in un aggiornamento futuro."
 
 msgid "Application Permissions"
-msgstr "Permissões do aplicativo"
+msgstr "Permessi dell'applicazione"
 
 msgid "Refresh"
-msgstr "Atualizar"
+msgstr "Aggiorna"
 
 msgid "No Flatpak Applications Installed"
-msgstr "Nenhum aplicativo Flatpak instalado"
+msgstr "Nessuna applicazione Flatpak installata"
 
 msgid "Install applications from the Storefront tab"
-msgstr "Instale aplicativos a partir da aba Loja"
+msgstr "Installa le applicazioni dalla scheda Negozio"
 
 msgid "Search installed applications…"
-msgstr "Pesquisar aplicativos instalados…"
+msgstr "Cerca tra le applicazioni installate…"
 
 msgid "Sort by:"
-msgstr "Ordenar por:"
+msgstr "Ordina per:"
 
 msgid "Name"
 msgstr "Nome"
 
 msgid "Size"
-msgstr "Tamanho"
+msgstr "Dimensione"
 
 msgid "Ascending"
 msgstr "Crescente"
@@ -327,34 +328,34 @@ msgid "Descending"
 msgstr "Decrescente"
 
 msgid "Sort Ascending"
-msgstr "Ordenar de forma crescente"
+msgstr "Ordina in modo crescente"
 
 msgid "Sort Descending"
-msgstr "Ordenar de forma decrescente"
+msgstr "Ordina in modo decrescente"
 
 msgid "Launch"
-msgstr "Iniciar"
+msgstr "Avvia"
 
 msgid "Uninstall"
-msgstr "Desinstalar"
+msgstr "Disinstalla"
 
 msgid "Storefront"
-msgstr "Loja"
+msgstr "Negozio"
 
 msgid "Search applications…"
-msgstr "Pesquisar aplicativos…"
+msgstr "Cerca applicazioni…"
 
 msgid "Popular Applications"
-msgstr "Aplicativos populares"
+msgstr "Applicazioni popolari"
 
 msgid "New & Noteworthy"
-msgstr "Novidades e destaques"
+msgstr "Nuove e degne di nota"
 
 msgid "Recently Updated"
-msgstr "Atualizados recentemente"
+msgstr "Aggiornate di recente"
 
 msgid "Search Results"
-msgstr "Resultados da pesquisa"
+msgstr "Risultati della ricerca"
 
 msgid "Category: "
 msgstr "Categoria: "
@@ -364,10 +365,10 @@ msgid "Category: %1"
 msgstr "Categoria: %1"
 
 msgid "Applications"
-msgstr "Aplicativos"
+msgstr "Applicazioni"
 
 msgid "No Applications Found"
-msgstr "Nenhum aplicativo encontrado"
+msgstr "Nessuna applicazione trovata"
 
 msgid "Try a different search term or category"
-msgstr "Tente um termo de pesquisa ou categoria diferente"
+msgstr "Prova con un termine di ricerca o una categoria diversa"

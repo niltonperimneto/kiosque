@@ -72,3 +72,13 @@ executable('kiosque-update',
   cpp_args: ['-DTRANSLATION_DOMAIN="kiosque"'],
   install: true
 )
+
+install_data('org.kiosque.Kiosque.desktop',
+  install_dir: get_option('datadir') / 'applications'
+)
+
+install_data('qml/images/logo.svg',
+  rename: 'org.kiosque.Kiosque.svg',
+  install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps'
+)
+

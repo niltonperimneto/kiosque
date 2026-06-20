@@ -1,0 +1,120 @@
+name: CI Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  flatpak:
+    name: Build Flatpak
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install Flatpak Builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Install KDE Sdk & Platform
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.kde.Sdk//6.7 org.kde.Platform//6.7
+
+      - name: Build Flatpak
+        run: |
+          flatpak-builder --user --force-clean --ccache --require-changes --repo=repo build org.kiosque.Kiosque.json
+          flatpak build-bundle repo kiosque.flatpak org.kiosque.Kiosque
+
+      - name: Upload Flatpak Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kiosque-Flatpak
+          path: kiosque.flatpak
+
+  rpm:
+    name: Build RPM
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:44
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          dnf install -y meson gcc-c++ cargo rust cmake qt6-qtbase-devel qt6-qtdeclarative-devel kf6-kirigami-devel kf6-ki18n-devel dbus-devel rpm-build tar
+
+      - name: Build RPM Package
+        run: |
+          mkdir -p ~/rpmbuild/SOURCES ~/rpmbuild/SPECS
+          cp kiosque.spec ~/rpmbuild/SPECS/
+          tar --transform 's,^\.,kiosque-0.1.0,' --exclude=./builddir --exclude=./rust/target --exclude=./.git -czf ~/rpmbuild/SOURCES/kiosque-0.1.0.tar.gz .
+          rpmbuild -ba ~/rpmbuild/SPECS/kiosque.spec
+          cp ~/rpmbuild/RPMS/x86_64/*.rpm ./
+
+      - name: Upload RPM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kiosque-RPM
+          path: "*.rpm"
+
+  appimage:
+    name: Build AppImage
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:44
+      options: --device /dev/fuse --privileged
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          dnf install -y meson gcc-c++ cargo rust cmake qt6-qtbase-devel qt6-qtdeclarative-devel kf6-kirigami-devel kf6-ki18n-devel dbus-devel file wget curl file-devel
+
+      - name: Build and Install to AppDir
+        run: |
+          meson setup builddir --prefix=/usr
+          meson compile -C builddir
+          DESTDIR=$PWD/AppDir meson install -C builddir
+
+      - name: Download & Extract linuxdeploy
+        run: |
+          curl -Lo linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy
+          ./linuxdeploy --appimage-extract
+          mv squashfs-root linuxdeploy-extracted
+
+      - name: Download & Extract linuxdeploy-plugin-qt
+        run: |
+          curl -Lo linuxdeploy-plugin-qt https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-plugin-qt
+          ./linuxdeploy-plugin-qt --appimage-extract
+          mv squashfs-root linuxdeploy-plugin-qt-extracted
+
+      - name: Build AppImage Bundle
+        run: |
+          export QMAKE=/usr/bin/qmake-qt6
+          # Combine the extracted AppRuns to package everything correctly
+          # We need to make sure the plugins directory is visible to linuxdeploy
+          export PATH=$PWD/linuxdeploy-extracted:$PWD/linuxdeploy-plugin-qt-extracted:$PATH
+          
+          # Run linuxdeploy to package
+          ./linuxdeploy-extracted/AppRun --appdir AppDir \
+            --desktop-file AppDir/usr/share/applications/org.kiosque.Kiosque.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/scalable/apps/org.kiosque.Kiosque.svg \
+            --plugin qt \
+            --output appimage
+
+      - name: Upload AppImage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kiosque-AppImage
+          path: "*.AppImage"

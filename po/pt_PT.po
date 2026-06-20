@@ -3,10 +3,10 @@ msgstr ""
 "Project-Id-Version: kiosque\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-06-17 12:00-0300\n"
-"PO-Revision-Date: 2026-06-17 12:00-0300\n"
+"PO-Revision-Date: 2026-06-19 22:40-0300\n"
 "Last-Translator: Kiosque Contributors\n"
-"Language-Team: Portuguese\n"
-"Language: pt\n"
+"Language-Team: Portuguese (Portugal)\n"
+"Language: pt_PT\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -18,13 +18,13 @@ msgid "Kiosque"
 msgstr "Kiosque"
 
 msgid "Installed"
-msgstr "Instalados"
+msgstr "Instalado"
 
 msgid "Menu"
 msgstr "Menu"
 
 msgid "Settings…"
-msgstr "Configurações…"
+msgstr "Definições…"
 
 msgid "Add Repository…"
 msgstr "Adicionar repositório…"
@@ -84,7 +84,7 @@ msgid "Editors & Creators"
 msgstr "Editores e criadores"
 
 msgid "Developer Tools"
-msgstr "Ferramentas de desenvolvedor"
+msgstr "Ferramentas de desenvolvimento"
 
 msgid "IDEs"
 msgstr "IDEs"
@@ -111,7 +111,7 @@ msgid "Word Processors"
 msgstr "Processadores de texto"
 
 msgid "Spreadsheets"
-msgstr "Planilhas"
+msgstr "Folhas de cálculo"
 
 msgid "Presentations"
 msgstr "Apresentações"
@@ -126,8 +126,8 @@ msgid ""
 "Add a new Flatpak remote repository. User-scoped repositories do not require "
 "administrator privileges."
 msgstr ""
-"Adicione um novo repositório Flatpak remoto. Repositórios de escopo do "
-"usuário não exigem privilégios de administrador."
+"Adicione um novo repositório Flatpak remoto. Os repositórios de utilizador não necessitam "
+"de privilégios de administrador."
 
 msgid "Name:"
 msgstr "Nome:"
@@ -142,44 +142,45 @@ msgid "Add"
 msgstr "Adicionar"
 
 msgid "Repository Status"
-msgstr "Status do repositório"
+msgstr "Estado do repositório"
 
 msgid "About Kiosque"
 msgstr "Sobre o Kiosque"
 
 msgid "A beautiful, fast, and modern Flatpak storefront for the KDE Plasma desktop, inspired by GNOME's software curation aesthetics."
-msgstr "Uma loja de aplicativos Flatpak bonita, rápida e moderna para o desktop KDE Plasma, inspirada na estética de curadoria do GNOME."
+msgstr "Uma loja de aplicações Flatpak bonita, rápida e moderna para o ambiente de trabalho KDE Plasma, inspirada na estética de curadoria do GNOME."
 
 msgid "Kiosque was built to bring a curation-focused storefront to the Qt/KDE ecosystem, showcasing applications in their best light. It integrates a high-performance Rust backend with a modern Qt6/Kirigami frontend."
-msgstr "O Kiosque foi criado para trazer uma loja focada em curadoria para o ecossistema Qt/KDE, exibindo aplicativos em sua melhor luz. Ele integra um backend Rust de alto desempenho com um frontend Qt6/Kirigami moderno."
+msgstr "O Kiosque foi criado para trazer uma loja focada em curadoria para o ecossistema Qt/KDE, exibindo aplicações na sua melhor perspetiva. Integra um backend Rust de alto desempenho com um frontend Qt6/Kirigami moderno."
 
 
 msgid "View Details"
 msgstr "Ver detalhes"
 
 msgid "App of the Day"
-msgstr "Aplicativo do dia"
+msgstr "Aplicação do dia"
 
 msgid "FEATURED"
 msgstr "DESTAQUE"
 
 msgid "Preparing…"
-msgstr "Preparando…"
+msgstr "A preparar…"
 
 #, c-format
 msgid "%1 Review"
 msgid_plural "%1 Reviews"
 msgstr[0] "%1 avaliação"
+msgstr[1] "%1 avaliações"
 
 msgid "Anonymous"
-msgstr "Anônimo"
+msgstr "Anónimo"
 
 #, qt-format
 msgid "v%1"
 msgstr "v%1"
 
 msgid "Settings"
-msgstr "Configurações"
+msgstr "Definições"
 
 msgid "Automatic Updates:"
 msgstr "Atualizações automáticas:"
@@ -197,7 +198,7 @@ msgid "Time (HH:MM):"
 msgstr "Hora (HH:MM):"
 
 msgid "Save"
-msgstr "Salvar"
+msgstr "Guardar"
 
 msgid "Welcome to Kiosque"
 msgstr "Bem-vindo ao Kiosque"
@@ -207,15 +208,15 @@ msgid ""
 "provides a modern, fast experience for managing your Flatpaks, inspired by "
 "Flathub."
 msgstr ""
-"Descubra, instale e atualize seus aplicativos sem esforço. O Kiosque oferece "
-"uma experiência moderna e rápida para gerenciar seus Flatpaks, inspirada no "
+"Descubra, instale e atualize as suas aplicações sem esforço. O Kiosque "
+"oferece uma experiência moderna e rápida para gerir os seus Flatpaks, inspirada no "
 "Flathub."
 
 msgid "No special permissions required (Fully Sandboxed)"
 msgstr "Nenhuma permissão especial necessária (totalmente isolado em sandbox)"
 
 msgid "Shared:"
-msgstr "Compartilhado:"
+msgstr "Partilhado:"
 
 msgid "Sockets:"
 msgstr "Sockets:"
@@ -224,22 +225,22 @@ msgid "Devices:"
 msgstr "Dispositivos:"
 
 msgid "Filesystems:"
-msgstr "Sistemas de arquivos:"
+msgstr "Sistemas de ficheiros:"
 
 msgid "Persistent Paths:"
 msgstr "Caminhos persistentes:"
 
 msgid "Session Bus:"
-msgstr "Barramento de sessão:"
+msgstr "Session Bus:"
 
 msgid "Fully Sandboxed or permissions unavailable"
 msgstr "Totalmente isolado em sandbox ou permissões indisponíveis"
 
 msgid "Unknown Developer"
-msgstr "Desenvolvedor desconhecido"
+msgstr "Programador desconhecido"
 
 msgid "Loading…"
-msgstr "Carregando…"
+msgstr "A carregar…"
 
 msgid "Remove"
 msgstr "Remover"
@@ -251,10 +252,10 @@ msgid "Sandbox Permissions"
 msgstr "Permissões de sandbox"
 
 msgid "Links & Resources"
-msgstr "Links e recursos"
+msgstr "Ligações e recursos"
 
 msgid "Website"
-msgstr "Site"
+msgstr "Sítio web"
 
 msgid "Source Code"
 msgstr "Código-fonte"
@@ -263,7 +264,7 @@ msgid "Flatpak Manifest"
 msgstr "Manifesto Flatpak"
 
 msgid "Report an Issue"
-msgstr "Relatar um problema"
+msgstr "Reportar um problema"
 
 msgid "Documentation"
 msgstr "Documentação"
@@ -276,10 +277,10 @@ msgid "More by %1"
 msgstr "Mais de %1"
 
 msgid "Developer"
-msgstr "Desenvolvedor"
+msgstr "Programador"
 
 msgid "Similar Applications"
-msgstr "Aplicativos semelhantes"
+msgstr "Aplicações semelhantes"
 
 msgid "Ratings & Reviews"
 msgstr "Avaliações e comentários"
@@ -292,24 +293,24 @@ msgid ""
 "This feature is currently in development and will be available in a future "
 "update."
 msgstr ""
-"O envio de avaliações requer a geração de um hash de identidade exclusivo "
-"com o ODRS. Este recurso está em desenvolvimento e estará disponível em uma "
+"O envio de avaliações requer a geração de uma hash de identidade única com o ODRS. "
+"Esta funcionalidade está atualmente em desenvolvimento e estará disponível numa "
 "atualização futura."
 
 msgid "Application Permissions"
-msgstr "Permissões do aplicativo"
+msgstr "Permissões da aplicação"
 
 msgid "Refresh"
 msgstr "Atualizar"
 
 msgid "No Flatpak Applications Installed"
-msgstr "Nenhum aplicativo Flatpak instalado"
+msgstr "Nenhuma aplicação Flatpak instalada"
 
 msgid "Install applications from the Storefront tab"
-msgstr "Instale aplicativos a partir da aba Loja"
+msgstr "Instale aplicações a partir do separador Loja"
 
 msgid "Search installed applications…"
-msgstr "Pesquisar aplicativos instalados…"
+msgstr "Pesquisar aplicações instaladas…"
 
 msgid "Sort by:"
 msgstr "Ordenar por:"
@@ -342,16 +343,16 @@ msgid "Storefront"
 msgstr "Loja"
 
 msgid "Search applications…"
-msgstr "Pesquisar aplicativos…"
+msgstr "Pesquisar aplicações…"
 
 msgid "Popular Applications"
-msgstr "Aplicativos populares"
+msgstr "Aplicações populares"
 
 msgid "New & Noteworthy"
 msgstr "Novidades e destaques"
 
 msgid "Recently Updated"
-msgstr "Atualizados recentemente"
+msgstr "Atualizadas recentemente"
 
 msgid "Search Results"
 msgstr "Resultados da pesquisa"
@@ -364,10 +365,10 @@ msgid "Category: %1"
 msgstr "Categoria: %1"
 
 msgid "Applications"
-msgstr "Aplicativos"
+msgstr "Aplicações"
 
 msgid "No Applications Found"
-msgstr "Nenhum aplicativo encontrado"
+msgstr "Nenhuma aplicação encontrada"
 
 msgid "Try a different search term or category"
 msgstr "Tente um termo de pesquisa ou categoria diferente"
