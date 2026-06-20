@@ -103,7 +103,11 @@ jobs:
         env:
           NO_STRIP: '1'
         run: |
-          export QMAKE=/usr/bin/qmake-qt6
+          export QMAKE="$(command -v qmake6 || command -v qmake-qt6 || command -v qmake || true)"
+          if [ -z "$QMAKE" ]; then
+            echo "Unable to find qmake executable"
+            exit 1
+          fi
           # Combine the extracted AppRuns to package everything correctly
           # We need to make sure the plugins directory is visible to linuxdeploy
           export PATH=$PWD/linuxdeploy-extracted:$PWD/linuxdeploy-plugin-qt-extracted:$PATH
