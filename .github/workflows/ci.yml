@@ -25,7 +25,7 @@ jobs:
       - name: Install KDE Sdk & Platform
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub org.kde.Sdk//6.7 org.kde.Platform//6.7 org.freedesktop.Sdk.Extension.rust-stable//23.08
+          flatpak install --user -y flathub org.kde.Sdk//6.10 org.kde.Platform//6.10 org.freedesktop.Sdk.Extension.rust-stable//25.08
 
       - name: Build Flatpak
         run: |
@@ -100,6 +100,8 @@ jobs:
           mv squashfs-root linuxdeploy-plugin-qt-extracted
 
       - name: Build AppImage Bundle
+        env:
+          NO_STRIP: '1'
         run: |
           export QMAKE=/usr/bin/qmake-qt6
           # Combine the extracted AppRuns to package everything correctly
