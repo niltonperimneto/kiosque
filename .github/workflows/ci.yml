@@ -109,10 +109,7 @@ jobs:
 
           # 1. Create a dummy patchelf script to prevent linuxdeploy from modifying ELF headers and causing dynamic loading crashes (NixOS/patchelf#639)
           mkdir -p bin
-          cat << 'EOF' > bin/patchelf
-#!/bin/sh
-exit 0
-EOF
+          printf '#!/bin/sh\nexit 0\n' > bin/patchelf
           chmod +x bin/patchelf
           export PATH=$PWD/bin:$PATH
 
