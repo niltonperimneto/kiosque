@@ -108,28 +108,34 @@ jobs:
           # We need to make sure the plugins directory is visible to linuxdeploy
           export PATH=$PWD/linuxdeploy-extracted:$PWD/linuxdeploy-plugin-qt-extracted:$PATH
 
-          # Run linuxdeploy to package, explicitly excluding low-level system libraries
-          # that conflict with the host system's dynamic linker/libraries and cause SIGSEGV.
+          # 1. Run linuxdeploy to build/assemble the AppDir (without creating the AppImage package yet)
           ./linuxdeploy-extracted/AppRun --appdir AppDir \
             --desktop-file AppDir/usr/share/applications/org.kiosque.Kiosque.desktop \
             --icon-file AppDir/usr/share/icons/hicolor/scalable/apps/org.kiosque.Kiosque.svg \
-            --plugin qt \
-            --exclude-library libudev.so.1 \
-            --exclude-library libcbor.so.0.13 \
-            --exclude-library libcrypt.so.2 \
-            --exclude-library libcrypto.so.3 \
-            --exclude-library libssl.so.3 \
-            --exclude-library libsystemd.so.0 \
-            --exclude-library libdbus-1.so.3 \
-            --exclude-library libselinux.so.1 \
-            --exclude-library libmount.so.1 \
-            --exclude-library libblkid.so.1 \
-            --exclude-library libffi.so.8 \
-            --exclude-library libglib-2.0.so.0 \
-            --exclude-library libgio-2.0.so.0 \
-            --exclude-library libgobject-2.0.so.0 \
-            --exclude-library libgmodule-2.0.so.0 \
-            --output appimage
+            --plugin qt
+
+          # 2. Clean up base system libraries that shouldn't be bundled and cause SIGSEGV/dynamic loading conflicts
+          rm -f AppDir/usr/lib/libudev.so* \
+                AppDir/usr/lib/libcbor.so* \
+                AppDir/usr/lib/libcrypt.so* \
+                AppDir/usr/lib/libcrypto.so* \
+                AppDir/usr/lib/libssl.so* \
+                AppDir/usr/lib/libsystemd.so* \
+                AppDir/usr/lib/libdbus-1.so* \
+                AppDir/usr/lib/libselinux.so* \
+                AppDir/usr/lib/libmount.so* \
+                AppDir/usr/lib/libblkid.so* \
+                AppDir/usr/lib/libffi.so* \
+                AppDir/usr/lib/libglib-2.0.so* \
+                AppDir/usr/lib/libgio-2.0.so* \
+                AppDir/usr/lib/libgobject-2.0.so* \
+                AppDir/usr/lib/libgmodule-2.0.so*
+
+          # 3. Download and extract appimagetool to pack the AppDir into the final AppImage
+          curl -Lo appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract
+          ./squashfs-root/AppRun AppDir Kiosque-x86_64.AppImage
 
       - name: Upload AppImage Artifact
         uses: actions/upload-artifact@v7
