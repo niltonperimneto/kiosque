@@ -105,10 +105,18 @@ jobs:
         run: |
           export QMAKE=/usr/lib64/qt6/bin/qmake
           # Combine the extracted AppRuns to package everything correctly
-          # We need to make sure the plugins directory is visible to linuxdeploy
           export PATH=$PWD/linuxdeploy-extracted:$PWD/linuxdeploy-plugin-qt-extracted:$PATH
 
-          # 1. Run linuxdeploy to build/assemble the AppDir (without creating the AppImage package yet)
+          # 1. Create a dummy patchelf script to prevent linuxdeploy from modifying ELF headers and causing dynamic loading crashes (NixOS/patchelf#639)
+          mkdir -p bin
+          cat << 'EOF' > bin/patchelf
+#!/bin/sh
+exit 0
+EOF
+          chmod +x bin/patchelf
+          export PATH=$PWD/bin:$PATH
+
+          # 2. Run linuxdeploy to build/assemble the AppDir (without creating the AppImage package yet)
           ./linuxdeploy-extracted/AppRun --appdir AppDir \
             --desktop-file AppDir/usr/share/applications/org.kiosque.Kiosque.desktop \
             --icon-file AppDir/usr/share/icons/hicolor/scalable/apps/org.kiosque.Kiosque.svg \
