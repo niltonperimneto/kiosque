@@ -107,11 +107,11 @@ jobs:
           # Combine the extracted AppRuns to package everything correctly
           export PATH=$PWD/linuxdeploy-extracted:$PWD/linuxdeploy-plugin-qt-extracted:$PATH
 
-          # 1. Create a dummy patchelf script to prevent linuxdeploy from modifying ELF headers and causing dynamic loading crashes (NixOS/patchelf#639)
-          mkdir -p bin
-          printf '#!/bin/sh\nexit 0\n' > bin/patchelf
-          chmod +x bin/patchelf
-          export PATH=$PWD/bin:$PATH
+          # 1. Overwrite the bundled patchelf in linuxdeploy and its plugins with a dummy script to prevent modifying ELF headers and causing dynamic loading crashes (NixOS/patchelf#639)
+          printf '#!/bin/sh\nexit 0\n' > linuxdeploy-extracted/usr/bin/patchelf
+          chmod +x linuxdeploy-extracted/usr/bin/patchelf
+          printf '#!/bin/sh\nexit 0\n' > linuxdeploy-plugin-qt-extracted/usr/bin/patchelf
+          chmod +x linuxdeploy-plugin-qt-extracted/usr/bin/patchelf
 
           # 2. Run linuxdeploy to build/assemble the AppDir (without creating the AppImage package yet)
           ./linuxdeploy-extracted/AppRun --appdir AppDir \
