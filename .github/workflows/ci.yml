@@ -77,7 +77,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          dnf install -y meson gcc-c++ cargo rust cmake qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel dbus-devel file wget curl file-devel
+          dnf install -y meson gcc-c++ cargo rust cmake qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-qqc2-desktop-style dbus-devel file wget curl file-devel
 
       - name: Build and Install to AppDir
         run: |
