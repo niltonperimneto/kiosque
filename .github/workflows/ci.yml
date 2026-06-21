@@ -2,9 +2,9 @@ name: CI Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   flatpak:
@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Install Flatpak Builder
         run: |
@@ -33,7 +33,7 @@ jobs:
           flatpak build-bundle repo kiosque.flatpak org.kiosque.Kiosque
 
       - name: Upload Flatpak Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Kiosque-Flatpak
           path: kiosque.flatpak
@@ -45,7 +45,7 @@ jobs:
       image: fedora:44
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Build Dependencies
         run: |
@@ -60,7 +60,7 @@ jobs:
           cp ~/rpmbuild/RPMS/x86_64/*.rpm ./
 
       - name: Upload RPM Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Kiosque-RPM
           path: "*.rpm"
@@ -73,7 +73,7 @@ jobs:
       options: --device /dev/fuse --privileged
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Build Dependencies
         run: |
@@ -101,22 +101,38 @@ jobs:
 
       - name: Build AppImage Bundle
         env:
-          NO_STRIP: '1'
+          NO_STRIP: "1"
         run: |
           export QMAKE=/usr/bin/qmake-qt6
           # Combine the extracted AppRuns to package everything correctly
           # We need to make sure the plugins directory is visible to linuxdeploy
           export PATH=$PWD/linuxdeploy-extracted:$PWD/linuxdeploy-plugin-qt-extracted:$PATH
-          
-          # Run linuxdeploy to package
+
+          # Run linuxdeploy to package, explicitly excluding low-level system libraries
+          # that conflict with the host system's dynamic linker/libraries and cause SIGSEGV.
           ./linuxdeploy-extracted/AppRun --appdir AppDir \
             --desktop-file AppDir/usr/share/applications/org.kiosque.Kiosque.desktop \
             --icon-file AppDir/usr/share/icons/hicolor/scalable/apps/org.kiosque.Kiosque.svg \
             --plugin qt \
+            --exclude-library libudev.so.1 \
+            --exclude-library libcbor.so.0.13 \
+            --exclude-library libcrypt.so.2 \
+            --exclude-library libcrypto.so.3 \
+            --exclude-library libssl.so.3 \
+            --exclude-library libsystemd.so.0 \
+            --exclude-library libdbus-1.so.3 \
+            --exclude-library libselinux.so.1 \
+            --exclude-library libmount.so.1 \
+            --exclude-library libblkid.so.1 \
+            --exclude-library libffi.so.8 \
+            --exclude-library libglib-2.0.so.0 \
+            --exclude-library libgio-2.0.so.0 \
+            --exclude-library libgobject-2.0.so.0 \
+            --exclude-library libgmodule-2.0.so.0 \
             --output appimage
 
       - name: Upload AppImage Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Kiosque-AppImage
           path: "*.AppImage"
