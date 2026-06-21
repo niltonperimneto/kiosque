@@ -91,6 +91,7 @@ jobs:
           chmod +x linuxdeploy
           ./linuxdeploy --appimage-extract
           mv squashfs-root linuxdeploy-extracted
+          rm -f linuxdeploy
 
       - name: Download & Extract linuxdeploy-plugin-qt
         run: |
@@ -98,20 +99,28 @@ jobs:
           chmod +x linuxdeploy-plugin-qt
           ./linuxdeploy-plugin-qt --appimage-extract
           mv squashfs-root linuxdeploy-plugin-qt-extracted
+          rm -f linuxdeploy-plugin-qt
 
       - name: Build AppImage Bundle
         env:
           NO_STRIP: "1"
         run: |
           export QMAKE=/usr/lib64/qt6/bin/qmake
-          # Combine the extracted AppRuns to package everything correctly
-          export PATH=$PWD/linuxdeploy-extracted:$PWD/linuxdeploy-plugin-qt-extracted:$PATH
-
           # 1. Overwrite the bundled patchelf in linuxdeploy and its plugins with a dummy script to prevent modifying ELF headers and causing dynamic loading crashes (NixOS/patchelf#639)
+          # We also create a dummy patchelf in a local bin directory and prepend it to PATH to ensure it overrides any system patchelf.
+          mkdir -p bin
+          printf '#!/bin/sh\nexit 0\n' > bin/patchelf
+          chmod +x bin/patchelf
+
           printf '#!/bin/sh\nexit 0\n' > linuxdeploy-extracted/usr/bin/patchelf
           chmod +x linuxdeploy-extracted/usr/bin/patchelf
           printf '#!/bin/sh\nexit 0\n' > linuxdeploy-plugin-qt-extracted/usr/bin/patchelf
           chmod +x linuxdeploy-plugin-qt-extracted/usr/bin/patchelf
+
+          # Combine the extracted directories to package everything correctly.
+          # We add the usr/bin directories to PATH so that linuxdeploy can find the qt plugin binary directly,
+          # and also prepend the local bin directory with a dummy patchelf wrapper to ensure it's prioritized.
+          export PATH=$PWD/bin:$PWD/linuxdeploy-extracted/usr/bin:$PWD/linuxdeploy-plugin-qt-extracted/usr/bin:$PATH
 
           # 2. Run linuxdeploy to build/assemble the AppDir (without creating the AppImage package yet)
           ./linuxdeploy-extracted/AppRun --appdir AppDir \
