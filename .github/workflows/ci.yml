@@ -136,6 +136,11 @@ jobs:
           cp -r /usr/lib64/qt6/plugins/wayland-graphics-integration-client/* AppDir/usr/plugins/wayland-graphics-integration-client/ || true
           cp -r /usr/lib64/qt6/plugins/wayland-shell-integration/* AppDir/usr/plugins/wayland-shell-integration/ || true
 
+          # Copy SVG icon engine plugin so that Qt can load SVG icon themes from the host
+          mkdir -p AppDir/usr/plugins/iconengines
+          cp /usr/lib64/qt6/plugins/iconengines/libqsvgicon.so AppDir/usr/plugins/iconengines/
+
+
           mkdir -p AppDir/usr/qml/org/kde
           cp -r /usr/lib64/qt6/qml/org/kde/desktop AppDir/usr/qml/org/kde/
           cp -r /usr/lib64/qt6/qml/org/kde/qqc2desktopstyle AppDir/usr/qml/org/kde/
