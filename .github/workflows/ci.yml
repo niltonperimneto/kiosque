@@ -77,7 +77,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          dnf install -y meson gcc-c++ cargo rust cmake qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-qqc2-desktop-style dbus-devel file wget curl file-devel
+          dnf install -y meson gcc-c++ cargo rust cmake qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-qqc2-desktop-style kf6-sonnet dbus-devel file wget curl file-devel
 
       - name: Build and Install to AppDir
         run: |
@@ -139,12 +139,28 @@ jobs:
           mkdir -p AppDir/usr/qml/org/kde
           cp -r /usr/lib64/qt6/qml/org/kde/desktop AppDir/usr/qml/org/kde/
           cp -r /usr/lib64/qt6/qml/org/kde/qqc2desktopstyle AppDir/usr/qml/org/kde/
+          cp -r /usr/lib64/qt6/qml/org/kde/sonnet AppDir/usr/qml/org/kde/
+
+          # Iteratively resolve and bundle all required KF6 and Kirigami library dependencies for the plugins.
+          # We look at all shared objects in the AppDir and copy any missing libKF6/libKirigami dependencies from /usr/lib64/
+          added=1
+          while [ $added -ne 0 ]; do
+            added=0
+            deps=$(find AppDir -type f \( -name "*.so" -o -perm /111 \) | xargs ldd 2>/dev/null | grep "=>" | grep -E "libKF6|libKirigami" | awk '{print $1}' | sort -u)
+            for dep in $deps; do
+              if [ ! -f "AppDir/usr/lib/$dep" ] && [ ! -f "AppDir/usr/lib64/$dep" ]; then
+                echo "Bundling missing dependency: $dep"
+                cp -d /usr/lib64/$dep* AppDir/usr/lib/
+                added=$((added + 1))
+              fi
+            done
+          done
 
           # 4. Clean up base system libraries that shouldn't be bundled and cause SIGSEGV/dynamic loading conflicts.
-          # We only keep Qt6 and KF6 libraries, and let the loader resolve all other system libraries from the host.
+          # We only keep Qt6 and KF6/Kirigami libraries, and let the loader resolve all other system libraries from the host.
           for libdir in AppDir/usr/lib AppDir/usr/lib64 AppDir/usr/lib/*-linux-gnu; do
             if [ -d "$libdir" ]; then
-              find "$libdir" -maxdepth 1 \( -type f -o -type l \) -not -name "libQt6*" -not -name "libKF6*" -delete || true
+              find "$libdir" -maxdepth 1 \( -type f -o -type l \) -not -name "libQt6*" -not -name "libKF6*" -not -name "libKirigami*" -delete || true
             fi
           done
 
