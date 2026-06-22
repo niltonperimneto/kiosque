@@ -77,7 +77,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          dnf install -y meson gcc-c++ cargo rust cmake qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-qqc2-desktop-style kf6-sonnet dbus-devel file wget curl file-devel
+          dnf install -y meson gcc-c++ cargo rust cmake qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-qqc2-desktop-style kf6-sonnet plasma-breeze-qt6 qqc2-breeze-style dbus-devel file wget curl file-devel
 
       - name: Build and Install to AppDir
         run: |
@@ -140,11 +140,17 @@ jobs:
           mkdir -p AppDir/usr/plugins/iconengines
           cp /usr/lib64/qt6/plugins/iconengines/libqsvgicon.so AppDir/usr/plugins/iconengines/
 
+          # Copy Breeze style widget plugin and Kirigami platform plugins to provide native Breeze aesthetics
+          mkdir -p AppDir/usr/plugins/styles
+          cp /usr/lib64/qt6/plugins/styles/breeze6.so AppDir/usr/plugins/styles/
+          mkdir -p AppDir/usr/plugins/kf6/kirigami/platform
+          cp -r /usr/lib64/qt6/plugins/kf6/kirigami/platform/* AppDir/usr/plugins/kf6/kirigami/platform/
 
           mkdir -p AppDir/usr/qml/org/kde
           cp -r /usr/lib64/qt6/qml/org/kde/desktop AppDir/usr/qml/org/kde/
           cp -r /usr/lib64/qt6/qml/org/kde/qqc2desktopstyle AppDir/usr/qml/org/kde/
           cp -r /usr/lib64/qt6/qml/org/kde/sonnet AppDir/usr/qml/org/kde/
+          cp -r /usr/lib64/qt6/qml/org/kde/breeze AppDir/usr/qml/org/kde/
 
           # Iteratively resolve and bundle all required KF6 and Kirigami library dependencies for the plugins.
           # We look at all shared objects in the AppDir and copy any missing libKF6/libKirigami dependencies from /usr/lib64/
