@@ -129,7 +129,18 @@ jobs:
             --icon-file AppDir/usr/share/icons/hicolor/scalable/apps/org.kiosque.Kiosque.svg \
             --plugin qt
 
-          # 2. Clean up base system libraries that shouldn't be bundled and cause SIGSEGV/dynamic loading conflicts.
+          # 3. Manually copy the Wayland platform and graphics integration plugins and QML desktop style modules.
+          # These are dynamically loaded by Qt6/Kirigami and not detected by linuxdeploy-plugin-qt static scan.
+          cp /usr/lib64/qt6/plugins/platforms/libqwayland.so AppDir/usr/plugins/platforms/
+          mkdir -p AppDir/usr/plugins/wayland-graphics-integration-client AppDir/usr/plugins/wayland-shell-integration
+          cp -r /usr/lib64/qt6/plugins/wayland-graphics-integration-client/* AppDir/usr/plugins/wayland-graphics-integration-client/ || true
+          cp -r /usr/lib64/qt6/plugins/wayland-shell-integration/* AppDir/usr/plugins/wayland-shell-integration/ || true
+
+          mkdir -p AppDir/usr/qml/org/kde
+          cp -r /usr/lib64/qt6/qml/org/kde/desktop AppDir/usr/qml/org/kde/
+          cp -r /usr/lib64/qt6/qml/org/kde/qqc2desktopstyle AppDir/usr/qml/org/kde/
+
+          # 4. Clean up base system libraries that shouldn't be bundled and cause SIGSEGV/dynamic loading conflicts.
           # We only keep Qt6 and KF6 libraries, and let the loader resolve all other system libraries from the host.
           for libdir in AppDir/usr/lib AppDir/usr/lib64 AppDir/usr/lib/*-linux-gnu; do
             if [ -d "$libdir" ]; then
