@@ -82,12 +82,25 @@ ColumnLayout {
 
         // Left Navigation Arrow Button
         Controls.RoundButton {
+            id: leftArrow
             anchors.left: parent.left
             anchors.leftMargin: Kirigami.Units.smallSpacing
             anchors.verticalCenter: parent.verticalCenter
             z: 10
             icon.name: "go-previous-symbolic"
             visible: listView.contentX > 10
+            background: Rectangle {
+                radius: height / 2
+                color: Qt.rgba(Kirigami.Theme.backgroundColor.r,
+                               Kirigami.Theme.backgroundColor.g,
+                               Kirigami.Theme.backgroundColor.b,
+                               leftArrow.hovered ? 0.85 : 0.55)
+                border.width: 1
+                border.color: Qt.rgba(Kirigami.Theme.textColor.r,
+                                      Kirigami.Theme.textColor.g,
+                                      Kirigami.Theme.textColor.b, 0.15)
+                Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+            }
             onClicked: {
                 let step = Kirigami.Units.gridUnit * 18;
                 listView.contentX = Math.max(listView.contentX - step, 0);
@@ -96,12 +109,25 @@ ColumnLayout {
 
         // Right Navigation Arrow Button
         Controls.RoundButton {
+            id: rightArrow
             anchors.right: parent.right
             anchors.rightMargin: Kirigami.Units.smallSpacing
             anchors.verticalCenter: parent.verticalCenter
             z: 10
             icon.name: "go-next-symbolic"
             visible: listView.contentX < (listView.contentWidth - listView.width - 10)
+            background: Rectangle {
+                radius: height / 2
+                color: Qt.rgba(Kirigami.Theme.backgroundColor.r,
+                               Kirigami.Theme.backgroundColor.g,
+                               Kirigami.Theme.backgroundColor.b,
+                               rightArrow.hovered ? 0.85 : 0.55)
+                border.width: 1
+                border.color: Qt.rgba(Kirigami.Theme.textColor.r,
+                                      Kirigami.Theme.textColor.g,
+                                      Kirigami.Theme.textColor.b, 0.15)
+                Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+            }
             onClicked: {
                 let step = Kirigami.Units.gridUnit * 18;
                 let maxContentX = listView.contentWidth - listView.width;
