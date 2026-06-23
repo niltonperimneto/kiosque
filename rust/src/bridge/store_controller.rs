@@ -53,6 +53,48 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "installFinished"]
         fn install_finished(self: Pin<&mut StoreController>, success: bool);
+
+        #[qinvokable]
+        #[cxx_name = "submitReview"]
+        fn submit_review(
+            self: Pin<&mut StoreController>,
+            app_id: QString,
+            rating: i32,
+            summary: QString,
+            description: QString,
+            version: QString,
+            distro: QString,
+            locale: QString,
+            is_anonymous: bool,
+        );
+
+        #[qinvokable]
+        #[cxx_name = "upvoteReview"]
+        fn upvote_review(self: Pin<&mut StoreController>, review_id: i64);
+
+        #[qinvokable]
+        #[cxx_name = "downvoteReview"]
+        fn downvote_review(self: Pin<&mut StoreController>, review_id: i64);
+
+        #[qinvokable]
+        #[cxx_name = "dismissReview"]
+        fn dismiss_review(self: Pin<&mut StoreController>, review_id: i64);
+
+        #[qinvokable]
+        #[cxx_name = "removeReview"]
+        fn remove_review(self: Pin<&mut StoreController>, review_id: i64);
+
+        #[qsignal]
+        #[cxx_name = "reviewSubmitted"]
+        fn review_submitted(self: Pin<&mut StoreController>, success: bool, error: QString);
+
+        #[qsignal]
+        #[cxx_name = "reviewActionFinished"]
+        fn review_action_finished(self: Pin<&mut StoreController>, success: bool, error: QString);
+
+        #[qsignal]
+        #[cxx_name = "reviewsLoaded"]
+        fn reviews_loaded(self: Pin<&mut StoreController>);
     }
 
     impl cxx_qt::Threading for StoreController {}
@@ -108,14 +150,10 @@ impl qobject::StoreController {
         crate::runtime::runtime().spawn(async move {
             let client = crate::flathub::client::FlathubClient::new();
 
-            let odrs_client = crate::flathub::odrs::OdrsClient::new();
-
             // Fetch details and installation status concurrently
-            let (details_res, installed, ratings_res, reviews_res) = tokio::join!(
+            let (details_res, installed) = tokio::join!(
                 client.fetch_details(&app_id_str),
                 crate::flatpak::cli::is_installed_cached(&app_id_str),
-                odrs_client.fetch_ratings(&app_id_str),
-                odrs_client.fetch_reviews(&app_id_str),
             );
 
             // If detail fetch succeeded, launch the additional details fetches concurrently
@@ -123,6 +161,8 @@ impl qobject::StoreController {
             let mut developer_apps = vec![];
             let mut similar_apps = vec![];
             
+            let success = details_res.is_ok();
+
             if let Ok(ref details) = details_res {
                 let dev_name = details.developer_name.clone();
                 let category = details.categories.first().cloned();
@@ -169,6 +209,29 @@ impl qobject::StoreController {
                 similar_apps.truncate(8);
             }
 
+            // Spawn separate task for ODRS ratings & reviews to prevent slow ODRS from hanging detail load
+            if success {
+                let odrs_app_id = app_id_str.clone();
+                let odrs_qt_thread = qt_thread.clone();
+                crate::runtime::runtime().spawn(async move {
+                    let odrs_client = crate::flathub::odrs::OdrsClient::new();
+                    let (ratings_res, reviews_res) = tokio::join!(
+                        odrs_client.fetch_ratings(&odrs_app_id),
+                        odrs_client.fetch_reviews(&odrs_app_id),
+                    );
+
+                    let _ = odrs_qt_thread.queue(move |mut qobject| {
+                        let ratings_json = ratings_res.map(|r| serde_json::to_string(&r).unwrap_or_else(|_| "{}".to_string())).unwrap_or_else(|_| "{}".to_string());
+                        qobject.as_mut().set_detail_ratings_json(cxx_qt_lib::QString::from(&ratings_json));
+
+                        let reviews_json = reviews_res.map(|r| serde_json::to_string(&r).unwrap_or_else(|_| "[]".to_string())).unwrap_or_else(|_| "[]".to_string());
+                        qobject.as_mut().set_detail_reviews_json(cxx_qt_lib::QString::from(&reviews_json));
+
+                        qobject.as_mut().reviews_loaded();
+                    });
+                });
+            }
+
             let _ = qt_thread.queue(move |mut qobject| {
                 match details_res {
                     Ok(details) => {
@@ -185,13 +248,6 @@ impl qobject::StoreController {
                         qobject.as_mut().set_detail_license(cxx_qt_lib::QString::from(&license));
                         qobject.as_mut().set_detail_is_installed(installed);
                         qobject.as_mut().set_error_message(cxx_qt_lib::QString::from(""));
-
-                        // ── Process ODRS ──
-                        let ratings_json = ratings_res.map(|r| serde_json::to_string(&r).unwrap_or_else(|_| "{}".to_string())).unwrap_or_else(|_| "{}".to_string());
-                        qobject.as_mut().set_detail_ratings_json(cxx_qt_lib::QString::from(&ratings_json));
-
-                        let reviews_json = reviews_res.map(|r| serde_json::to_string(&r).unwrap_or_else(|_| "[]".to_string())).unwrap_or_else(|_| "[]".to_string());
-                        qobject.as_mut().set_detail_reviews_json(cxx_qt_lib::QString::from(&reviews_json));
 
                         // ── Process screenshots ──
                         let screenshot_urls: Vec<String> = details.screenshots.iter()
@@ -256,6 +312,7 @@ impl qobject::StoreController {
                     Err(e) => {
                         eprintln!("[kiosque] ERROR StoreController::load_app_details: {}", e);
                         qobject.as_mut().set_error_message(cxx_qt_lib::QString::from(&e.to_string()));
+                        qobject.as_mut().reviews_loaded();
                     }
                 }
                 qobject.as_mut().set_loading(false);
@@ -387,5 +444,171 @@ impl qobject::StoreController {
         });
     }
 
+    pub fn submit_review(
+        self: std::pin::Pin<&mut Self>,
+        app_id: cxx_qt_lib::QString,
+        rating: i32,
+        summary: cxx_qt_lib::QString,
+        description: cxx_qt_lib::QString,
+        version: cxx_qt_lib::QString,
+        distro: cxx_qt_lib::QString,
+        locale: cxx_qt_lib::QString,
+        is_anonymous: bool,
+    ) {
+        let qt_thread = self.qt_thread();
+        let app_id_str = app_id.to_string();
+        let summary_str = summary.to_string();
+        let description_str = description.to_string();
+        let mut version_str = version.to_string();
+        let mut distro_str = distro.to_string();
+        let mut locale_str = locale.to_string();
 
+        crate::runtime::runtime().spawn(async move {
+            // Distro auto-detection if empty
+            if distro_str.is_empty() {
+                distro_str = if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
+                    let mut found = None;
+                    for line in content.lines() {
+                        if line.starts_with("ID=") {
+                            found = Some(line.trim_start_matches("ID=")
+                                .trim_matches('"')
+                                .to_string());
+                            break;
+                        }
+                    }
+                    found.unwrap_or_else(|| "Linux".to_string())
+                } else {
+                    "Linux".to_string()
+                };
+            }
+
+            // Locale auto-detection if empty
+            if locale_str.is_empty() {
+                locale_str = std::env::var("LANG")
+                    .unwrap_or_else(|_| "en_US".to_string())
+                    .split('.')
+                    .next()
+                    .unwrap_or("en_US")
+                    .to_string();
+            }
+
+            // Version auto-detection if empty
+            if version_str.is_empty() {
+                if let Ok(installed_apps) = crate::flatpak::cli::list_installed_cached().await {
+                    if let Some(app) = installed_apps.iter().find(|a| a.application_id == app_id_str) {
+                        if let Some(ref v) = app.version {
+                            version_str = v.clone();
+                        }
+                    }
+                }
+            }
+            if version_str.is_empty() {
+                version_str = "1.0".to_string();
+            }
+
+            let client = crate::flathub::odrs::OdrsClient::new();
+            match client.submit_review(
+                &app_id_str,
+                rating,
+                &summary_str,
+                &description_str,
+                &version_str,
+                &distro_str,
+                &locale_str,
+                is_anonymous,
+            ).await {
+                Ok(()) => {
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_submitted(true, cxx_qt_lib::QString::from(""));
+                    });
+                }
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_submitted(false, cxx_qt_lib::QString::from(&err_msg));
+                    });
+                }
+            }
+        });
+    }
+
+    pub fn upvote_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
+        let qt_thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            let client = crate::flathub::odrs::OdrsClient::new();
+            match client.upvote_review(review_id).await {
+                Ok(()) => {
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_action_finished(true, cxx_qt_lib::QString::from(""));
+                    });
+                }
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
+                    });
+                }
+            }
+        });
+    }
+
+    pub fn downvote_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
+        let qt_thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            let client = crate::flathub::odrs::OdrsClient::new();
+            match client.downvote_review(review_id).await {
+                Ok(()) => {
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_action_finished(true, cxx_qt_lib::QString::from(""));
+                    });
+                }
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
+                    });
+                }
+            }
+        });
+    }
+
+    pub fn dismiss_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
+        let qt_thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            let client = crate::flathub::odrs::OdrsClient::new();
+            match client.dismiss_review(review_id).await {
+                Ok(()) => {
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_action_finished(true, cxx_qt_lib::QString::from(""));
+                    });
+                }
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
+                    });
+                }
+            }
+        });
+    }
+
+    pub fn remove_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
+        let qt_thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            let client = crate::flathub::odrs::OdrsClient::new();
+            match client.remove_review(review_id).await {
+                Ok(()) => {
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_action_finished(true, cxx_qt_lib::QString::from(""));
+                    });
+                }
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    let _ = qt_thread.queue(move |mut qobject| {
+                        qobject.as_mut().review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
+                    });
+                }
+            }
+        });
+    }
 }

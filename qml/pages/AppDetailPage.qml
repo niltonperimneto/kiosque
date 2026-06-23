@@ -12,6 +12,7 @@ import "../components" as Components
 Kirigami.ScrollablePage {
     id: page
     property string appId
+    property bool odrsLoading: false
     readonly property bool isNarrow: width < Kirigami.Units.gridUnit * 32
 
     title: StoreController.detail_name !== "" ? StoreController.detail_name : appId
@@ -27,6 +28,7 @@ Kirigami.ScrollablePage {
 
     Component.onCompleted: {
         if (appId !== "") {
+            odrsLoading = true;
             StoreController.loadAppDetails(appId)
         }
     }
@@ -36,12 +38,33 @@ Kirigami.ScrollablePage {
         function onDetailsLoaded() {
             populateModel(developerAppsModel, StoreController.detail_developerAppsJson);
             populateModel(similarAppsModel, StoreController.detail_similar_apps_json);
+        }
+
+        function onReviewsLoaded() {
             populateReviewsModel(reviewsModel, StoreController.detail_reviews_json);
-            
             try {
                 ratingData = JSON.parse(StoreController.detail_ratings_json);
             } catch(e) {
                 ratingData = {};
+            }
+            page.odrsLoading = false;
+        }
+
+        function onReviewSubmitted(success, errorMsg) {
+            if (success) {
+                page.odrsLoading = true;
+                StoreController.loadAppDetails(page.appId)
+            } else {
+                console.error("Review submission failed:", errorMsg)
+            }
+        }
+
+        function onReviewActionFinished(success, errorMsg) {
+            if (success) {
+                page.odrsLoading = true;
+                StoreController.loadAppDetails(page.appId)
+            } else {
+                console.error("Review action failed:", errorMsg)
             }
         }
     }
@@ -60,6 +83,7 @@ Kirigami.ScrollablePage {
     }
 
     property var ratingData: ({})
+    property var allReviewsList: []
 
     // Helper to populate ListModel from JSON string
     function populateModel(listModel, jsonStr) {
@@ -84,76 +108,231 @@ Kirigami.ScrollablePage {
     // Helper to populate reviews model
     function populateReviewsModel(listModel, jsonStr) {
         listModel.clear();
+        page.allReviewsList = [];
         if (!jsonStr || jsonStr === "" || jsonStr === "[]") return;
         try {
-            let list = JSON.parse(jsonStr);
-            for (let i = 0; i < list.length; i++) {
-                let item = list[i];
-                let dateObj = new Date(item.date_created * 1000); // ODRS date is unix timestamp in seconds
-                listModel.append({
-                    userName: item.user_display || i18n("Anonymous"),
-                    dateStr: dateObj.toLocaleDateString(Qt.locale(), Locale.ShortFormat),
-                    rating: item.rating || 0,
-                    summary: item.summary || "",
-                    description: item.description || "",
-                    version: item.version || ""
-                });
-            }
+            page.allReviewsList = JSON.parse(jsonStr);
+            loadMoreReviews();
         } catch (e) {
             console.error("Error parsing reviews:", e);
         }
     }
 
-    // Helper to format permissions list to HTML for the tooltip
-    function formatPermissions(jsonStr) {
+    // Load next batch of reviews
+    function loadMoreReviews() {
+        let currentCount = reviewsModel.count;
+        let totalCount = page.allReviewsList.length;
+        let batchSize = 10;
+        let limit = Math.min(totalCount, currentCount + batchSize);
+        for (let i = currentCount; i < limit; i++) {
+            let item = page.allReviewsList[i];
+            let dateObj = new Date(item.date_created * 1000); // ODRS date is unix timestamp in seconds
+            reviewsModel.append({
+                userName: item.user_display || i18n("Anonymous"),
+                dateStr: dateObj.toLocaleDateString(Qt.locale(), Locale.ShortFormat),
+                rating: item.rating || 0,
+                summary: item.summary || "",
+                description: item.description || "",
+                version: item.version || "",
+                reviewId: item.review_id || 0,
+                userHash: item.user_hash || "",
+                karmaUp: item.karma_up || 0,
+                karmaDown: item.karma_down || 0
+            });
+        }
+    }
+
+    // Helper to get structured list of permissions for the HIG display
+    function getPermissionItems(jsonStr) {
         if (!jsonStr || jsonStr === "{}" || jsonStr === "[]") {
-            return i18n("No special permissions required (Fully Sandboxed)");
+            return [{
+                icon: "security-high-symbolic",
+                title: i18n("No special permissions required (Fully Sandboxed)"),
+                description: i18n("This application is fully sandboxed and isolated from your files, network, and devices.")
+            }];
         }
         try {
             let perms = JSON.parse(jsonStr);
-            let html = "";
-            let hasAny = false;
+            let items = [];
             
-            if (perms.shared && perms.shared.length > 0) {
-                html += "<b>" + i18n("Shared:") + "</b> " + perms.shared.join(", ") + "<br/>";
-                hasAny = true;
-            }
-            if (perms.sockets && perms.sockets.length > 0) {
-                html += "<b>" + i18n("Sockets:") + "</b> " + perms.sockets.join(", ") + "<br/>";
-                hasAny = true;
-            }
-            if (perms.devices && perms.devices.length > 0) {
-                html += "<b>" + i18n("Devices:") + "</b> " + perms.devices.join(", ") + "<br/>";
-                hasAny = true;
-            }
-            if (perms.filesystems && perms.filesystems.length > 0) {
-                html += "<b>" + i18n("Filesystems:") + "</b><br/>";
-                perms.filesystems.forEach(fs => {
-                    html += " • " + fs + "<br/>";
+            let shared = perms.shared || [];
+            let sockets = perms.sockets || [];
+            let devices = perms.devices || [];
+            let filesystems = perms.filesystems || [];
+            let persistent = perms.persistent || [];
+            let sessionBus = perms["session-bus"] || {};
+            let systemBus = perms["system-bus"] || {};
+            
+            // 1. Network
+            if (shared.indexOf("network") !== -1 || sockets.indexOf("network") !== -1) {
+                items.push({
+                    icon: "network-wired-symbolic",
+                    title: i18n("Network Access"),
+                    description: i18n("Can access the internet or local network")
                 });
-                hasAny = true;
-            }
-            if (perms.persistent && perms.persistent.length > 0) {
-                html += "<b>" + i18n("Persistent Paths:") + "</b> " + perms.persistent.join(", ") + "<br/>";
-                hasAny = true;
-            }
-            if (perms["session-bus"] && (perms["session-bus"].talk || perms["session-bus"].own)) {
-                html += "<b>" + i18n("Session Bus:") + "</b><br/>";
-                if (perms["session-bus"].talk) {
-                    html += " • Talk: " + perms["session-bus"].talk.join(", ") + "<br/>";
-                }
-                if (perms["session-bus"].own) {
-                    html += " • Own: " + perms["session-bus"].own.join(", ") + "<br/>";
-                }
-                hasAny = true;
             }
             
-            if (!hasAny) {
-                return i18n("No special permissions required (Fully Sandboxed)");
+            // 2. Display System
+            let hasWayland = sockets.indexOf("wayland") !== -1;
+            let hasX11 = (sockets.indexOf("x11") !== -1) || (sockets.indexOf("fallback-x11") !== -1);
+            if (hasWayland || hasX11) {
+                let sys = [];
+                if (hasWayland) sys.push("Wayland");
+                if (hasX11) sys.push("X11");
+                items.push({
+                    icon: "preferences-desktop-display-symbolic",
+                    title: i18n("Display System"),
+                    description: i18n("Can show windows and access the screen (%1)").arg(sys.join(" / "))
+                });
             }
-            return html;
+            
+            // 3. Audio Access
+            if (sockets.indexOf("pulseaudio") !== -1 || shared.indexOf("pulseaudio") !== -1) {
+                items.push({
+                    icon: "audio-card-symbolic",
+                    title: i18n("Audio Access"),
+                    description: i18n("Can play audio or record sound using the sound card")
+                });
+            }
+            
+            // 4. Inter-process Communication (IPC)
+            if (shared.indexOf("ipc") !== -1) {
+                items.push({
+                    icon: "preferences-system-network-symbolic",
+                    title: i18n("Inter-process Communication"),
+                    description: i18n("Can communicate directly with other running processes")
+                });
+            }
+            
+            // 5. Hardware Devices
+            if (devices.length > 0) {
+                items.push({
+                    icon: "device-notifier-symbolic",
+                    title: i18n("Hardware Access"),
+                    description: i18n("Direct access to hardware devices: %1").arg(devices.join(", "))
+                });
+            }
+            
+            // 6. File System Access
+            if (filesystems.length > 0) {
+                let fsDetails = [];
+                filesystems.forEach(function(fs) {
+                    let parts = fs.split(":");
+                    let path = parts[0];
+                    let mode = parts[1] || "";
+                    let modeText = mode === "ro" ? i18n("read-only") : (mode === "create" ? i18n("read/write/create") : i18n("read/write"));
+                    
+                    let pathName = path;
+                    if (path === "host") {
+                        pathName = i18n("All system files");
+                    } else if (path === "home") {
+                        pathName = i18n("Home directory");
+                    } else if (path === "xdg-desktop") {
+                        pathName = i18n("Desktop folder");
+                    } else if (path === "xdg-documents") {
+                        pathName = i18n("Documents folder");
+                    } else if (path === "xdg-download") {
+                        pathName = i18n("Downloads folder");
+                    } else if (path === "xdg-music") {
+                        pathName = i18n("Music folder");
+                    } else if (path === "xdg-pictures") {
+                        pathName = i18n("Pictures folder");
+                    } else if (path === "xdg-public-share") {
+                        pathName = i18n("Public share folder");
+                    } else if (path === "xdg-templates") {
+                        pathName = i18n("Templates folder");
+                    } else if (path === "xdg-videos") {
+                        pathName = i18n("Videos folder");
+                    } else if (path === "xdg-run/keyring") {
+                        pathName = i18n("System keyring");
+                    } else if (path.startsWith("xdg-")) {
+                        let folder = path.substring(4);
+                        pathName = folder.charAt(0).toUpperCase() + folder.slice(1) + " " + i18n("folder");
+                    }
+                    
+                    fsDetails.push(pathName + " (" + modeText + ")");
+                });
+                
+                items.push({
+                    icon: "folder-symbolic",
+                    title: i18n("File System Access"),
+                    description: i18n("Access to files: %1").arg(fsDetails.join(", "))
+                });
+            }
+            
+            // 7. Persistent Storage
+            if (persistent.length > 0) {
+                items.push({
+                    icon: "drive-harddisk-symbolic",
+                    title: i18n("Persistent Storage"),
+                    description: i18n("Saves persistent data in: %1").arg(persistent.join(", "))
+                });
+            }
+            
+            // 8. D-Bus System Integration
+            let sBus = perms["session-bus"] || {};
+            let sysBus = perms["system-bus"] || {};
+            let hasSession = (sBus.talk && sBus.talk.length > 0) || (sBus.own && sBus.own.length > 0);
+            let hasSystem = (sysBus.talk && sysBus.talk.length > 0) || (sysBus.own && sysBus.own.length > 0);
+            if (hasSession || hasSystem) {
+                let busDetails = [];
+                if (sBus.talk && sBus.talk.length > 0) {
+                    busDetails.push(i18n("Talks to session services: %1").arg(sBus.talk.join(", ")));
+                }
+                if (sBus.own && sBus.own.length > 0) {
+                    busDetails.push(i18n("Owns session services: %1").arg(sBus.own.join(", ")));
+                }
+                if (sysBus.talk && sysBus.talk.length > 0) {
+                    busDetails.push(i18n("Talks to system services: %1").arg(sysBus.talk.join(", ")));
+                }
+                if (sysBus.own && sysBus.own.length > 0) {
+                    busDetails.push(i18n("Owns system services: %1").arg(sysBus.own.join(", ")));
+                }
+                
+                items.push({
+                    icon: "applications-system-symbolic",
+                    title: i18n("System Integration"),
+                    description: i18n("Access to D-Bus services: %1").arg(busDetails.join("; "))
+                });
+            }
+            
+            // 9. SSH / GPG Agent
+            if (sockets.indexOf("ssh-auth") !== -1 || sockets.indexOf("gpg-agent") !== -1) {
+                let agents = [];
+                if (sockets.indexOf("ssh-auth") !== -1) agents.push("SSH");
+                if (sockets.indexOf("gpg-agent") !== -1) agents.push("GPG");
+                items.push({
+                    icon: "security-high-symbolic",
+                    title: i18n("Security Agent Access"),
+                    description: i18n("Access to authentication agent sockets: %1").arg(agents.join(", "))
+                });
+            }
+            
+            // 10. Other Sockets
+            let knownSockets = ["x11", "wayland", "fallback-x11", "pulseaudio", "ssh-auth", "gpg-agent", "network"];
+            let otherSockets = sockets.filter(function(s) { return knownSockets.indexOf(s) === -1; });
+            if (otherSockets.length > 0) {
+                items.push({
+                    icon: "preferences-system-network-symbolic",
+                    title: i18n("Other System Connections"),
+                    description: i18n("Accesses system sockets: %1").arg(otherSockets.join(", "))
+                });
+            }
+            
+            if (items.length === 0) {
+                return [{
+                    icon: "security-high-symbolic",
+                    title: i18n("No special permissions required (Fully Sandboxed)"),
+                    description: i18n("This application is fully sandboxed and isolated from your files, network, and devices.")
+                }];
+            }
+            return items;
         } catch(e) {
-            return i18n("Fully Sandboxed or permissions unavailable");
+            return [{
+                icon: "security-medium-symbolic",
+                title: i18n("Fully Sandboxed or permissions unavailable"),
+                description: i18n("The application is either fully sandboxed or its permissions could not be loaded.")
+            }];
         }
     }
 
@@ -443,7 +622,7 @@ Kirigami.ScrollablePage {
             Controls.Button {
                 id: permissionsBtn
                 text: i18n("Sandbox Permissions")
-                icon.name: "security-high"
+                icon.name: "security-high-symbolic"
                 Layout.fillWidth: page.isNarrow
                 Layout.preferredHeight: 40
                 onClicked: permissionsDialog.open()
@@ -794,7 +973,7 @@ Kirigami.ScrollablePage {
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
             Layout.topMargin: Kirigami.Units.largeSpacing
-            visible: !StoreController.loading && (ratingData.total > 0 || reviewsModel.count > 0)
+            visible: !StoreController.loading
         }
 
         // ── Reviews & Ratings ───────────────────────────────────────────
@@ -804,7 +983,7 @@ Kirigami.ScrollablePage {
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
             Layout.topMargin: Kirigami.Units.largeSpacing
-            visible: !StoreController.loading && (ratingData.total > 0 || reviewsModel.count > 0)
+            visible: !StoreController.loading
 
             RowLayout {
                 Layout.fillWidth: true
@@ -817,14 +996,35 @@ Kirigami.ScrollablePage {
                 Controls.Button {
                     text: i18n("Write a Review")
                     icon.name: "document-edit"
+                    enabled: !page.odrsLoading
                     onClicked: reviewDialog.open()
                 }
+            }
+
+            // ODRS Loading State
+            Controls.BusyIndicator {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: Kirigami.Units.largeSpacing
+                Layout.bottomMargin: Kirigami.Units.largeSpacing
+                running: page.odrsLoading
+                visible: page.odrsLoading
+            }
+
+            // No Reviews Placeholder
+            Kirigami.PlaceholderMessage {
+                Layout.fillWidth: true
+                Layout.topMargin: Kirigami.Units.largeSpacing
+                Layout.bottomMargin: Kirigami.Units.largeSpacing
+                text: i18n("No Reviews Yet")
+                explanation: i18n("Be the first to write a review for this application!")
+                icon.name: "document-edit"
+                visible: !page.odrsLoading && ratingData.total === 0 && reviewsModel.count === 0
             }
 
             // Rating Summary Card
             Components.RatingSummary {
                 Layout.fillWidth: true
-                visible: ratingData.total > 0
+                visible: !page.odrsLoading && ratingData.total > 0
                 star0: ratingData.star0 || 0
                 star1: ratingData.star1 || 0
                 star2: ratingData.star2 || 0
@@ -837,6 +1037,7 @@ Kirigami.ScrollablePage {
             // Reviews List
             Repeater {
                 model: reviewsModel
+                visible: !page.odrsLoading && reviewsModel.count > 0
                 delegate: Components.ReviewCard {
                     Layout.fillWidth: true
                     userName: model.userName
@@ -845,34 +1046,111 @@ Kirigami.ScrollablePage {
                     summary: model.summary
                     description: model.description
                     version: model.version
+                    reviewId: model.reviewId
+                    userHash: model.userHash
+                    karmaUp: model.karmaUp
+                    karmaDown: model.karmaDown
                 }
+            }
+
+            Controls.Button {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: Kirigami.Units.mediumSpacing
+                Layout.bottomMargin: Kirigami.Units.largeSpacing
+                text: i18n("Show More Reviews")
+                icon.name: "arrow-down"
+                visible: !page.odrsLoading && reviewsModel.count < page.allReviewsList.length
+                onClicked: loadMoreReviews()
             }
         }
     }
 
-    // ── Mock Review Submission Dialog ──────────────────────────────────
-    Kirigami.PromptDialog {
+    // ── Write a Review Dialog ──────────────────────────────────
+    Kirigami.Dialog {
         id: reviewDialog
         title: i18n("Write a Review")
-        standardButtons: Kirigami.Dialog.Close
+        standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+        width: Math.min(parent.width * 0.95, Kirigami.Units.gridUnit * 38)
+        height: Math.min(parent.height * 0.85, Kirigami.Units.gridUnit * 25)
 
-        ColumnLayout {
-            spacing: Kirigami.Units.mediumSpacing
+        onAccepted: {
+            if (summaryInput.text !== "" && descriptionInput.text !== "") {
+                StoreController.submitReview(
+                    page.appId,
+                    ratingRow.selectedRating,
+                    summaryInput.text,
+                    descriptionInput.text,
+                    "", // auto-detect version on backend
+                    "", // auto-detect distro on backend
+                    "", // auto-detect locale on backend
+                    anonymousToggle.checked
+                )
+                summaryInput.text = ""
+                descriptionInput.text = ""
+                ratingRow.selectedRating = 5
+            }
+        }
 
-            Kirigami.Icon {
-                source: "document-edit"
-                width: Kirigami.Units.iconSizes.huge
-                height: width
-                Layout.alignment: Qt.AlignHCenter
-                color: Kirigami.Theme.highlightColor
-                opacity: 0.8
+        Kirigami.FormLayout {
+            id: formLayout
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            // Rating Stars
+            RowLayout {
+                id: ratingRow
+                Kirigami.FormData.label: i18n("Rating:")
+                spacing: Kirigami.Units.smallSpacing
+                property int selectedRating: 5
+
+                Repeater {
+                    model: 5
+                    Kirigami.Icon {
+                        source: "rating"
+                        width: Kirigami.Units.iconSizes.medium
+                        height: width
+                        color: index < ratingRow.selectedRating ? Kirigami.Theme.highlightColor : Kirigami.Theme.disabledTextColor
+                        
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: ratingRow.selectedRating = index + 1
+                        }
+                    }
+                }
             }
 
-            Controls.Label {
-                text: i18n("Submitting reviews requires generating a unique identity hash with ODRS. This feature is currently in development and will be available in a future update.")
-                wrapMode: Text.WordWrap
-                Layout.maximumWidth: Kirigami.Units.gridUnit * 20
-                horizontalAlignment: Text.AlignHCenter
+            // Summary Field
+            Controls.TextField {
+                id: summaryInput
+                Kirigami.FormData.label: i18n("Title:")
+                placeholderText: i18n("One-line title of your review")
+                Layout.fillWidth: true
+            }
+
+            // Description Scrollable Area
+            Controls.ScrollView {
+                id: scrollView
+                Kirigami.FormData.label: i18n("Review:")
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.preferredHeight: Kirigami.Units.gridUnit * 12
+                
+                Controls.TextArea {
+                    id: descriptionInput
+                    placeholderText: i18n("Detailed review description")
+                    wrapMode: TextEdit.WordWrap
+                    width: scrollView.width
+                }
+            }
+
+            // Publish Anonymously Toggle
+            Controls.Switch {
+                id: anonymousToggle
+                Kirigami.FormData.label: i18n("Anonymous:")
+                checked: !SettingsController.is_authenticated
+                enabled: SettingsController.is_authenticated
             }
         }
     }
@@ -927,25 +1205,79 @@ Kirigami.ScrollablePage {
         id: permissionsDialog
         title: i18n("Application Permissions")
         standardButtons: Kirigami.Dialog.Close
+        width: Math.min(parent.width * 0.95, Kirigami.Units.gridUnit * 28)
 
         ColumnLayout {
             spacing: Kirigami.Units.mediumSpacing
-
-            Kirigami.Icon {
-                source: "security-high"
-                width: Kirigami.Units.iconSizes.huge
-                height: width
-                Layout.alignment: Qt.AlignHCenter
-                color: Kirigami.Theme.highlightColor
-                opacity: 0.8
-            }
+            Layout.fillWidth: true
 
             Controls.Label {
-                text: formatPermissions(StoreController.detail_permissions_json)
-                textFormat: Text.RichText
+                text: i18n("This application has permissions to access the following:")
+                color: Kirigami.Theme.disabledTextColor
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                Layout.maximumWidth: Kirigami.Units.gridUnit * 25
-                horizontalAlignment: Text.AlignLeft
+                visible: {
+                    let items = getPermissionItems(StoreController.detail_permissions_json);
+                    if (items.length === 0) return false;
+                    if (items.length === 1 && (items[0].icon === "security-high-symbolic" || items[0].icon === "security-medium-symbolic")) return false;
+                    return true;
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: Kirigami.Units.mediumSpacing
+                spacing: Kirigami.Units.smallSpacing
+
+                Repeater {
+                    model: getPermissionItems(StoreController.detail_permissions_json)
+
+                    delegate: ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: Kirigami.Units.smallSpacing
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Kirigami.Units.mediumSpacing
+
+                            Kirigami.Icon {
+                                source: modelData.icon
+                                width: Kirigami.Units.iconSizes.small
+                                height: width
+                                Layout.alignment: Qt.AlignVCenter
+                                color: Kirigami.Theme.textColor
+                                isMask: true
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 1
+
+                                Controls.Label {
+                                    text: modelData.title
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Controls.Label {
+                                    text: modelData.description
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    color: Kirigami.Theme.disabledTextColor
+                                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                }
+                            }
+                        }
+
+                        Kirigami.Separator {
+                            Layout.fillWidth: true
+                            visible: index < getPermissionItems(StoreController.detail_permissions_json).length - 1
+                            Layout.topMargin: Kirigami.Units.smallSpacing
+                            Layout.bottomMargin: Kirigami.Units.smallSpacing
+                        }
+                    }
+                }
             }
         }
     }

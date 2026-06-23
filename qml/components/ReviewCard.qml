@@ -6,6 +6,7 @@ import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ki18n
+import com.kiosque
 
 Kirigami.ShadowedRectangle {
     id: root
@@ -16,6 +17,10 @@ Kirigami.ShadowedRectangle {
     property string summary: ""
     property string description: ""
     property string version: ""
+    property var reviewId: 0
+    property string userHash: ""
+    property int karmaUp: 0
+    property int karmaDown: 0
 
     radius: 8
     color: Kirigami.Theme.backgroundColor
@@ -122,6 +127,76 @@ Kirigami.ShadowedRectangle {
             opacity: 0.9
             lineHeight: 1.2
             visible: root.description !== ""
+        }
+
+        // ── Reviews Actions Row ──
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: Kirigami.Units.smallSpacing
+            spacing: Kirigami.Units.mediumSpacing
+
+            // Upvote Button
+            Controls.Button {
+                id: upvoteButton
+                icon.name: "thumb-up"
+                text: root.karmaUp > 0 ? root.karmaUp : ""
+                flat: true
+                enabled: root.userHash !== SettingsController.odrs_user_hash
+                onClicked: StoreController.upvoteReview(root.reviewId)
+                Controls.ToolTip.text: i18n("Helpful")
+                Controls.ToolTip.visible: hovered
+            }
+
+            // Downvote Button
+            Controls.Button {
+                id: downvoteButton
+                icon.name: "thumb-down"
+                text: root.karmaDown > 0 ? root.karmaDown : ""
+                flat: true
+                enabled: root.userHash !== SettingsController.odrs_user_hash
+                onClicked: StoreController.downvoteReview(root.reviewId)
+                Controls.ToolTip.text: i18n("Unhelpful")
+                Controls.ToolTip.visible: hovered
+            }
+
+            // Report Button
+            Controls.Button {
+                id: reportButton
+                icon.name: "flag"
+                flat: true
+                enabled: root.userHash !== SettingsController.odrs_user_hash
+                onClicked: StoreController.dismissReview(root.reviewId)
+                Controls.ToolTip.text: i18n("Report Review")
+                Controls.ToolTip.visible: hovered
+            }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            // Delete Review Button
+            Controls.Button {
+                id: deleteButton
+                icon.name: "edit-delete"
+                text: i18n("Delete")
+                flat: true
+                visible: root.userHash === SettingsController.odrs_user_hash && SettingsController.is_authenticated
+                onClicked: deleteConfirmDialog.open()
+            }
+        }
+    }
+
+    // Delete confirmation dialog
+    Kirigami.Dialog {
+        id: deleteConfirmDialog
+        title: i18n("Delete Review?")
+        standardButtons: Kirigami.Dialog.Yes | Kirigami.Dialog.No
+        onAccepted: StoreController.removeReview(root.reviewId)
+        
+        Controls.Label {
+            text: i18n("Are you sure you want to permanently delete your review?")
+            wrapMode: Text.WordWrap
+            width: Kirigami.Units.gridUnit * 15
         }
     }
 }

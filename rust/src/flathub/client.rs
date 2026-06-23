@@ -7,7 +7,7 @@ use std::time::Duration;
 /// Returns a shared, long-lived HTTP client.
 /// Reusing one `Client` lets reqwest maintain a connection pool and avoid
 /// the overhead of TLS negotiation on every request.
-fn shared_client() -> &'static Client {
+pub(crate) fn shared_client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         Client::builder()
