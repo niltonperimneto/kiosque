@@ -397,45 +397,24 @@ Kirigami.ScrollablePage {
             Layout.rightMargin: Kirigami.Units.largeSpacing
             visible: !StoreController.loading
 
-            // App Icon with Rounded Glow Card
-            Kirigami.ShadowedRectangle {
+            // App Icon
+            Image {
+                id: appIconImg
                 Layout.alignment: page.isNarrow ? Qt.AlignHCenter : Qt.AlignVCenter
-                Layout.preferredWidth: 128
-                Layout.preferredHeight: 128
-                radius: 20
-                color: Kirigami.Theme.alternateBackgroundColor
-                shadow.size: iconHover.hovered ? 12 : 6
-                shadow.color: iconHover.hovered
-                    ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.18)
-                    : Qt.rgba(0, 0, 0, 0.08)
-                border.width: 1
-                border.color: iconHover.hovered ? Kirigami.Theme.highlightColor : Qt.rgba(0, 0, 0, 0.1)
-                scale: iconHover.hovered ? 1.02 : 1.0
+                Layout.preferredWidth: Kirigami.Units.iconSizes.enormous
+                Layout.preferredHeight: Kirigami.Units.iconSizes.enormous
+                source: StoreController.detail_icon_url
+                asynchronous: true
+                fillMode: Image.PreserveAspectFit
 
-                Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                Behavior on shadow.size { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-
-                Image {
-                    id: appIconImg
-                    anchors.fill: parent
-                    anchors.margins: Kirigami.Units.largeSpacing
-                    source: StoreController.detail_icon_url
-                    asynchronous: true
-                    fillMode: Image.PreserveAspectFit
-
-                    // Placeholder while icon loads
-                    Kirigami.Icon {
-                        anchors.centerIn: parent
-                        width: 64
-                        height: 64
-                        source: "application-x-executable"
-                        visible: parent.status !== Image.Ready
-                        opacity: 0.4
-                    }
-                }
-
-                HoverHandler {
-                    id: iconHover
+                // Placeholder while icon loads or if it fails
+                Kirigami.Icon {
+                    anchors.centerIn: parent
+                    width: Kirigami.Units.iconSizes.huge
+                    height: width
+                    source: "application-x-executable"
+                    visible: appIconImg.status !== Image.Ready
+                    opacity: 0.4
                 }
             }
 
@@ -444,98 +423,18 @@ Kirigami.ScrollablePage {
                 Layout.fillWidth: true
                 Layout.alignment: page.isNarrow ? Qt.AlignHCenter : Qt.AlignVCenter
 
-                GridLayout {
-                    columns: page.isNarrow ? 1 : 2
-                    columnSpacing: Kirigami.Units.mediumSpacing
-                    rowSpacing: Kirigami.Units.smallSpacing
+                Kirigami.Heading {
+                    level: 1
+                    text: StoreController.detail_name
                     Layout.fillWidth: true
-
-                    Kirigami.Heading {
-                        level: 1
-                        text: StoreController.detail_name
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                        horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
-                    }
-
-                    RowLayout {
-                        spacing: Kirigami.Units.smallSpacing
-                        Layout.alignment: page.isNarrow ? Qt.AlignHCenter : (Qt.AlignVCenter | Qt.AlignRight)
-
-                        // License Badge
-                        Rectangle {
-                            id: licenseBadge
-                            visible: StoreController.detail_license !== ""
-                            radius: 6
-                            color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.12)
-                            border.color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.3)
-                            border.width: 1
-                            implicitWidth: licenseLabel.implicitWidth + Kirigami.Units.mediumSpacing
-                            implicitHeight: licenseLabel.implicitHeight + Kirigami.Units.smallSpacing
-
-                            Controls.Label {
-                                id: licenseLabel
-                                anchors.centerIn: parent
-                                text: StoreController.detail_license
-                                font.bold: true
-                                font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
-                                color: Kirigami.Theme.highlightColor
-                            }
-                        }
-
-                        // Windowing System Badge (Wayland/X11/CLI)
-                        Rectangle {
-                            id: envBadge
-                            property string envText: getWindowingSystem(StoreController.detail_permissions_json)
-                            visible: envText !== ""
-                            radius: 6
-                            color: {
-                                let baseColor = Kirigami.Theme.disabledTextColor;
-                                if (envText.indexOf("Wayland") !== -1) {
-                                    baseColor = Kirigami.Theme.positiveTextColor;
-                                } else if (envText === "X11") {
-                                    baseColor = Kirigami.Theme.neutralTextColor;
-                                }
-                                return Qt.rgba(baseColor.r, baseColor.g, baseColor.b, 0.12);
-                            }
-                            border.color: {
-                                let baseColor = Kirigami.Theme.disabledTextColor;
-                                if (envText.indexOf("Wayland") !== -1) {
-                                    baseColor = Kirigami.Theme.positiveTextColor;
-                                } else if (envText === "X11") {
-                                    baseColor = Kirigami.Theme.neutralTextColor;
-                                }
-                                return Qt.rgba(baseColor.r, baseColor.g, baseColor.b, 0.3);
-                            }
-                            border.width: 1
-                            implicitWidth: envLabel.implicitWidth + Kirigami.Units.mediumSpacing
-                            implicitHeight: envLabel.implicitHeight + Kirigami.Units.smallSpacing
-
-                            Controls.Label {
-                                id: envLabel
-                                anchors.centerIn: parent
-                                text: parent.envText
-                                font.bold: true
-                                font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
-                                color: {
-                                    if (parent.envText.indexOf("Wayland") !== -1) {
-                                        return Kirigami.Theme.positiveTextColor;
-                                    } else if (parent.envText === "X11") {
-                                        return Kirigami.Theme.neutralTextColor;
-                                    } else {
-                                        return Kirigami.Theme.disabledTextColor;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
                 }
 
                 Controls.Label {
                     text: StoreController.detail_developer !== "" ? StoreController.detail_developer : i18n("Unknown Developer")
                     color: Kirigami.Theme.disabledTextColor
                     Layout.fillWidth: true
-                    font.bold: true
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
                 }
 
@@ -543,9 +442,33 @@ Kirigami.ScrollablePage {
                     text: StoreController.detail_summary
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    opacity: 0.85
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.05
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
+                }
+
+                // Metadata tags: license & windowing system
+                Flow {
+                    Layout.fillWidth: true
+                    Layout.topMargin: Kirigami.Units.smallSpacing
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Kirigami.Chip {
+                        visible: StoreController.detail_license !== ""
+                        text: StoreController.detail_license
+                        icon.name: "license"
+                        checkable: false
+                        closable: false
+                    }
+
+                    Kirigami.Chip {
+                        property string envText: getWindowingSystem(StoreController.detail_permissions_json)
+                        visible: envText !== ""
+                        text: envText
+                        icon.name: envText.indexOf("Wayland") !== -1 ? "preferences-desktop-display"
+                                 : envText === "X11" ? "preferences-desktop-display"
+                                 : "utilities-terminal"
+                        checkable: false
+                        closable: false
+                    }
                 }
             }
         }
@@ -562,8 +485,8 @@ Kirigami.ScrollablePage {
             StackLayout {
                 currentIndex: StoreController.install_progress > 0.0 && StoreController.install_progress < 1.0 ? 1 : 0
                 Layout.fillWidth: page.isNarrow
-                Layout.preferredWidth: page.isNarrow ? -1 : 260
-                Layout.preferredHeight: 40
+                Layout.preferredWidth: page.isNarrow ? -1 : Kirigami.Units.gridUnit * 13
+                Layout.preferredHeight: Kirigami.Units.gridUnit * 2
 
                 // 0: Normal Button
                 Controls.Button {
@@ -624,7 +547,7 @@ Kirigami.ScrollablePage {
                 text: i18n("Sandbox Permissions")
                 icon.name: "security-high-symbolic"
                 Layout.fillWidth: page.isNarrow
-                Layout.preferredHeight: 40
+                Layout.preferredHeight: Kirigami.Units.gridUnit * 2
                 onClicked: permissionsDialog.open()
             }
         }
@@ -676,27 +599,19 @@ Kirigami.ScrollablePage {
                         id: screenshotCard
                         anchors.fill: parent
                         anchors.margins: Kirigami.Units.smallSpacing
-                        radius: 12
+                        radius: Kirigami.Units.cornerRadius
                         color: Kirigami.Theme.alternateBackgroundColor
 
-                        // Glowing soft shadow using highlight color on hover
-                        shadow.size: screenshotMouseArea.containsMouse ? 18 : 8
-                        shadow.color: screenshotMouseArea.containsMouse
-                            ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.22)
-                            : Qt.rgba(0, 0, 0, 0.12)
-                        shadow.yOffset: screenshotMouseArea.containsMouse ? 4 : 2
+                        shadow.size: Kirigami.Units.gridUnit / 2
+                        shadow.color: Qt.rgba(0, 0, 0, 0.1)
+                        shadow.yOffset: 1
 
                         border.width: 1
                         border.color: screenshotMouseArea.containsMouse
                             ? Kirigami.Theme.highlightColor
-                            : Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.15)
+                            : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
 
-                        scale: screenshotMouseArea.containsMouse ? 1.015 : 1.0
-
-                        Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                        Behavior on shadow.size { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                        Behavior on shadow.yOffset { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                        Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
 
                         Image {
                             id: screenshotImg
@@ -712,16 +627,6 @@ Kirigami.ScrollablePage {
                                 running: parent.status === Image.Loading
                                 visible: parent.status === Image.Loading
                             }
-                        }
-
-                        // Overlay to enforce rounded corners visual on images
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: parent.radius
-                            color: "transparent"
-                            border.width: screenshotCard.border.width
-                            border.color: screenshotCard.border.color
-                            z: 1
                         }
 
                         MouseArea {
@@ -744,125 +649,54 @@ Kirigami.ScrollablePage {
             }
 
             // Left Navigation Arrow Button
-            Item {
-                id: leftScreenshotArrow
+            Controls.RoundButton {
                 anchors.left: parent.left
-                anchors.leftMargin: Kirigami.Units.mediumSpacing
+                anchors.leftMargin: Kirigami.Units.largeSpacing
                 anchors.verticalCenter: parent.verticalCenter
-                width: 38
-                height: 38
                 z: 10
+                icon.name: "go-previous-symbolic"
                 visible: screenshotsListView.contentX > 10
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 19
-                    color: leftScreenshotArrowMouse.containsMouse
-                        ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.25)
-                        : Qt.rgba(Kirigami.Theme.backgroundColor.r, Kirigami.Theme.backgroundColor.g, Kirigami.Theme.backgroundColor.b, 0.7)
-                    border.width: 1
-                    border.color: leftScreenshotArrowMouse.containsMouse
-                        ? Kirigami.Theme.highlightColor
-                        : Qt.rgba(Kirigami.Theme.disabledTextColor.r, Kirigami.Theme.disabledTextColor.g, Kirigami.Theme.disabledTextColor.b, 0.3)
-
-                    Behavior on color { ColorAnimation { duration: 150 } }
-                    Behavior on border.color { ColorAnimation { duration: 150 } }
-
-                    Kirigami.Icon {
-                        anchors.centerIn: parent
-                        width: 20
-                        height: 20
-                        source: "go-previous-symbolic"
-                        color: Kirigami.Theme.textColor
-                    }
+                onClicked: {
+                    let step = Kirigami.Units.gridUnit * 24;
+                    screenshotsListView.contentX = Math.max(screenshotsListView.contentX - step, 0);
                 }
-
-                MouseArea {
-                    id: leftScreenshotArrowMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        let step = Kirigami.Units.gridUnit * 24;
-                        screenshotsListView.contentX = Math.max(screenshotsListView.contentX - step, 0);
-                    }
-                }
-
-                scale: leftScreenshotArrowMouse.containsMouse ? 1.05 : 1.0
-                Behavior on scale { NumberAnimation { duration: 150 } }
             }
 
             // Right Navigation Arrow Button
-            Item {
-                id: rightScreenshotArrow
+            Controls.RoundButton {
                 anchors.right: parent.right
-                anchors.rightMargin: Kirigami.Units.mediumSpacing
+                anchors.rightMargin: Kirigami.Units.largeSpacing
                 anchors.verticalCenter: parent.verticalCenter
-                width: 38
-                height: 38
                 z: 10
+                icon.name: "go-next-symbolic"
                 visible: screenshotsListView.contentX < (screenshotsListView.contentWidth - screenshotsListView.width - 10)
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 19
-                    color: rightScreenshotArrowMouse.containsMouse
-                        ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.25)
-                        : Qt.rgba(Kirigami.Theme.backgroundColor.r, Kirigami.Theme.backgroundColor.g, Kirigami.Theme.backgroundColor.b, 0.7)
-                    border.width: 1
-                    border.color: rightScreenshotArrowMouse.containsMouse
-                        ? Kirigami.Theme.highlightColor
-                        : Qt.rgba(Kirigami.Theme.disabledTextColor.r, Kirigami.Theme.disabledTextColor.g, Kirigami.Theme.disabledTextColor.b, 0.3)
-
-                    Behavior on color { ColorAnimation { duration: 150 } }
-                    Behavior on border.color { ColorAnimation { duration: 150 } }
-
-                    Kirigami.Icon {
-                        anchors.centerIn: parent
-                        width: 20
-                        height: 20
-                        source: "go-next-symbolic"
-                        color: Kirigami.Theme.textColor
-                    }
+                onClicked: {
+                    let step = Kirigami.Units.gridUnit * 24;
+                    let maxContentX = screenshotsListView.contentWidth - screenshotsListView.width;
+                    screenshotsListView.contentX = Math.min(screenshotsListView.contentX + step, maxContentX);
                 }
-
-                MouseArea {
-                    id: rightScreenshotArrowMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        let step = Kirigami.Units.gridUnit * 24;
-                        let maxContentX = screenshotsListView.contentWidth - screenshotsListView.width;
-                        screenshotsListView.contentX = Math.min(screenshotsListView.contentX + step, maxContentX);
-                    }
-                }
-
-                scale: rightScreenshotArrowMouse.containsMouse ? 1.05 : 1.0
-                Behavior on scale { NumberAnimation { duration: 150 } }
             }
         }
 
         // ── Description ─────────────────────────────────────────────────
-        Kirigami.ShadowedRectangle {
-            radius: 12
-            color: Kirigami.Theme.alternateBackgroundColor
-            border.width: 1
-            border.color: Qt.rgba(0, 0, 0, 0.05)
+        ColumnLayout {
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
+            spacing: Kirigami.Units.smallSpacing
             visible: !StoreController.loading && StoreController.detail_description !== ""
-            implicitHeight: descText.implicitHeight + Kirigami.Units.largeSpacing * 2
+
+            Kirigami.Heading {
+                level: 3
+                text: i18n("Description")
+            }
 
             Controls.Label {
                 id: descText
-                anchors.fill: parent
-                anchors.margins: Kirigami.Units.largeSpacing
+                Layout.fillWidth: true
                 text: StoreController.detail_description
                 textFormat: Text.RichText
                 wrapMode: Text.WordWrap
-                lineHeight: 1.2
                 onLinkActivated: (link) => Qt.openUrlExternally(link)
             }
         }
@@ -1437,7 +1271,7 @@ Kirigami.ScrollablePage {
             Controls.Label {
                 text: i18n("This application has permissions to access the following:")
                 color: Kirigami.Theme.disabledTextColor
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                font: Kirigami.Theme.smallFont
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: {
@@ -1488,7 +1322,7 @@ Kirigami.ScrollablePage {
                                     Layout.fillWidth: true
                                     wrapMode: Text.WordWrap
                                     color: Kirigami.Theme.disabledTextColor
-                                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                    font: Kirigami.Theme.smallFont
                                 }
                             }
                         }
