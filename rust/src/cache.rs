@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::OnceLock;
-use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use std::time::Duration;
+use moka::future::Cache;
 
 use crate::flathub::types::{AppDetails, FlathubApp, AppStats, GlobalStats, LinterExceptions};
 use crate::flathub::odrs::{OdrsRatings, OdrsReview};
@@ -25,277 +25,200 @@ const STATS_TTL: Duration = Duration::from_secs(60 * 60); // 1 hour
 const EXCEPTIONS_TTL: Duration = Duration::from_secs(24 * 60 * 60); // 24 hours
 
 /// How long the locally-installed apps list remains valid.
-/// Kept short because installs/uninstalls mutate this frequently.
 const INSTALLED_TTL: Duration = Duration::from_secs(30); // 30 seconds
-
-// ── Cache entry wrapper ─────────────────────────────────────────────────────
-
-struct CacheEntry<T> {
-    value: T,
-    cached_at: Instant,
-}
-
-impl<T> CacheEntry<T> {
-    fn new(value: T) -> Self {
-        Self {
-            value,
-            cached_at: Instant::now(),
-        }
-    }
-
-    fn is_expired(&self, ttl: Duration) -> bool {
-        self.cached_at.elapsed() > ttl
-    }
-}
 
 // ── Main application cache ──────────────────────────────────────────────────
 
 /// Thread-safe, TTL-based in-memory cache for Flathub API responses and
-/// local Flatpak state. Accessed as a process-wide singleton via [`app_cache()`].
+/// local Flatpak state. Leverages Moka for concurrent LFU eviction and lock-free reads.
 pub struct AppCache {
-    /// Flathub collection responses, keyed by endpoint (e.g. "popular",
-    /// "category/Game"). Each entry stores the full `Vec<FlathubApp>`.
-    collections: RwLock<HashMap<String, CacheEntry<Vec<FlathubApp>>>>,
-
-    /// Individual app detail responses, keyed by app ID.
-    details: RwLock<HashMap<String, CacheEntry<AppDetails>>>,
-
-    /// ODRS Ratings, keyed by app ID.
-    odrs_ratings: RwLock<HashMap<String, CacheEntry<OdrsRatings>>>,
-
-    /// ODRS Reviews, keyed by app ID.
-    odrs_reviews: RwLock<HashMap<String, CacheEntry<Vec<OdrsReview>>>>,
-
-    /// Parsed list of locally installed Flatpak apps.
-    installed_list: RwLock<Option<CacheEntry<Vec<FlatpakJsonApp>>>>,
-
-    /// Derived set of installed app IDs for fast `is_installed` lookups.
-    installed_set: RwLock<Option<CacheEntry<HashSet<String>>>>,
-
-    /// App statistics, keyed by app ID.
-    app_stats: RwLock<HashMap<String, CacheEntry<AppStats>>>,
-
-    /// Global statistics.
-    global_stats: RwLock<Option<CacheEntry<GlobalStats>>>,
-
-    /// Linter exceptions, keyed by app ID.
-    exceptions: RwLock<HashMap<String, CacheEntry<LinterExceptions>>>,
+    collections: Cache<String, Vec<FlathubApp>>,
+    details: Cache<String, AppDetails>,
+    odrs_ratings: Cache<String, OdrsRatings>,
+    odrs_reviews: Cache<String, Vec<OdrsReview>>,
+    installed_list: Cache<(), Vec<FlatpakJsonApp>>,
+    installed_set: Cache<(), HashSet<String>>,
+    app_stats: Cache<String, AppStats>,
+    global_stats: Cache<(), GlobalStats>,
+    exceptions: Cache<String, LinterExceptions>,
 }
 
 impl AppCache {
     fn new() -> Self {
         Self {
-            collections: RwLock::new(HashMap::new()),
-            details: RwLock::new(HashMap::new()),
-            odrs_ratings: RwLock::new(HashMap::new()),
-            odrs_reviews: RwLock::new(HashMap::new()),
-            installed_list: RwLock::new(None),
-            installed_set: RwLock::new(None),
-            app_stats: RwLock::new(HashMap::new()),
-            global_stats: RwLock::new(None),
-            exceptions: RwLock::new(HashMap::new()),
+            collections: Cache::builder().time_to_live(COLLECTION_TTL).max_capacity(100).build(),
+            details: Cache::builder().time_to_live(DETAILS_TTL).max_capacity(100).build(),
+            odrs_ratings: Cache::builder().time_to_live(ODRS_TTL).max_capacity(100).build(),
+            odrs_reviews: Cache::builder().time_to_live(ODRS_TTL).max_capacity(100).build(),
+            installed_list: Cache::builder().time_to_live(INSTALLED_TTL).max_capacity(1).build(),
+            installed_set: Cache::builder().time_to_live(INSTALLED_TTL).max_capacity(1).build(),
+            app_stats: Cache::builder().time_to_live(STATS_TTL).max_capacity(200).build(),
+            global_stats: Cache::builder().time_to_live(STATS_TTL).max_capacity(1).build(),
+            exceptions: Cache::builder().time_to_live(EXCEPTIONS_TTL).max_capacity(200).build(),
         }
     }
 
     // ── Collection cache ────────────────────────────────────────────────
 
-    /// Try to get a cached collection by key. Returns `None` on miss or expiry.
     pub async fn get_collection(&self, key: &str) -> Option<Vec<FlathubApp>> {
-        let map = self.collections.read().await;
-        match map.get(key) {
-            Some(entry) if !entry.is_expired(COLLECTION_TTL) => {
-                eprintln!("[kiosque] CACHE HIT collection \"{}\"", key);
-                Some(entry.value.clone())
-            }
-            _ => None,
+        if let Some(value) = self.collections.get(key).await {
+            eprintln!("[kiosque] CACHE HIT collection \"{}\"", key);
+            Some(value)
+        } else {
+            None
         }
     }
 
-    /// Store a collection response in the cache.
     pub async fn put_collection(&self, key: String, value: Vec<FlathubApp>) {
         eprintln!("[kiosque] CACHE STORE collection \"{}\" ({} items)", key, value.len());
-        let mut map = self.collections.write().await;
-        map.insert(key, CacheEntry::new(value));
+        self.collections.insert(key, value).await;
     }
 
     // ── Details cache ───────────────────────────────────────────────────
 
-    /// Try to get cached app details by app ID.
     pub async fn get_details(&self, app_id: &str) -> Option<AppDetails> {
-        let map = self.details.read().await;
-        match map.get(app_id) {
-            Some(entry) if !entry.is_expired(DETAILS_TTL) => {
-                eprintln!("[kiosque] CACHE HIT details \"{}\"", app_id);
-                Some(entry.value.clone())
-            }
-            _ => None,
+        if let Some(value) = self.details.get(app_id).await {
+            eprintln!("[kiosque] CACHE HIT details \"{}\"", app_id);
+            Some(value)
+        } else {
+            None
         }
     }
 
-    /// Store app details in the cache.
     pub async fn put_details(&self, app_id: String, value: AppDetails) {
         eprintln!("[kiosque] CACHE STORE details \"{}\"", app_id);
-        let mut map = self.details.write().await;
-        map.insert(app_id, CacheEntry::new(value));
+        self.details.insert(app_id, value).await;
     }
+
     // ── ODRS cache ──────────────────────────────────────────────────────
 
     pub async fn get_odrs_ratings(&self, app_id: &str) -> Option<OdrsRatings> {
-        let map = self.odrs_ratings.read().await;
-        match map.get(app_id) {
-            Some(entry) if !entry.is_expired(ODRS_TTL) => {
-                eprintln!("[kiosque] CACHE HIT odrs_ratings \"{}\"", app_id);
-                Some(entry.value.clone())
-            }
-            _ => None,
+        if let Some(value) = self.odrs_ratings.get(app_id).await {
+            eprintln!("[kiosque] CACHE HIT odrs_ratings \"{}\"", app_id);
+            Some(value)
+        } else {
+            None
         }
     }
 
     pub async fn put_odrs_ratings(&self, app_id: String, value: OdrsRatings) {
         eprintln!("[kiosque] CACHE STORE odrs_ratings \"{}\"", app_id);
-        let mut map = self.odrs_ratings.write().await;
-        map.insert(app_id, CacheEntry::new(value));
+        self.odrs_ratings.insert(app_id, value).await;
     }
 
     pub async fn get_odrs_reviews(&self, app_id: &str) -> Option<Vec<OdrsReview>> {
-        let map = self.odrs_reviews.read().await;
-        match map.get(app_id) {
-            Some(entry) if !entry.is_expired(ODRS_TTL) => {
-                eprintln!("[kiosque] CACHE HIT odrs_reviews \"{}\" ({} reviews)", app_id, entry.value.len());
-                Some(entry.value.clone())
-            }
-            _ => None,
+        if let Some(value) = self.odrs_reviews.get(app_id).await {
+            eprintln!("[kiosque] CACHE HIT odrs_reviews \"{}\" ({} reviews)", app_id, value.len());
+            Some(value)
+        } else {
+            None
         }
     }
 
     pub async fn put_odrs_reviews(&self, app_id: String, value: Vec<OdrsReview>) {
         eprintln!("[kiosque] CACHE STORE odrs_reviews \"{}\" ({} reviews)", app_id, value.len());
-        let mut map = self.odrs_reviews.write().await;
-        map.insert(app_id, CacheEntry::new(value));
+        self.odrs_reviews.insert(app_id, value).await;
     }
 
     // ── Stats cache ─────────────────────────────────────────────────────
 
     pub async fn get_app_stats(&self, app_id: &str) -> Option<AppStats> {
-        let map = self.app_stats.read().await;
-        match map.get(app_id) {
-            Some(entry) if !entry.is_expired(STATS_TTL) => {
-                eprintln!("[kiosque] CACHE HIT app_stats \"{}\"", app_id);
-                Some(entry.value.clone())
-            }
-            _ => None,
+        if let Some(value) = self.app_stats.get(app_id).await {
+            eprintln!("[kiosque] CACHE HIT app_stats \"{}\"", app_id);
+            Some(value)
+        } else {
+            None
         }
     }
 
     pub async fn put_app_stats(&self, app_id: String, value: AppStats) {
         eprintln!("[kiosque] CACHE STORE app_stats \"{}\"", app_id);
-        let mut map = self.app_stats.write().await;
-        map.insert(app_id, CacheEntry::new(value));
+        self.app_stats.insert(app_id, value).await;
     }
 
     pub async fn get_global_stats(&self) -> Option<GlobalStats> {
-        let guard = self.global_stats.read().await;
-        match guard.as_ref() {
-            Some(entry) if !entry.is_expired(STATS_TTL) => {
-                eprintln!("[kiosque] CACHE HIT global_stats");
-                Some(entry.value.clone())
-            }
-            _ => None,
+        if let Some(value) = self.global_stats.get(&()).await {
+            eprintln!("[kiosque] CACHE HIT global_stats");
+            Some(value)
+        } else {
+            None
         }
     }
 
     pub async fn put_global_stats(&self, value: GlobalStats) {
         eprintln!("[kiosque] CACHE STORE global_stats");
-        let mut guard = self.global_stats.write().await;
-        *guard = Some(CacheEntry::new(value));
+        self.global_stats.insert((), value).await;
     }
 
     // ── Exceptions cache ────────────────────────────────────────────────
 
     pub async fn get_exceptions(&self, app_id: &str) -> Option<LinterExceptions> {
-        let map = self.exceptions.read().await;
-        match map.get(app_id) {
-            Some(entry) if !entry.is_expired(EXCEPTIONS_TTL) => {
-                eprintln!("[kiosque] CACHE HIT exceptions \"{}\"", app_id);
-                Some(entry.value.clone())
-            }
-            _ => None,
+        if let Some(value) = self.exceptions.get(app_id).await {
+            eprintln!("[kiosque] CACHE HIT exceptions \"{}\"", app_id);
+            Some(value)
+        } else {
+            None
         }
     }
 
     pub async fn put_exceptions(&self, app_id: String, value: LinterExceptions) {
         eprintln!("[kiosque] CACHE STORE exceptions \"{}\"", app_id);
-        let mut map = self.exceptions.write().await;
-        map.insert(app_id, CacheEntry::new(value));
+        self.exceptions.insert(app_id, value).await;
     }
-
 
     // ── Installed list cache ────────────────────────────────────────────
 
-    /// Try to get the cached installed apps list.
     pub async fn get_installed_list(&self) -> Option<Vec<FlatpakJsonApp>> {
-        let guard = self.installed_list.read().await;
-        match guard.as_ref() {
-            Some(entry) if !entry.is_expired(INSTALLED_TTL) => {
-                eprintln!("[kiosque] CACHE HIT installed_list ({} apps)", entry.value.len());
-                Some(entry.value.clone())
-            }
-            _ => None,
+        if let Some(value) = self.installed_list.get(&()).await {
+            eprintln!("[kiosque] CACHE HIT installed_list ({} apps)", value.len());
+            Some(value)
+        } else {
+            None
         }
     }
 
-    /// Store the installed apps list and rebuild the installed set.
     pub async fn put_installed_list(&self, apps: Vec<FlatpakJsonApp>) {
         eprintln!("[kiosque] CACHE STORE installed_list ({} apps)", apps.len());
-
-        // Build the ID set from the list
         let id_set: HashSet<String> = apps.iter()
             .map(|app| app.application_id.clone())
             .collect();
 
-        {
-            let mut guard = self.installed_list.write().await;
-            *guard = Some(CacheEntry::new(apps));
-        }
-        {
-            let mut guard = self.installed_set.write().await;
-            *guard = Some(CacheEntry::new(id_set));
-        }
+        self.installed_list.insert((), apps).await;
+        self.installed_set.insert((), id_set).await;
     }
 
-    /// Check whether a specific app ID is in the cached installed set.
-    /// Returns `None` if the cache is empty or expired (caller should
-    /// fall back to the CLI check).
     pub async fn is_installed(&self, app_id: &str) -> Option<bool> {
-        let guard = self.installed_set.read().await;
-        match guard.as_ref() {
-            Some(entry) if !entry.is_expired(INSTALLED_TTL) => {
-                let result = entry.value.contains(app_id);
-                eprintln!("[kiosque] CACHE HIT is_installed(\"{}\") = {}", app_id, result);
-                Some(result)
-            }
-            _ => None,
+        if let Some(set) = self.installed_set.get(&()).await {
+            let result = set.contains(app_id);
+            eprintln!("[kiosque] CACHE HIT is_installed(\"{}\") = {}", app_id, result);
+            Some(result)
+        } else {
+            None
         }
     }
 
-    /// Invalidate the installed list and set caches. Called after
-    /// install/uninstall operations to force a fresh fetch on next access.
     pub async fn invalidate_installed(&self) {
         eprintln!("[kiosque] CACHE INVALIDATE installed_list + installed_set");
-        {
-            let mut guard = self.installed_list.write().await;
-            *guard = None;
-        }
-        {
-            let mut guard = self.installed_set.write().await;
-            *guard = None;
-        }
+        self.installed_list.invalidate(&()).await;
+        self.installed_set.invalidate(&()).await;
+    }
+
+    pub async fn clear(&self) {
+        eprintln!("[kiosque] CACHE CLEAR: Invalidate all moka cache entries");
+        self.collections.invalidate_all();
+        self.details.invalidate_all();
+        self.odrs_ratings.invalidate_all();
+        self.odrs_reviews.invalidate_all();
+        self.installed_list.invalidate_all();
+        self.installed_set.invalidate_all();
+        self.app_stats.invalidate_all();
+        self.global_stats.invalidate_all();
+        self.exceptions.invalidate_all();
     }
 }
 
 // ── Singleton accessor ──────────────────────────────────────────────────────
 
-/// Returns a reference to the global application cache.
 pub fn app_cache() -> &'static AppCache {
     static CACHE: OnceLock<AppCache> = OnceLock::new();
     CACHE.get_or_init(AppCache::new)

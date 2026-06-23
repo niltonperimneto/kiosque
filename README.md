@@ -31,7 +31,7 @@ Kiosque was created to fill this gap: to build a Bazaar-equivalent storefront fo
 - **Open Desktop Ratings Service (ODRS)**: Asynchronously fetches star ratings and user reviews. Merges ODRS data with Flathub app metadata on the Rust side, delivering a unified model to the UI.
 
 ### 4. Smart Multi-Layer In-Memory Cache (`cache.rs`)
-To minimize redundant network transactions and maintain a highly responsive UI, Kiosque uses a thread-safe, TTL-based caching layer managed by a process-wide `AppCache` singleton protected by `RwLock` structures.
+To minimize redundant network transactions and maintain a highly responsive UI, Kiosque uses a thread-safe, TTL-based caching layer managed by a process-wide `AppCache` singleton utilizing concurrent `moka` caches.
 - **Collection Cache (TTL: 5 mins)**: Caches general feeds (popular, trending, recently added/updated).
 - **Details Cache (TTL: 10 mins)**: Caches specific app metadata stream payloads to allow instant back-and-forth navigation.
 - **ODRS Ratings/Reviews Cache (TTL: 10 mins)**: Caches user review lists and rating distributions.
@@ -55,46 +55,69 @@ Kiosque uses a hybrid architecture that bridges the performance and safety of Ru
 ```mermaid
 graph TD
     %% Frontend Layer
-    subgraph Frontend [Qt6 / QML Frontend]
-        UI[QML Views: ShopfrontPage, AppDetailPage]
-        Models[QAbstractListModel: AppListModel, InstalledModel]
-        Ctrl[StoreController QObject]
+    subgraph Frontend ["Qt6 / QML Frontend"]
+        UI(["QML Views: ShopfrontPage, AppDetailPage"])
+        Models[["QAbstractListModel: AppListModel, InstalledModel"]]
+        Ctrl["StoreController QObject"]
     end
 
     %% CXX-QT Bridge Layer
-    subgraph Bridge [CXX-QT Bridge Layer]
-        CXX_Bridge[C++ Binding Boilerplate]
-        Rust_Bridge[Rust Qt Binding Macros]
+    subgraph Bridge ["CXX-QT Bridge Layer"]
+        CXX_Bridge["C++ Binding Boilerplate"]
+        Rust_Bridge["Rust Qt Binding Macros"]
     end
 
     %% Backend Layer
-    subgraph Backend [Rust Backend Core libkiosque]
-        Tokio[Tokio Multi-threaded Runtime]
-        Cache[AppCache RwLock]
-        Flathub[Flathub API Client reqwest]
-        FlatpakCLI[Flatpak CLI Process Wrapper]
+    subgraph Backend ["Rust Backend Core (libkiosque)"]
+        Tokio["Tokio Async Runtime"]
+        Cache[("AppCache (Moka Cache)")]
+        Flathub["Flathub API Client (reqwest)"]
+        FlatpakCLI["Flatpak CLI Process Wrapper"]
     end
 
     %% System Dependencies
-    subgraph System [System Dependencies]
-        FlathubAPI[Flathub API v2 / ODRS]
-        FlatpakSystem[Flatpak System Daemon]
+    subgraph System ["System Dependencies"]
+        FlathubAPI{{"Flathub API v2 / ODRS"}}
+        FlatpakSystem{{"Flatpak System Daemon"}}
     end
 
     %% Connections
     UI -->|Render & Bind| Models
     UI -->|User Actions| Ctrl
+    
     Models <-->|Properties & Overrides| CXX_Bridge
     Ctrl <-->|Invokable Slots| CXX_Bridge
+    
     CXX_Bridge <-->|Thread-Safe Signals| Rust_Bridge
+    
     Rust_Bridge -->|Spawn Async Task| Tokio
+    
     Tokio -->|Query / Mutate| Cache
     Tokio -->|HTTP Calls| Flathub
     Tokio -->|Spawn Subprocesses| FlatpakCLI
+    
     Flathub <-->|JSON over HTTPS| FlathubAPI
     FlatpakCLI <-->|CLI Commands| FlatpakSystem
-    Tokio -->|Emit Qt Signals / Post Events| Rust_Bridge
-    Rust_Bridge -->|Update Model Data| Models
+    
+    Tokio -.->|Emit Qt Signals / Post Events| Rust_Bridge
+    Rust_Bridge -.->|Update Model Data| Models
+
+    %% Style Classes for Modern Theme
+    classDef frontend fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px,color:#0D47A1;
+    classDef bridge fill:#F3E5F5,stroke:#8E24AA,stroke-width:2px,color:#4A148C;
+    classDef backend fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px,color:#78350F;
+    classDef system fill:#ECEFF1,stroke:#546E7A,stroke-width:2px,color:#263238;
+
+    class UI,Models,Ctrl frontend;
+    class CXX_Bridge,Rust_Bridge bridge;
+    class Tokio,Cache,Flathub,FlatpakCLI backend;
+    class FlathubAPI,FlatpakSystem system;
+
+    %% Subgraph Styling
+    style Frontend fill:#F4F8FA,stroke:#B0C4DE,stroke-width:1px,stroke-dasharray: 5 5;
+    style Bridge fill:#FAF5FC,stroke:#E0B0FF,stroke-width:1px,stroke-dasharray: 5 5;
+    style Backend fill:#FFF9F2,stroke:#F5DEB3,stroke-width:1px,stroke-dasharray: 5 5;
+    style System fill:#F9F9F9,stroke:#D3D3D3,stroke-width:1px,stroke-dasharray: 5 5;
 ```
 
 ### Detailed Architecture Layers
@@ -109,7 +132,7 @@ Rather than writing unsafe manual JNI/C-FFI code, Kiosque integrates Qt6 and Rus
 - **Thread Safety & Thread Posting**: Since Qt runs on a single main GUI thread and Tokio tasks execute across a background pool, `cxx-qt` provides `cxx_qt::Threading`. Rust tasks capture a thread-safe handle to the QObject, perform async work, and then post closures back to the Qt event loop, allowing property changes and signals to fire safely on the GUI thread.
 
 #### 3. Rust Backend Core (`libkiosque`)
-- **Caching Mechanism**: The `AppCache` utilizes asynchronous `RwLock` primitives from the `tokio` crate. This allows multiple reader threads to fetch cached metadata concurrently, while locking the cache exclusively during write operations (like network cache updates or installation invalidations).
+- **Caching Mechanism**: The `AppCache` leverages concurrent, asynchronous caches from the `moka` crate. This enables lock-free read access and concurrent write operations, avoiding the contention of manual locking mechanisms like `RwLock` while still maintaining thread-safe TTL (Time-To-Live) evictions.
 - **Network Stack**: Built on async `reqwest`. Features connection reuse to optimize network round-trips to the Flathub API.
 - **Process Orchestration**: Local Flatpak commands are run using asynchronous process spawns. Standard output is captured and parsed without blocking other operations.
 
