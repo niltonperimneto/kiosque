@@ -13,3 +13,4 @@ qml/components/WelcomeCard.qml
 qml/pages/AppDetailPage.qml
 qml/pages/InstalledPage.qml
 qml/pages/ShopfrontPage.qml
+qml/pages/SettingsPage.qml

@@ -8,14 +8,37 @@ pub struct AppSettings {
     pub auto_update: bool,
     pub update_frequency: String, // "Daily", "Weekly"
     pub update_time: String,      // "HH:MM"
+    
+    #[serde(default)]
+    pub odrs_salt: String,
+    
+    #[serde(default)]
+    pub oauth_provider: Option<String>,
+    #[serde(default)]
+    pub oauth_username: Option<String>,
+    #[serde(default)]
+    pub oauth_user_id: Option<String>,
+    #[serde(default)]
+    pub oauth_token: Option<String>,
+    #[serde(default)]
+    pub oauth_avatar_url: Option<String>,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
+        let salt_bytes: [u8; 32] = rand::random();
+        let salt_hex = salt_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        
         Self {
             auto_update: false,
             update_frequency: "Daily".to_string(),
             update_time: "02:00".to_string(),
+            odrs_salt: salt_hex,
+            oauth_provider: None,
+            oauth_username: None,
+            oauth_user_id: None,
+            oauth_token: None,
+            oauth_avatar_url: None,
         }
     }
 }
@@ -30,11 +53,20 @@ pub fn settings_path() -> PathBuf {
 
 pub fn load_settings() -> AppSettings {
     let path = settings_path();
-    if let Ok(contents) = fs::read_to_string(&path)
-        && let Ok(settings) = serde_json::from_str(&contents) {
-            return settings;
-        }
-    AppSettings::default()
+    let mut settings = if let Ok(contents) = fs::read_to_string(&path)
+        && let Ok(s) = serde_json::from_str::<AppSettings>(&contents) {
+            s
+        } else {
+            AppSettings::default()
+        };
+        
+    if settings.odrs_salt.is_empty() {
+        let salt_bytes: [u8; 32] = rand::random();
+        settings.odrs_salt = salt_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        let _ = save_settings(&settings);
+    }
+    
+    settings
 }
 
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
@@ -81,8 +113,6 @@ ExecStart=/usr/bin/kiosque-update --check
 "#;
 
     // Build the systemd timer file
-    // Frequency "Daily" -> *-*-* HH:MM:00
-    // Frequency "Weekly" -> Mon *-*-* HH:MM:00 (Arbitrarily Monday)
     let calendar = if settings.update_frequency.eq_ignore_ascii_case("weekly") {
         format!("Mon *-*-* {}:00", settings.update_time)
     } else {
