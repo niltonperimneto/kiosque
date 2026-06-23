@@ -57,8 +57,8 @@ graph TD
     %% Frontend Layer
     subgraph Frontend ["Qt6 / QML Frontend"]
         UI(["QML Views: ShopfrontPage, AppDetailPage"])
-        Models[["QAbstractListModel: AppListModel, InstalledModel"]]
         Ctrl["StoreController QObject"]
+        Models[["QAbstractListModel: AppListModel, InstalledModel"]]
     end
 
     %% CXX-QT Bridge Layer
@@ -69,10 +69,10 @@ graph TD
 
     %% Backend Layer
     subgraph Backend ["Rust Backend Core (libkiosque)"]
-        Tokio["Tokio Async Runtime"]
         Cache[("AppCache (Moka Cache)")]
         Flathub["Flathub API Client (reqwest)"]
         FlatpakCLI["Flatpak CLI Process Wrapper"]
+        Tokio["Tokio Async Runtime"]
     end
 
     %% System Dependencies
@@ -82,15 +82,17 @@ graph TD
     end
 
     %% Connections
-    UI -->|Render & Bind| Models
     UI -->|User Actions| Ctrl
+    UI -->|Render & Bind| Models
     
-    Models <-->|Properties & Overrides| CXX_Bridge
     Ctrl <-->|Invokable Slots| CXX_Bridge
+    Models <-->|Properties & Overrides| CXX_Bridge
     
     CXX_Bridge <-->|Thread-Safe Signals| Rust_Bridge
     
     Rust_Bridge -->|Spawn Async Task| Tokio
+    Tokio -.->|Emit Qt Signals / Post Events| Rust_Bridge
+    Rust_Bridge -.->|Update Model Data| Models
     
     Tokio -->|Query / Mutate| Cache
     Tokio -->|HTTP Calls| Flathub
@@ -98,26 +100,23 @@ graph TD
     
     Flathub <-->|JSON over HTTPS| FlathubAPI
     FlatpakCLI <-->|CLI Commands| FlatpakSystem
-    
-    Tokio -.->|Emit Qt Signals / Post Events| Rust_Bridge
-    Rust_Bridge -.->|Update Model Data| Models
 
     %% Style Classes for Modern Theme
-    classDef frontend fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px,color:#0D47A1;
+    classDef frontend fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px,color:#0A3C83;
     classDef bridge fill:#F3E5F5,stroke:#8E24AA,stroke-width:2px,color:#4A148C;
-    classDef backend fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px,color:#78350F;
-    classDef system fill:#ECEFF1,stroke:#546E7A,stroke-width:2px,color:#263238;
+    classDef backend fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px,color:#5C2505;
+    classDef system fill:#ECEFF1,stroke:#546E7A,stroke-width:2px,color:#1E293B;
 
     class UI,Models,Ctrl frontend;
     class CXX_Bridge,Rust_Bridge bridge;
     class Tokio,Cache,Flathub,FlatpakCLI backend;
     class FlathubAPI,FlatpakSystem system;
 
-    %% Subgraph Styling
-    style Frontend fill:#F4F8FA,stroke:#B0C4DE,stroke-width:1px,stroke-dasharray: 5 5;
-    style Bridge fill:#FAF5FC,stroke:#E0B0FF,stroke-width:1px,stroke-dasharray: 5 5;
-    style Backend fill:#FFF9F2,stroke:#F5DEB3,stroke-width:1px,stroke-dasharray: 5 5;
-    style System fill:#F9F9F9,stroke:#D3D3D3,stroke-width:1px,stroke-dasharray: 5 5;
+    %% Subgraph Styling (GitHub Light/Dark theme safe via transparent tints)
+    style Frontend fill:#1E88E5,fill-opacity:0.05,stroke:#1E88E5,stroke-opacity:0.25,stroke-width:1px,stroke-dasharray: 5 5;
+    style Bridge fill:#8E24AA,fill-opacity:0.05,stroke:#8E24AA,stroke-opacity:0.25,stroke-width:1px,stroke-dasharray: 5 5;
+    style Backend fill:#FB8C00,fill-opacity:0.05,stroke:#FB8C00,stroke-opacity:0.25,stroke-width:1px,stroke-dasharray: 5 5;
+    style System fill:#546E7A,fill-opacity:0.05,stroke:#546E7A,stroke-opacity:0.25,stroke-width:1px,stroke-dasharray: 5 5;
 ```
 
 ### Detailed Architecture Layers
