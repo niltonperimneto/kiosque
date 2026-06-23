@@ -1,5 +1,13 @@
 project('kiosque', 'cpp',
-  version: run_command('python3', '-c', 'import subprocess; s=subprocess.run(["git", "describe", "--tags"], capture_output=True, text=True); print(s.stdout.strip().lstrip("v") if s.returncode == 0 and s.stdout.strip() else "0.8")', check: true).stdout().strip(),
+  version: run_command('python3', '-c', '''
+import subprocess
+try:
+    s = subprocess.run(["git", "describe", "--tags"], capture_output=True, text=True)
+    version = s.stdout.strip().lstrip("v") if (s.returncode == 0 and s.stdout.strip()) else "0.8"
+except Exception:
+    version = "0.8"
+print(version)
+''', check: true).stdout().strip(),
   default_options: ['cpp_std=c++17']
 )
 
