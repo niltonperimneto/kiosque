@@ -1,6 +1,6 @@
 [package]
 name = "libkiosque"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 authors = ["Kiosque Contributors"]
 description = "Rust backend for the Kiosque Flatpak storefront"

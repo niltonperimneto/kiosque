@@ -1,5 +1,5 @@
 project('kiosque', 'cpp',
-  version: '0.1.0',
+  version: run_command('python3', '-c', 'import subprocess; s=subprocess.run(["git", "describe", "--tags"], capture_output=True, text=True); print(s.stdout.strip().lstrip("v") if s.returncode == 0 and s.stdout.strip() else "0.8")', check: true).stdout().strip(),
   default_options: ['cpp_std=c++17']
 )
 
@@ -62,14 +62,20 @@ update_daemon_moc = qt6.preprocess(
 executable('kiosque',
   sources: ['src/main.cpp', qrc_files],
   dependencies: [qt_deps, kirigami_dep, rust_dep, dbus_dep, ki18n_dep, ki18n_qml_dep],
-  cpp_args: ['-DTRANSLATION_DOMAIN="kiosque"'],
+  cpp_args: [
+    '-DTRANSLATION_DOMAIN="kiosque"',
+    '-DPROJECT_VERSION="' + meson.project_version() + '"'
+  ],
   install: true
 )
 
 executable('kiosque-update',
   sources: ['src/update_main.cpp', update_daemon_moc],
   dependencies: [qt_deps, rust_dep, dbus_dep, ki18n_dep],
-  cpp_args: ['-DTRANSLATION_DOMAIN="kiosque"'],
+  cpp_args: [
+    '-DTRANSLATION_DOMAIN="kiosque"',
+    '-DPROJECT_VERSION="' + meson.project_version() + '"'
+  ],
   install: true
 )
 

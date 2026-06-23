@@ -680,18 +680,18 @@ Kirigami.ScrollablePage {
                         color: Kirigami.Theme.alternateBackgroundColor
 
                         // Glowing soft shadow using highlight color on hover
-                        shadow.size: screenshotHover.hovered ? 18 : 8
-                        shadow.color: screenshotHover.hovered
+                        shadow.size: screenshotMouseArea.containsMouse ? 18 : 8
+                        shadow.color: screenshotMouseArea.containsMouse
                             ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.22)
                             : Qt.rgba(0, 0, 0, 0.12)
-                        shadow.yOffset: screenshotHover.hovered ? 4 : 2
+                        shadow.yOffset: screenshotMouseArea.containsMouse ? 4 : 2
 
                         border.width: 1
-                        border.color: screenshotHover.hovered
+                        border.color: screenshotMouseArea.containsMouse
                             ? Kirigami.Theme.highlightColor
                             : Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.15)
 
-                        scale: screenshotHover.hovered ? 1.015 : 1.0
+                        scale: screenshotMouseArea.containsMouse ? 1.015 : 1.0
 
                         Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                         Behavior on shadow.size { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
@@ -724,15 +724,19 @@ Kirigami.ScrollablePage {
                             z: 1
                         }
 
-                        HoverHandler {
-                            id: screenshotHover
+                        MouseArea {
+                            id: screenshotMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                        }
-
-                        TapHandler {
-                            onTapped: {
-                                largeScreenshotPopup.imageUrl = modelData;
-                                largeScreenshotPopup.open();
+                            onClicked: {
+                                try {
+                                    let list = JSON.parse(StoreController.detail_screenshots_json);
+                                    let idx = list.indexOf(modelData);
+                                    largeScreenshotPopup.openWithIndex(idx >= 0 ? idx : 0);
+                                } catch(e) {
+                                    largeScreenshotPopup.openWithIndex(0);
+                                }
                             }
                         }
                     }
@@ -1158,45 +1162,264 @@ Kirigami.ScrollablePage {
     // ── Fullscreen Screenshot Zoom Popup ───────────────────────────────
     Controls.Popup {
         id: largeScreenshotPopup
-        anchors.centerIn: parent
-        width: Math.min(parent.width * 0.9, Kirigami.Units.gridUnit * 50)
-        height: Math.min(parent.height * 0.85, Kirigami.Units.gridUnit * 35)
+        parent: Controls.Overlay.overlay
+        x: 0
+        y: 0
+        margins: 0
+        width: parent ? parent.width : root.width
+        height: parent ? parent.height : root.height
         modal: true
         focus: true
-        closePolicy: Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
+        closePolicy: Controls.Popup.CloseOnEscape
+        padding: 0
 
-        background: Kirigami.ShadowedRectangle {
-            color: Qt.rgba(0, 0, 0, 0.9)
-            radius: 16
-            border.color: Kirigami.Theme.highlightColor
-            border.width: 1
-            shadow.size: 24
-            shadow.color: Qt.rgba(0, 0, 0, 0.5)
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 250; easing.type: Easing.OutQuad }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 200; easing.type: Easing.OutQuad }
         }
 
-        property string imageUrl: ""
+        background: Rectangle {
+            color: "#f5000000" // Immersive dark backdrop
+        }
 
-        Image {
-            id: largeScreenshotImg
-            anchors.fill: parent
-            anchors.margins: Kirigami.Units.largeSpacing
-            source: largeScreenshotPopup.imageUrl
-            fillMode: Image.PreserveAspectFit
-            asynchronous: true
+        property var screenshotsList: []
 
-            Controls.BusyIndicator {
-                anchors.centerIn: parent
-                running: parent.status === Image.Loading
-                visible: parent.status === Image.Loading
+        function openWithIndex(index) {
+            try {
+                screenshotsList = JSON.parse(StoreController.detail_screenshots_json || "[]");
+            } catch(e) {
+                screenshotsList = [];
             }
+            screenshotSwipeView.currentIndex = index;
+            open();
         }
 
-        Controls.ToolButton {
-            anchors.top: parent.top
-            anchors.right: parent.right
-            anchors.margins: Kirigami.Units.mediumSpacing
-            icon.name: "window-close"
-            onClicked: largeScreenshotPopup.close()
+        Item {
+            anchors.fill: parent
+            focus: true
+
+            // Handle keyboard navigation inside the gallery
+            Keys.onPressed: (event) => {
+                if (event.key === Qt.Key_Left) {
+                    if (screenshotSwipeView.currentIndex > 0) {
+                        screenshotSwipeView.currentIndex--;
+                        event.accepted = true;
+                    }
+                } else if (event.key === Qt.Key_Right) {
+                    if (screenshotSwipeView.currentIndex < screenshotSwipeView.count - 1) {
+                        screenshotSwipeView.currentIndex++;
+                        event.accepted = true;
+                    }
+                }
+            }
+
+            // Carousel Gallery SwipeView
+            Controls.SwipeView {
+                id: screenshotSwipeView
+                anchors.fill: parent
+                currentIndex: 0
+                interactive: {
+                    let currentItem = screenshotSwipeView.currentItem;
+                    if (currentItem && typeof currentItem.findChildFlickable === "function") {
+                        let flickable = currentItem.findChildFlickable();
+                        if (flickable) return flickable.zoomScale <= 1.0;
+                    }
+                    return true;
+                }
+
+                Repeater {
+                    model: largeScreenshotPopup.screenshotsList
+
+                    delegate: Item {
+                        id: delegateItem
+                        width: screenshotSwipeView.width
+                        height: screenshotSwipeView.height
+
+                        // Helper to expose the flickable to SwipeView interactive property
+                        function findChildFlickable() {
+                            return imageFlickable;
+                        }
+
+                        Flickable {
+                            id: imageFlickable
+                            anchors.fill: parent
+                            clip: true
+                            contentWidth: zoomImage.width
+                            contentHeight: zoomImage.height
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            property real zoomScale: 1.0
+
+                            onWidthChanged: centerImage()
+                            onHeightChanged: centerImage()
+                            onZoomScaleChanged: centerImage()
+
+                            function centerImage() {
+                                if (zoomScale <= 1.0) {
+                                    contentX = 0;
+                                    contentY = 0;
+                                }
+                            }
+
+                            Image {
+                                id: zoomImage
+                                property real fitWidth: {
+                                    if (implicitWidth <= 0 || implicitHeight <= 0) return imageFlickable.width;
+                                    let imageRatio = implicitWidth / implicitHeight;
+                                    let flickableRatio = imageFlickable.width / imageFlickable.height;
+                                    if (flickableRatio > imageRatio) {
+                                        return imageFlickable.height * imageRatio;
+                                    } else {
+                                        return imageFlickable.width;
+                                    }
+                                }
+                                property real fitHeight: {
+                                    if (implicitWidth <= 0 || implicitHeight <= 0) return imageFlickable.height;
+                                    let imageRatio = implicitWidth / implicitHeight;
+                                    let flickableRatio = imageFlickable.width / imageFlickable.height;
+                                    if (flickableRatio > imageRatio) {
+                                        return imageFlickable.height;
+                                    } else {
+                                        return imageFlickable.width / imageRatio;
+                                    }
+                                }
+
+                                width: fitWidth * imageFlickable.zoomScale
+                                height: fitHeight * imageFlickable.zoomScale
+                                x: Math.max(0, (imageFlickable.width - width) / 2)
+                                y: Math.max(0, (imageFlickable.height - height) / 2)
+                                source: modelData
+                                fillMode: Image.PreserveAspectFit
+                                asynchronous: true
+
+                                Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
+                                Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
+                                Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
+                                Behavior on y { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
+
+                                Controls.BusyIndicator {
+                                    anchors.centerIn: parent
+                                    running: parent.status === Image.Loading
+                                    visible: parent.status === Image.Loading
+                                }
+                            }
+
+                            // Double tap/click to zoom
+                            TapHandler {
+                                onDoubleTapped: {
+                                    if (imageFlickable.zoomScale > 1.0) {
+                                        imageFlickable.zoomScale = 1.0
+                                        imageFlickable.contentX = 0
+                                        imageFlickable.contentY = 0
+                                    } else {
+                                        imageFlickable.zoomScale = 2.0
+                                    }
+                                }
+                            }
+
+                            // Ctrl + Scroll Wheel Zoom
+                            WheelHandler {
+                                acceptedModifiers: Qt.ControlModifier
+                                onWheel: (event) => {
+                                    let factor = event.angleDelta.y > 0 ? 1.15 : 0.85
+                                    let targetScale = imageFlickable.zoomScale * factor
+                                    imageFlickable.zoomScale = Math.max(1.0, Math.min(targetScale, 4.0))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // HUD Top Bar
+            RowLayout {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Kirigami.Units.largeSpacing
+                height: Kirigami.Units.gridUnit * 2
+                z: 10
+
+                Controls.Label {
+                    text: (screenshotSwipeView.currentIndex + 1) + " / " + screenshotSwipeView.count
+                    color: "white"
+                    font.bold: true
+                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.1
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.leftMargin: Kirigami.Units.gridUnit
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                Controls.ToolButton {
+                    icon.name: "window-close"
+                    icon.color: "white"
+                    display: Controls.AbstractButton.IconOnly
+                    Layout.alignment: Qt.AlignVCenter
+
+                    background: Rectangle {
+                        color: parent.hovered ? Qt.rgba(255, 255, 255, 0.15) : "transparent"
+                        radius: width / 2
+                    }
+
+                    onClicked: largeScreenshotPopup.close()
+                }
+            }
+
+            // Left Navigation Button
+            Controls.RoundButton {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: Kirigami.Units.largeSpacing
+                icon.name: "go-previous-symbolic"
+                icon.color: "white"
+                visible: screenshotSwipeView.currentIndex > 0
+                z: 10
+
+                background: Rectangle {
+                    radius: width / 2
+                    color: parent.hovered ? Qt.rgba(255, 255, 255, 0.25) : Qt.rgba(0, 0, 0, 0.4)
+                    border.color: parent.hovered ? "white" : "transparent"
+                    border.width: 1
+                }
+
+                onClicked: screenshotSwipeView.currentIndex--
+            }
+
+            // Right Navigation Button
+            Controls.RoundButton {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: Kirigami.Units.largeSpacing
+                icon.name: "go-next-symbolic"
+                icon.color: "white"
+                visible: screenshotSwipeView.currentIndex < screenshotSwipeView.count - 1
+                z: 10
+
+                background: Rectangle {
+                    radius: width / 2
+                    color: parent.hovered ? Qt.rgba(255, 255, 255, 0.25) : Qt.rgba(0, 0, 0, 0.4)
+                    border.color: parent.hovered ? "white" : "transparent"
+                    border.width: 1
+                }
+
+                onClicked: screenshotSwipeView.currentIndex++
+            }
+
+            // Carousel Page Indicators at Bottom
+            Controls.PageIndicator {
+                anchors.bottom: parent.bottom
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.margins: Kirigami.Units.largeSpacing
+                count: screenshotSwipeView.count
+                currentIndex: screenshotSwipeView.currentIndex
+                visible: count > 1
+                z: 10
+            }
         }
     }
 

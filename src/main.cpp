@@ -18,6 +18,7 @@ int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("Kiosque"));
+    QGuiApplication::setApplicationVersion(QStringLiteral(PROJECT_VERSION));
     QGuiApplication::setOrganizationName(QStringLiteral("Kiosque"));
     QGuiApplication::setOrganizationDomain(QStringLiteral("kiosque.app"));
     QGuiApplication::setApplicationDisplayName(QStringLiteral("Kiosque"));

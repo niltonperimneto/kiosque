@@ -55,7 +55,8 @@ jobs:
         run: |
           mkdir -p ~/rpmbuild/SOURCES ~/rpmbuild/SPECS
           cp kiosque.spec ~/rpmbuild/SPECS/
-          tar --transform 's,^\.,kiosque-0.1.0,' --exclude=./builddir --exclude=./rust/target --exclude=./.git -czf ~/rpmbuild/SOURCES/kiosque-0.1.0.tar.gz .
+          VERSION=$(grep -E '^Version:\s+' kiosque.spec | awk '{print $2}')
+          tar --transform "s,^\.,kiosque-${VERSION}," --exclude=./builddir --exclude=./rust/target --exclude=./.git -czf ~/rpmbuild/SOURCES/kiosque-${VERSION}.tar.gz .
           rpmbuild -ba ~/rpmbuild/SPECS/kiosque.spec
           cp ~/rpmbuild/RPMS/x86_64/*.rpm ./
 

@@ -527,7 +527,7 @@ Kirigami.ApplicationWindow {
             }
 
             Controls.Label {
-                text: i18n("Version 0.1.0")
+                text: i18n("Version %1", Qt.application.version)
                 font.weight: Font.DemiBold
                 color: Kirigami.Theme.highlightColor
                 Layout.alignment: Qt.AlignHCenter
