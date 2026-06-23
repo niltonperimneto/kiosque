@@ -56,8 +56,49 @@ Kirigami.ApplicationWindow {
     }
 
     function pushAppDetail(appId) {
-        let page = appDetailComponent.createObject(null, { appId: appId });
-        pageStack.push(page);
+        // Find if there is already an AppDetailPage in the pageStack
+        let existingPage = null;
+        for (let i = 0; i < pageStack.depth; i++) {
+            let page = pageStack.get(i);
+            if (page && page.appId !== undefined) {
+                existingPage = page;
+                break;
+            }
+        }
+
+        if (existingPage !== null) {
+            console.warn("Found existing AppDetailPage in stack, checking appId:", existingPage.appId);
+            // If the existing page has the same appId, we just pop back to it and we're done
+            if (existingPage.appId === appId) {
+                pageStack.pop(existingPage);
+                return;
+            }
+            
+            // Otherwise, we pop back to the page preceding the existing AppDetailPage,
+            // and then push the new AppDetailPage
+            let precedingPage = null;
+            let index = -1;
+            for (let i = 0; i < pageStack.depth; i++) {
+                if (pageStack.get(i) === existingPage) {
+                    index = i;
+                    break;
+                }
+            }
+            if (index > 0) {
+                precedingPage = pageStack.get(index - 1);
+            }
+            
+            if (precedingPage !== null) {
+                pageStack.pop(precedingPage);
+            } else {
+                while (pageStack.depth > 1) {
+                    pageStack.pop();
+                }
+            }
+        }
+
+        let newPage = appDetailComponent.createObject(null, { appId: appId });
+        pageStack.push(newPage);
     }
 
     // ── Navigation button grouping ──────────────────────────────────────

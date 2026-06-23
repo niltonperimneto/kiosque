@@ -106,9 +106,7 @@ Kirigami.ScrollablePage {
                     cardIconUrl: typeof iconUrl !== 'undefined' ? iconUrl : ""
 
                     onClicked: {
-                        applicationWindow().pageStack.push("qrc:/qml/pages/AppDetailPage.qml", {
-                            appId: this.cardAppId
-                        })
+                        applicationWindow().pushAppDetail(this.cardAppId)
                     }
                 }
             }

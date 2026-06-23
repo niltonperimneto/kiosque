@@ -5,10 +5,16 @@ import org.kde.kirigami as Kirigami
 import org.kde.ki18n
 import com.kiosque
 import org.kde.kirigamiaddons.components as KirigamiAddons
+import Qt.labs.settings as LabsSettings
 
 Kirigami.ScrollablePage {
     id: page
     title: i18n("Settings")
+
+    leftPadding: Kirigami.Units.largeSpacing * 2
+    rightPadding: Kirigami.Units.largeSpacing * 2
+    topPadding: Kirigami.Units.largeSpacing * 1.5
+    bottomPadding: Kirigami.Units.largeSpacing * 2
 
     actions: [
         Kirigami.Action {
@@ -19,6 +25,12 @@ Kirigami.ScrollablePage {
         }
     ]
 
+    LabsSettings.Settings {
+        id: localSettings
+        category: "SettingsPage"
+        property bool showAdvanced: false
+    }
+
     Component.onCompleted: {
         SettingsController.loadSettings()
         RepoModel.refresh()
@@ -27,11 +39,36 @@ Kirigami.ScrollablePage {
     ColumnLayout {
         spacing: Kirigami.Units.largeSpacing * 2
         width: parent.width
-        
-        // Add margins to make the cards breathe nicely on the page
-        Layout.leftMargin: Kirigami.Units.largeSpacing * 2
-        Layout.rightMargin: Kirigami.Units.largeSpacing * 2
-        Layout.topMargin: Kirigami.Units.largeSpacing
+
+        // ── Settings Header ────────────────────────────────────────────────
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
+            Layout.alignment: Qt.AlignHCenter
+            
+            ColumnLayout {
+                spacing: Kirigami.Units.smallSpacing
+                Layout.fillWidth: true
+                
+                Kirigami.Heading {
+                    text: i18n("Preferences")
+                    level: 2
+                }
+                Controls.Label {
+                    text: i18n("Configure updates, authentication, and flatpak repositories")
+                    color: Kirigami.Theme.disabledTextColor
+                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.95
+                }
+            }
+            
+            Controls.Switch {
+                id: advancedToggle
+                text: i18n("Advanced Settings")
+                checked: localSettings.showAdvanced
+                onCheckedChanged: localSettings.showAdvanced = checked
+                Layout.alignment: Qt.AlignVCenter
+            }
+        }
 
         // ── Automatic Updates Card ─────────────────────────────────────────
         Controls.Pane {
@@ -87,6 +124,7 @@ Kirigami.ScrollablePage {
                         model: [i18n("Daily"), i18n("Weekly")]
                         currentIndex: SettingsController.update_frequency.toLowerCase() === "weekly" ? 1 : 0
                         enabled: autoUpdateSwitch.checked
+                        visible: advancedToggle.checked
                         onCurrentIndexChanged: saveSettings()
                     }
 
@@ -96,6 +134,7 @@ Kirigami.ScrollablePage {
                         text: SettingsController.update_time
                         placeholderText: "02:00"
                         enabled: autoUpdateSwitch.checked
+                        visible: advancedToggle.checked
                         validator: RegularExpressionValidator { regularExpression: /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/ }
                         onTextChanged: {
                             if (acceptableInput) {
@@ -109,6 +148,7 @@ Kirigami.ScrollablePage {
 
         // ── Repositories Card ──────────────────────────────────────────────
         Controls.Pane {
+            visible: advancedToggle.checked
             Layout.fillWidth: true
             Layout.maximumWidth: Kirigami.Units.gridUnit * 40
             Layout.alignment: Qt.AlignHCenter
@@ -163,33 +203,44 @@ Kirigami.ScrollablePage {
                     model: RepoModel
                     clip: true
                     
-                    delegate: Kirigami.SwipeListItem {
-                        contentItem: ColumnLayout {
-                            spacing: Kirigami.Units.smallSpacing
+                    delegate: Column {
+                        width: repoList.width
+                        spacing: 0
 
-                            Kirigami.Heading {
-                                level: 4
-                                text: model.title !== "" ? model.title : model.name
-                                Layout.fillWidth: true
-                            }
+                        Kirigami.SwipeListItem {
+                            width: parent.width
+                            contentItem: ColumnLayout {
+                                spacing: Kirigami.Units.smallSpacing
 
-                            Controls.Label {
-                                text: model.url
-                                color: Kirigami.Theme.disabledTextColor
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
-                            }
-                        }
+                                Kirigami.Heading {
+                                    level: 4
+                                    text: model.title !== "" ? model.title : model.name
+                                    Layout.fillWidth: true
+                                }
 
-                        actions: [
-                            Kirigami.Action {
-                                text: i18n("Remove")
-                                icon.name: "edit-delete"
-                                onTriggered: {
-                                    RepoModel.removeRemote(model.name)
+                                Controls.Label {
+                                    text: model.url
+                                    color: Kirigami.Theme.disabledTextColor
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
                                 }
                             }
-                        ]
+
+                            actions: [
+                                Kirigami.Action {
+                                    text: i18n("Remove")
+                                    icon.name: "edit-delete"
+                                    onTriggered: {
+                                        RepoModel.removeRemote(model.name)
+                                    }
+                                }
+                            ]
+                        }
+
+                        Kirigami.Separator {
+                            width: parent.width
+                            visible: index < repoList.count - 1
+                        }
                     }
                 }
             }
@@ -351,6 +402,7 @@ Kirigami.ScrollablePage {
 
         // ── Privacy & Security Card ─────────────────────────────────────────
         Controls.Pane {
+            visible: advancedToggle.checked
             Layout.fillWidth: true
             Layout.maximumWidth: Kirigami.Units.gridUnit * 40
             Layout.alignment: Qt.AlignHCenter
