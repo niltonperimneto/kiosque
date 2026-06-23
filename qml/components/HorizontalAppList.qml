@@ -23,7 +23,7 @@ ColumnLayout {
 
     Item {
         Layout.fillWidth: true
-        Layout.preferredHeight: Kirigami.Units.gridUnit * 12
+        Layout.preferredHeight: Kirigami.Units.gridUnit * 14
 
         ListView {
             id: listView
@@ -65,6 +65,8 @@ ColumnLayout {
 
                 AppCard {
                     anchors.fill: parent
+                    anchors.topMargin: Kirigami.Units.largeSpacing
+                    anchors.bottomMargin: Kirigami.Units.largeSpacing
                     appId: delegateWrapper.appId
                     name: delegateWrapper.name
                     summary: delegateWrapper.summary

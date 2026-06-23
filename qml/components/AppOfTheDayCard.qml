@@ -6,6 +6,7 @@ import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ki18n
+import QtQuick.Effects
 
 Kirigami.ShadowedRectangle {
     id: root
@@ -54,10 +55,10 @@ Kirigami.ShadowedRectangle {
 
     // ── Inner Gradient Background with clip for child glows ──
     Rectangle {
+        id: innerBg
         anchors.fill: parent
         radius: parent.radius
         z: -2
-        clip: true
 
         gradient: Gradient {
             orientation: Gradient.Horizontal
@@ -111,6 +112,21 @@ Kirigami.ShadowedRectangle {
                 ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.08)
                 : "transparent"
             Behavior on color { ColorAnimation { duration: 150 } }
+        }
+
+        // Mask item for MultiEffect to enforce rounded corners
+        Rectangle {
+            id: maskRect
+            anchors.fill: parent
+            radius: parent.radius
+            color: "black"
+            visible: false
+        }
+
+        layer.enabled: true
+        layer.effect: MultiEffect {
+            maskEnabled: true
+            maskSource: maskRect
         }
     }
 

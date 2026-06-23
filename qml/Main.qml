@@ -9,6 +9,7 @@ import org.kde.ki18n
 import com.kiosque
 import "pages" as Pages
 import "components" as Components
+import org.kde.kirigamiaddons.components as KirigamiAddons
 
 Kirigami.ApplicationWindow {
     id: root
@@ -72,6 +73,90 @@ Kirigami.ApplicationWindow {
         property real customWidth: Kirigami.Units.gridUnit * 16
         width: !collapsed ? customWidth : collapsedSize
 
+        header: MouseArea {
+            id: headerArea
+            implicitWidth: parent.width
+            implicitHeight: mainDrawer.collapsed ? Kirigami.Units.gridUnit * 3 : Kirigami.Units.gridUnit * 4.5
+            hoverEnabled: true
+            
+            onClicked: {
+                mainDrawer.close();
+                root.currentSection = "settings";
+                root.currentCategory = "";
+                root.switchToPage("qrc:/qml/pages/SettingsPage.qml");
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                color: headerArea.containsMouse ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.1) : "transparent"
+            }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: Kirigami.Units.largeSpacing
+                spacing: Kirigami.Units.mediumSpacing
+
+                Item {
+                    id: avatarContainer
+                    Layout.preferredWidth: (mainDrawer.collapsed ? Kirigami.Units.iconSizes.medium : Kirigami.Units.iconSizes.large) + 8
+                    Layout.preferredHeight: Layout.preferredWidth
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Kirigami.ShadowedRectangle {
+                        id: avatarGlowRing
+                        anchors.fill: parent
+                        radius: width / 2
+                        color: "transparent"
+
+                        border.width: 1.5
+                        border.color: headerArea.containsMouse
+                            ? Kirigami.Theme.highlightColor
+                            : Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.3)
+
+                        shadow.size: headerArea.containsMouse ? 10 : 4
+                        shadow.color: headerArea.containsMouse
+                            ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.4)
+                            : Qt.rgba(0, 0, 0, 0.15)
+                        shadow.yOffset: headerArea.containsMouse ? 2 : 1
+
+                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                        Behavior on shadow.size { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                        Behavior on shadow.color { ColorAnimation { duration: 150 } }
+                    }
+
+                    KirigamiAddons.Avatar {
+                        id: userAvatar
+                        anchors.centerIn: parent
+                        width: parent.width - 8
+                        height: width
+                        source: SettingsController.is_authenticated && SettingsController.oauth_avatar_url !== "" ? SettingsController.oauth_avatar_url : ""
+                        name: SettingsController.is_authenticated ? SettingsController.oauth_username : ""
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: !mainDrawer.collapsed
+                    spacing: 0
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Controls.Label {
+                        text: SettingsController.is_authenticated ? SettingsController.oauth_username : i18n("Sign In")
+                        font.bold: true
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+
+                    Controls.Label {
+                        text: SettingsController.is_authenticated ? i18n("Settings & Reviews") : i18n("Local Profile")
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        color: Kirigami.Theme.disabledTextColor
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+        }
 
         actions: [
             Kirigami.Action {
@@ -337,7 +422,7 @@ Kirigami.ApplicationWindow {
                     highlighted: true
                     enabled: repoNameField.text.length > 0 && repoUrlField.text.length > 0
                     onClicked: {
-                        StoreController.addRepository(repoNameField.text, repoUrlField.text);
+                        RepoModel.addRemote(repoNameField.text, repoUrlField.text);
                         addRepoSheet.close();
                     }
                 }
@@ -362,8 +447,8 @@ Kirigami.ApplicationWindow {
     }
 
     Connections {
-        target: StoreController
-        function onRepositoryAdded(success, message) {
+        target: RepoModel
+        function onRemoteAdded(success, message) {
             statusDialog.messageText = message;
             statusDialog.open();
         }
@@ -457,6 +542,7 @@ Kirigami.ApplicationWindow {
 
     // ── Startup ─────────────────────────────────────────────────────────
     Component.onCompleted: {
+        SettingsController.loadSettings();
         featuredModel.refresh();
         appListModel.refresh();
         installedModel.refresh();

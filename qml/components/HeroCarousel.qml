@@ -6,6 +6,7 @@ import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ki18n
+import QtQuick.Effects
 
 ColumnLayout {
     id: root
@@ -44,7 +45,7 @@ ColumnLayout {
                     Kirigami.ShadowedRectangle {
                         id: card
                         anchors.fill: parent
-                        anchors.margins: Kirigami.Units.smallSpacing
+                        anchors.margins: Kirigami.Units.largeSpacing * 2
 
                         radius: 16
                         color: "transparent"
@@ -80,10 +81,10 @@ ColumnLayout {
 
                         // ── Inner Gradient Background with clip for child glows ──
                         Rectangle {
+                            id: innerBg
                             anchors.fill: parent
                             radius: card.radius
                             z: -2
-                            clip: true
 
                             gradient: Gradient {
                                 orientation: Gradient.Horizontal
@@ -138,37 +139,26 @@ ColumnLayout {
                                     : "transparent"
                                 Behavior on color { ColorAnimation { duration: 150 } }
                             }
+
+                            // Mask item for MultiEffect to enforce rounded corners
+                            Rectangle {
+                                id: maskRect
+                                anchors.fill: parent
+                                radius: card.radius
+                                color: "black"
+                                visible: false
+                            }
+
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                maskEnabled: true
+                                maskSource: maskRect
+                            }
                         }
 
 
                         // ── Content Layout ──
 
-                        // Ambient halo glow behind the app icon
-                        Rectangle {
-                            anchors.centerIn: appIcon
-                            width: appIcon.width * 2.2
-                            height: width
-                            radius: width / 2
-                            z: 0
-
-                            gradient: Gradient {
-                                GradientStop {
-                                    position: 0.0
-                                    color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.12)
-                                }
-                                GradientStop {
-                                    position: 1.0
-                                    color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.0)
-                                }
-                            }
-
-                            // Pulsing animation for the halo
-                            SequentialAnimation on opacity {
-                                loops: Animation.Infinite
-                                NumberAnimation { from: 0.7; to: 1.0; duration: 3000; easing.type: Easing.InOutSine }
-                                NumberAnimation { from: 1.0; to: 0.7; duration: 3000; easing.type: Easing.InOutSine }
-                            }
-                        }
 
                         // App Icon (anchored left, centered vertically, clearing left arrow)
                         Image {

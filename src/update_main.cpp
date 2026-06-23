@@ -64,7 +64,9 @@ public:
     }
     
     void start() {
-        createAutostartFile();
+        if (!QFile::exists(QStringLiteral("/.flatpak-info"))) {
+            createAutostartFile();
+        }
         requestBackgroundPortal();
         
         // Check immediately
@@ -310,6 +312,7 @@ int main(int argc, char* argv[]) {
     }
     
     QApplication app(argc, argv);
+    QApplication::setDesktopFileName(QStringLiteral("org.kiosque.Kiosque"));
     QApplication::setApplicationName(QStringLiteral("KiosqueUpdate"));
     QApplication::setOrganizationName(QStringLiteral("Kiosque"));
     QApplication::setOrganizationDomain(QStringLiteral("kiosque.app"));
