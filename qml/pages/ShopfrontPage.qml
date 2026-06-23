@@ -212,19 +212,9 @@ Kirigami.ScrollablePage {
                             iconUrl: delegateWrapper.iconUrl
 
                             opacity: 0
-                            transform: Translate { y: 20; id: gridItemTranslate }
-                            
-                            Component.onCompleted: {
-                                gridItemTranslate.y = 0;
-                                opacity = 1.0;
-                            }
-                            
+                            Component.onCompleted: opacity = 1.0
                             Behavior on opacity {
-                                NumberAnimation { duration: 400; easing.type: Easing.OutCubic }
-                            }
-                            
-                            Behavior on transform {
-                                NumberAnimation { duration: 400; easing.type: Easing.OutBack }
+                                NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic }
                             }
                         }
                     }
