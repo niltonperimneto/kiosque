@@ -1300,9 +1300,9 @@ Kirigami.ScrollablePage {
 
                             Kirigami.Icon {
                                 source: modelData.icon
-                                width: Kirigami.Units.iconSizes.small
-                                height: width
-                                Layout.alignment: Qt.AlignVCenter
+                                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                                Layout.alignment: Qt.AlignTop
                                 color: Kirigami.Theme.textColor
                                 isMask: true
                             }
