@@ -53,6 +53,7 @@ ColumnLayout {
                         // A full-bleed slide must not scale (it would clip in the
                         // SwipeView); the gradient/glow/hover-border still apply.
                         hoverScale: false
+                        animateGlow: slideDelegate.SwipeView.isCurrentItem && root.visible
 
                         onClicked: applicationWindow().pushAppDetail(slideDelegate.appId)
 
@@ -213,6 +214,8 @@ ColumnLayout {
             anchors.leftMargin: Kirigami.Units.largeSpacing * 2 + Kirigami.Units.smallSpacing
             anchors.verticalCenter: parent.verticalCenter
             z: 10
+            focusPolicy: Qt.NoFocus
+            hoverEnabled: true
             icon.name: "go-previous-symbolic"
             visible: swipeView.count > 1 && !root.isMobile
             background: Rectangle {
@@ -222,10 +225,11 @@ ColumnLayout {
                                Kirigami.Theme.backgroundColor.b,
                                leftArrow.hovered ? 0.85 : 0.55)
                 border.width: 1
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r,
-                                      Kirigami.Theme.textColor.g,
-                                      Kirigami.Theme.textColor.b, 0.15)
+                border.color: leftArrow.hovered
+                    ? Kirigami.Theme.highlightColor
+                    : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
                 Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+                Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
             }
             onClicked: {
                 if (swipeView.currentIndex > 0) {
@@ -243,6 +247,8 @@ ColumnLayout {
             anchors.rightMargin: Kirigami.Units.largeSpacing * 2 + Kirigami.Units.smallSpacing
             anchors.verticalCenter: parent.verticalCenter
             z: 10
+            focusPolicy: Qt.NoFocus
+            hoverEnabled: true
             icon.name: "go-next-symbolic"
             visible: swipeView.count > 1 && !root.isMobile
             background: Rectangle {
@@ -252,10 +258,11 @@ ColumnLayout {
                                Kirigami.Theme.backgroundColor.b,
                                rightArrow.hovered ? 0.85 : 0.55)
                 border.width: 1
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r,
-                                      Kirigami.Theme.textColor.g,
-                                      Kirigami.Theme.textColor.b, 0.15)
+                border.color: rightArrow.hovered
+                    ? Kirigami.Theme.highlightColor
+                    : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
                 Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+                Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
             }
             onClicked: {
                 if (swipeView.currentIndex < swipeView.count - 1) {
@@ -321,7 +328,7 @@ ColumnLayout {
     // ── Auto-advance timer ──────────────────────────────────────────────
     Timer {
         interval: 5000
-        running: swipeView.count > 1
+        running: swipeView.count > 1 && root.visible
         repeat: true
         onTriggered: {
             if (swipeView.currentIndex < swipeView.count - 1) {

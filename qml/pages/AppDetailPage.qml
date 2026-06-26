@@ -84,6 +84,22 @@ Kirigami.ScrollablePage {
 
     property var ratingData: ({})
     property var allReviewsList: []
+    property var screenshotUrls: {
+        try {
+            return JSON.parse(StoreController.detail_screenshots_json || "[]");
+        } catch(e) {
+            return [];
+        }
+    }
+    property var permissionItems: getPermissionItems(StoreController.detail_permissions_json)
+    property var urlsData: {
+        try {
+            return JSON.parse(StoreController.detail_urls_json || "{}");
+        } catch(e) {
+            return {};
+        }
+    }
+    property string windowingSystem: getWindowingSystem(StoreController.detail_permissions_json)
 
     // Helper to populate ListModel from JSON string
     function populateModel(listModel, jsonStr) {
@@ -362,13 +378,8 @@ Kirigami.ScrollablePage {
 
     // Helper to check if any URLs are available
     function hasLinks() {
-        if (!StoreController.detail_urls_json || StoreController.detail_urls_json === "{}") return false;
-        try {
-            let urls = JSON.parse(StoreController.detail_urls_json);
-            return !!(urls.homepage || urls.vcs_browser || urls.manifest || urls.bugtracker || urls.help || urls.donation);
-        } catch(e) {
-            return false;
-        }
+        let urls = page.urlsData;
+        return !!(urls.homepage || urls.vcs_browser || urls.manifest || urls.bugtracker || urls.help || urls.donation);
     }
 
     ColumnLayout {
@@ -460,7 +471,7 @@ Kirigami.ScrollablePage {
                     }
 
                     Kirigami.Chip {
-                        property string envText: getWindowingSystem(StoreController.detail_permissions_json)
+                        property string envText: page.windowingSystem
                         visible: envText !== ""
                         text: envText
                         icon.name: envText.indexOf("Wayland") !== -1 ? "preferences-desktop-display"
@@ -577,14 +588,7 @@ Kirigami.ScrollablePage {
                 leftMargin: Kirigami.Units.largeSpacing
                 rightMargin: Kirigami.Units.largeSpacing
 
-                model: {
-                    if (!StoreController.detail_screenshots_json || StoreController.detail_screenshots_json === "") return [];
-                    try {
-                        return JSON.parse(StoreController.detail_screenshots_json);
-                    } catch(e) {
-                        return [];
-                    }
-                }
+                model: page.screenshotUrls
 
                 Behavior on contentX {
                     enabled: !screenshotsListView.moving && !screenshotsListView.dragging
@@ -635,13 +639,8 @@ Kirigami.ScrollablePage {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                try {
-                                    let list = JSON.parse(StoreController.detail_screenshots_json);
-                                    let idx = list.indexOf(modelData);
-                                    largeScreenshotPopup.openWithIndex(idx >= 0 ? idx : 0);
-                                } catch(e) {
-                                    largeScreenshotPopup.openWithIndex(0);
-                                }
+                                let idx = page.screenshotUrls.indexOf(modelData);
+                                largeScreenshotPopup.openWithIndex(idx >= 0 ? idx : 0);
                             }
                         }
                     }
@@ -650,12 +649,28 @@ Kirigami.ScrollablePage {
 
             // Left Navigation Arrow Button
             Controls.RoundButton {
+                id: leftScrollButton
                 anchors.left: parent.left
                 anchors.leftMargin: Kirigami.Units.largeSpacing
                 anchors.verticalCenter: parent.verticalCenter
                 z: 10
+                focusPolicy: Qt.NoFocus
+                hoverEnabled: true
                 icon.name: "go-previous-symbolic"
                 visible: screenshotsListView.contentX > 10
+                background: Rectangle {
+                    radius: height / 2
+                    color: Qt.rgba(Kirigami.Theme.backgroundColor.r,
+                                   Kirigami.Theme.backgroundColor.g,
+                                   Kirigami.Theme.backgroundColor.b,
+                                   leftScrollButton.hovered ? 0.85 : 0.55)
+                    border.width: 1
+                    border.color: leftScrollButton.hovered
+                        ? Kirigami.Theme.highlightColor
+                        : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
+                    Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+                    Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+                }
                 onClicked: {
                     let step = Kirigami.Units.gridUnit * 24;
                     screenshotsListView.contentX = Math.max(screenshotsListView.contentX - step, 0);
@@ -664,12 +679,28 @@ Kirigami.ScrollablePage {
 
             // Right Navigation Arrow Button
             Controls.RoundButton {
+                id: rightScrollButton
                 anchors.right: parent.right
                 anchors.rightMargin: Kirigami.Units.largeSpacing
                 anchors.verticalCenter: parent.verticalCenter
                 z: 10
+                focusPolicy: Qt.NoFocus
+                hoverEnabled: true
                 icon.name: "go-next-symbolic"
                 visible: screenshotsListView.contentX < (screenshotsListView.contentWidth - screenshotsListView.width - 10)
+                background: Rectangle {
+                    radius: height / 2
+                    color: Qt.rgba(Kirigami.Theme.backgroundColor.r,
+                                   Kirigami.Theme.backgroundColor.g,
+                                   Kirigami.Theme.backgroundColor.b,
+                                   rightScrollButton.hovered ? 0.85 : 0.55)
+                    border.width: 1
+                    border.color: rightScrollButton.hovered
+                        ? Kirigami.Theme.highlightColor
+                        : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
+                    Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+                    Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+                }
                 onClicked: {
                     let step = Kirigami.Units.gridUnit * 24;
                     let maxContentX = screenshotsListView.contentWidth - screenshotsListView.width;
@@ -722,13 +753,7 @@ Kirigami.ScrollablePage {
                 Layout.rightMargin: Kirigami.Units.largeSpacing
 
                 function getLink(key) {
-                    if (!StoreController.detail_urls_json || StoreController.detail_urls_json === "{}") return "";
-                    try {
-                        let urls = JSON.parse(StoreController.detail_urls_json);
-                        return urls[key] || "";
-                    } catch(e) {
-                        return "";
-                    }
+                    return page.urlsData[key] || "";
                 }
 
                 // Homepage Button
@@ -1021,11 +1046,7 @@ Kirigami.ScrollablePage {
         property var screenshotsList: []
 
         function openWithIndex(index) {
-            try {
-                screenshotsList = JSON.parse(StoreController.detail_screenshots_json || "[]");
-            } catch(e) {
-                screenshotsList = [];
-            }
+            screenshotsList = page.screenshotUrls;
             screenshotSwipeView.currentIndex = index;
             open();
         }
@@ -1275,7 +1296,7 @@ Kirigami.ScrollablePage {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: {
-                    let items = getPermissionItems(StoreController.detail_permissions_json);
+                    let items = page.permissionItems;
                     if (items.length === 0) return false;
                     if (items.length === 1 && (items[0].icon === "security-high-symbolic" || items[0].icon === "security-medium-symbolic")) return false;
                     return true;
@@ -1288,7 +1309,7 @@ Kirigami.ScrollablePage {
                 spacing: Kirigami.Units.smallSpacing
 
                 Repeater {
-                    model: getPermissionItems(StoreController.detail_permissions_json)
+                    model: page.permissionItems
 
                     delegate: ColumnLayout {
                         Layout.fillWidth: true
@@ -1329,7 +1350,7 @@ Kirigami.ScrollablePage {
 
                         Kirigami.Separator {
                             Layout.fillWidth: true
-                            visible: index < getPermissionItems(StoreController.detail_permissions_json).length - 1
+                            visible: index < page.permissionItems.length - 1
                             Layout.topMargin: Kirigami.Units.smallSpacing
                             Layout.bottomMargin: Kirigami.Units.smallSpacing
                         }

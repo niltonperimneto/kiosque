@@ -88,6 +88,8 @@ ColumnLayout {
             anchors.leftMargin: Kirigami.Units.smallSpacing
             anchors.verticalCenter: parent.verticalCenter
             z: 10
+            focusPolicy: Qt.NoFocus
+            hoverEnabled: true
             icon.name: "go-previous-symbolic"
             visible: listView.contentX > 10
             background: Rectangle {
@@ -97,10 +99,11 @@ ColumnLayout {
                                Kirigami.Theme.backgroundColor.b,
                                leftArrow.hovered ? 0.85 : 0.55)
                 border.width: 1
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r,
-                                      Kirigami.Theme.textColor.g,
-                                      Kirigami.Theme.textColor.b, 0.15)
+                border.color: leftArrow.hovered
+                    ? Kirigami.Theme.highlightColor
+                    : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
                 Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+                Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
             }
             onClicked: {
                 let step = Kirigami.Units.gridUnit * 18;
@@ -115,6 +118,8 @@ ColumnLayout {
             anchors.rightMargin: Kirigami.Units.smallSpacing
             anchors.verticalCenter: parent.verticalCenter
             z: 10
+            focusPolicy: Qt.NoFocus
+            hoverEnabled: true
             icon.name: "go-next-symbolic"
             visible: listView.contentX < (listView.contentWidth - listView.width - 10)
             background: Rectangle {
@@ -124,10 +129,11 @@ ColumnLayout {
                                Kirigami.Theme.backgroundColor.b,
                                rightArrow.hovered ? 0.85 : 0.55)
                 border.width: 1
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r,
-                                      Kirigami.Theme.textColor.g,
-                                      Kirigami.Theme.textColor.b, 0.15)
+                border.color: rightArrow.hovered
+                    ? Kirigami.Theme.highlightColor
+                    : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
                 Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+                Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
             }
             onClicked: {
                 let step = Kirigami.Units.gridUnit * 18;
