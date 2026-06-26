@@ -7,9 +7,11 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ki18n
 
-Kirigami.ScrollablePage {
+Kirigami.Page {
     id: page
     title: i18n("Categories")
+
+    padding: 0
 
     actions: [
         Kirigami.Action {
@@ -20,12 +22,19 @@ Kirigami.ScrollablePage {
         }
     ]
 
-    Kirigami.CardsGridView {
+    GridView {
         id: grid
         anchors.fill: parent
-        anchors.margins: Kirigami.Units.largeSpacing
+        clip: true
         cellWidth: Kirigami.Units.gridUnit * 12
         cellHeight: Kirigami.Units.gridUnit * 8
+
+        topMargin: Kirigami.Units.largeSpacing
+        bottomMargin: Kirigami.Units.largeSpacing
+        leftMargin: Kirigami.Units.largeSpacing
+        rightMargin: Kirigami.Units.largeSpacing
+
+        Controls.ScrollBar.vertical: Controls.ScrollBar {}
 
         model: applicationWindow().categoriesModel
 

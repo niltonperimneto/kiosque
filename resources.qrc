@@ -4,6 +4,7 @@
     <file>qml/components/AppCard.qml</file>
     <file>qml/components/AppOfTheDayCard.qml</file>
     <file>qml/components/CategoryChip.qml</file>
+    <file>qml/components/FeatureCard.qml</file>
     <file>qml/components/HeroCarousel.qml</file>
     <file>qml/components/HorizontalAppList.qml</file>
     <file>qml/components/ProgressOverlay.qml</file>
@@ -16,7 +17,6 @@
     <file>qml/pages/CategoryAppListPage.qml</file>
     <file>qml/pages/InstalledPage.qml</file>
     <file>qml/pages/ShopfrontPage.qml</file>
-        <file>qml/pages/TestPage.qml</file>
     <file>qml/images/logo.svg</file>
 </qresource>
 </RCC>

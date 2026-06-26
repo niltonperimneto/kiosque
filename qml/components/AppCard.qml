@@ -17,10 +17,42 @@ Kirigami.AbstractCard {
     required property string iconUrl
     required property string appId
 
+    // Same accent as the feature surfaces so tiles read as the same family.
+    readonly property color accent: Kirigami.Theme.highlightColor
+
     implicitWidth: Kirigami.Units.gridUnit * 12
 
     showClickFeedback: true
     hoverEnabled: true
+
+    // Use the View colour set so the card surface is distinct from the
+    // (Window-coloured) page background in both light and dark themes.
+    Kirigami.Theme.colorSet: Kirigami.Theme.View
+    Kirigami.Theme.inherit: false
+
+    // A lighter take on the FeatureCard language: same radius, accent and hover
+    // border, with a subtle accent-tinted glow + lift so tiles feel alive on
+    // hover without competing with the full feature surfaces.
+    background: Kirigami.ShadowedRectangle {
+        radius: Kirigami.Units.cornerRadius
+        color: root.hovered
+            ? Qt.tint(Kirigami.Theme.backgroundColor, Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.08))
+            : Kirigami.Theme.backgroundColor
+        border.width: 1
+        border.color: root.hovered
+            ? root.accent
+            : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.12)
+        shadow.size: root.hovered ? Kirigami.Units.gridUnit * 0.6 : Kirigami.Units.gridUnit * 0.4
+        shadow.color: root.hovered
+            ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+            : Qt.rgba(0, 0, 0, 0.12)
+        shadow.yOffset: root.hovered ? 3 : 1
+
+        Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+        Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+        Behavior on shadow.size { NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+        Behavior on shadow.yOffset { NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+    }
 
     onClicked: applicationWindow().pushAppDetail(root.appId)
 

@@ -11,6 +11,15 @@ import com.kiosque
 Kirigami.Page {
     id: page
     title: i18n("Installed")
+
+    titleDelegate: Kirigami.SearchField {
+        id: searchField
+        Layout.fillWidth: true
+        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+        placeholderText: i18n("Search installed…")
+        onTextChanged: page.installedModel.applySearchFilter(text)
+    }
+
     property var installedModel: applicationWindow().installedModel
 
     // Sorting state
@@ -113,17 +122,14 @@ Kirigami.Page {
                 ]
             }
 
-            // Search + sort row
+            // Sort controls row
             RowLayout {
                 Layout.fillWidth: true
                 Layout.margins: Kirigami.Units.largeSpacing
                 spacing: Kirigami.Units.smallSpacing
 
-                Kirigami.SearchField {
-                    id: searchField
+                Item {
                     Layout.fillWidth: true
-                    placeholderText: i18n("Search installed…")
-                    onTextChanged: page.installedModel.applySearchFilter(text)
                 }
 
                 Controls.Label {

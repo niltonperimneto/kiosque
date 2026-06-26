@@ -6,7 +6,6 @@ import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ki18n
-import QtQuick.Effects
 
 ColumnLayout {
     id: root
@@ -29,6 +28,7 @@ ColumnLayout {
             id: swipeView
             anchors.fill: parent
             clip: true
+            hoverEnabled: true
 
             Repeater {
                 model: root.model
@@ -42,123 +42,19 @@ ColumnLayout {
                     required property string iconUrl
                     required property string appId
 
-                    Kirigami.ShadowedRectangle {
+                    // Shared flair via FeatureCard — same look as the spotlight.
+                    FeatureCard {
                         id: card
                         anchors.fill: parent
-                        anchors.margins: Kirigami.Units.largeSpacing * 2
+                        // Small inset so the glow/shadow has room without clipping
+                        // in the SwipeView, while staying aligned with other bands.
+                        anchors.margins: Kirigami.Units.largeSpacing
 
-                        radius: 16
-                        color: "transparent"
+                        // A full-bleed slide must not scale (it would clip in the
+                        // SwipeView); the gradient/glow/hover-border still apply.
+                        hoverScale: false
 
-                        // Glowing soft shadow using highlight color
-                        shadow.size: hoverHandler.hovered ? 24 : 14
-                        shadow.color: hoverHandler.hovered
-                            ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.22)
-                            : Qt.rgba(0, 0, 0, 0.12)
-                        shadow.yOffset: hoverHandler.hovered ? 6 : 4
-
-                        border.width: 1
-                        border.color: hoverHandler.hovered
-                            ? Kirigami.Theme.highlightColor
-                            : Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.15)
-
-                        Behavior on shadow.size { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                        Behavior on shadow.color { ColorAnimation { duration: 200 } }
-                        Behavior on shadow.yOffset { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                        Behavior on border.color { ColorAnimation { duration: 200 } }
-
-                        // ── Interaction ──
-                        HoverHandler {
-                            id: hoverHandler
-                            cursorShape: Qt.PointingHandCursor
-                        }
-
-                        TapHandler {
-                            onTapped: {
-                                applicationWindow().pushAppDetail(slideDelegate.appId);
-                            }
-                        }
-
-                        // ── Inner Gradient Background with clip for child glows ──
-                        Rectangle {
-                            id: innerBg
-                            anchors.fill: parent
-                            radius: card.radius
-                            z: -2
-
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop {
-                                    position: 0.0
-                                    color: Kirigami.Theme.alternateBackgroundColor
-                                }
-                                GradientStop {
-                                    position: 0.5
-                                    color: Qt.tint(Kirigami.Theme.alternateBackgroundColor, Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.04))
-                                }
-                                GradientStop {
-                                    position: 1.0
-                                    color: Qt.tint(Kirigami.Theme.alternateBackgroundColor, Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.16))
-                                }
-                            }
-
-                            // Decorative soft ambient glow in top-right
-                            Rectangle {
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.margins: -width / 3
-                                width: parent.width * 0.45
-                                height: width
-                                radius: width / 2
-                                z: -1
-
-                                gradient: Gradient {
-                                    GradientStop {
-                                        position: 0.0
-                                        color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.15)
-                                    }
-                                    GradientStop {
-                                        position: 1.0
-                                        color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.0)
-                                    }
-                                }
-
-                                SequentialAnimation on opacity {
-                                    loops: Animation.Infinite
-                                    NumberAnimation { from: 0.6; to: 1.0; duration: 4000; easing.type: Easing.InOutSine }
-                                    NumberAnimation { from: 1.0; to: 0.6; duration: 4000; easing.type: Easing.InOutSine }
-                                }
-                            }
-
-                            // Hover highlight hue overlay
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: parent.radius
-                                color: hoverHandler.hovered
-                                    ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.08)
-                                    : "transparent"
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                            }
-
-                            // Mask item for MultiEffect to enforce rounded corners
-                            Rectangle {
-                                id: maskRect
-                                anchors.fill: parent
-                                radius: card.radius
-                                color: "black"
-                                visible: false
-                            }
-
-                            layer.enabled: true
-                            layer.effect: MultiEffect {
-                                maskEnabled: true
-                                maskSource: maskRect
-                            }
-                        }
-
-
-                        // ── Content Layout ──
-
+                        onClicked: applicationWindow().pushAppDetail(slideDelegate.appId)
 
                         // App Icon (anchored left, centered vertically, clearing left arrow)
                         Image {
@@ -224,16 +120,14 @@ ColumnLayout {
                             id: viewDetailsButton
                             text: i18n("View Details")
                             icon.name: "go-next-symbolic"
-                            highlighted: true
+                            highlighted: hovered
 
                             anchors.right: parent.right
                             anchors.rightMargin: Kirigami.Units.gridUnit * 4
                             anchors.bottom: parent.bottom
                             anchors.bottomMargin: Kirigami.Units.largeSpacing * 2
 
-                            onClicked: {
-                                applicationWindow().pushAppDetail(slideDelegate.appId);
-                            }
+                            onClicked: applicationWindow().pushAppDetail(slideDelegate.appId)
                         }
 
                         states: [
@@ -292,7 +186,6 @@ ColumnLayout {
                                     anchors.bottomMargin: Kirigami.Units.largeSpacing
                                     anchors.rightMargin: 0
                                 }
-
                             }
                         ]
 
@@ -313,108 +206,64 @@ ColumnLayout {
             }
         }
 
-        // Left Navigation Arrow Button (Square with MouseArea and wrap-around)
-        Item {
+        // Left Navigation Arrow (standard RoundButton — matches HorizontalAppList)
+        Controls.RoundButton {
             id: leftArrow
             anchors.left: parent.left
-            anchors.leftMargin: Kirigami.Units.mediumSpacing
+            anchors.leftMargin: Kirigami.Units.largeSpacing * 2 + Kirigami.Units.smallSpacing
             anchors.verticalCenter: parent.verticalCenter
-            width: 44
-            height: 44
             z: 10
+            icon.name: "go-previous-symbolic"
             visible: swipeView.count > 1 && !root.isMobile
-
-            Rectangle {
-                anchors.fill: parent
-                radius: 6
-                color: leftArrowMouse.containsMouse
-                    ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.25)
-                    : Qt.rgba(Kirigami.Theme.backgroundColor.r, Kirigami.Theme.backgroundColor.g, Kirigami.Theme.backgroundColor.b, 0.7)
+            background: Rectangle {
+                radius: height / 2
+                color: Qt.rgba(Kirigami.Theme.backgroundColor.r,
+                               Kirigami.Theme.backgroundColor.g,
+                               Kirigami.Theme.backgroundColor.b,
+                               leftArrow.hovered ? 0.85 : 0.55)
                 border.width: 1
-                border.color: leftArrowMouse.containsMouse
-                    ? Kirigami.Theme.highlightColor
-                    : Qt.rgba(Kirigami.Theme.disabledTextColor.r, Kirigami.Theme.disabledTextColor.g, Kirigami.Theme.disabledTextColor.b, 0.3)
-
-                Behavior on color { ColorAnimation { duration: 150 } }
-                Behavior on border.color { ColorAnimation { duration: 150 } }
-
-                Kirigami.Icon {
-                    anchors.centerIn: parent
-                    width: 24
-                    height: 24
-                    source: "go-previous-symbolic"
-                    color: Kirigami.Theme.textColor
+                border.color: Qt.rgba(Kirigami.Theme.textColor.r,
+                                      Kirigami.Theme.textColor.g,
+                                      Kirigami.Theme.textColor.b, 0.15)
+                Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+            }
+            onClicked: {
+                if (swipeView.currentIndex > 0) {
+                    swipeView.currentIndex--;
+                } else {
+                    swipeView.currentIndex = swipeView.count - 1;
                 }
             }
-
-            MouseArea {
-                id: leftArrowMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (swipeView.currentIndex > 0) {
-                        swipeView.currentIndex--;
-                    } else {
-                        swipeView.currentIndex = swipeView.count - 1;
-                    }
-                }
-            }
-
-            scale: leftArrowMouse.containsMouse ? 1.05 : 1.0
-            Behavior on scale { NumberAnimation { duration: 150 } }
         }
 
-        // Right Navigation Arrow Button (Square with MouseArea and wrap-around)
-        Item {
+        // Right Navigation Arrow (standard RoundButton — matches HorizontalAppList)
+        Controls.RoundButton {
             id: rightArrow
             anchors.right: parent.right
-            anchors.rightMargin: Kirigami.Units.mediumSpacing
+            anchors.rightMargin: Kirigami.Units.largeSpacing * 2 + Kirigami.Units.smallSpacing
             anchors.verticalCenter: parent.verticalCenter
-            width: 44
-            height: 44
             z: 10
+            icon.name: "go-next-symbolic"
             visible: swipeView.count > 1 && !root.isMobile
-
-            Rectangle {
-                anchors.fill: parent
-                radius: 6
-                color: rightArrowMouse.containsMouse
-                    ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.25)
-                    : Qt.rgba(Kirigami.Theme.backgroundColor.r, Kirigami.Theme.backgroundColor.g, Kirigami.Theme.backgroundColor.b, 0.7)
+            background: Rectangle {
+                radius: height / 2
+                color: Qt.rgba(Kirigami.Theme.backgroundColor.r,
+                               Kirigami.Theme.backgroundColor.g,
+                               Kirigami.Theme.backgroundColor.b,
+                               rightArrow.hovered ? 0.85 : 0.55)
                 border.width: 1
-                border.color: rightArrowMouse.containsMouse
-                    ? Kirigami.Theme.highlightColor
-                    : Qt.rgba(Kirigami.Theme.disabledTextColor.r, Kirigami.Theme.disabledTextColor.g, Kirigami.Theme.disabledTextColor.b, 0.3)
-
-                Behavior on color { ColorAnimation { duration: 150 } }
-                Behavior on border.color { ColorAnimation { duration: 150 } }
-
-                Kirigami.Icon {
-                    anchors.centerIn: parent
-                    width: 24
-                    height: 24
-                    source: "go-next-symbolic"
-                    color: Kirigami.Theme.textColor
+                border.color: Qt.rgba(Kirigami.Theme.textColor.r,
+                                      Kirigami.Theme.textColor.g,
+                                      Kirigami.Theme.textColor.b, 0.15)
+                Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+            }
+            onClicked: {
+                if (swipeView.currentIndex < swipeView.count - 1) {
+                    swipeView.currentIndex++;
+                } else {
+                    swipeView.currentIndex = 0;
                 }
             }
-
-            MouseArea {
-                id: rightArrowMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (swipeView.currentIndex < swipeView.count - 1) {
-                        swipeView.currentIndex++;
-                    } else {
-                        swipeView.currentIndex = 0;
-                    }
-                }
-            }
-
-            scale: rightArrowMouse.containsMouse ? 1.05 : 1.0
-            Behavior on scale { NumberAnimation { duration: 150 } }
         }
     }
 

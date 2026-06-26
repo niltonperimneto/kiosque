@@ -12,6 +12,11 @@ Kirigami.Card {
     id: root
 
     readonly property color accentColor: "#00A5CF"
+    hoverEnabled: true
+
+    // View colour set → surface distinct from the page background.
+    Kirigami.Theme.colorSet: Kirigami.Theme.View
+    Kirigami.Theme.inherit: false
 
     header: Kirigami.Heading {
         level: 4
@@ -34,8 +39,8 @@ Kirigami.Card {
         border.width: 1
         border.color: hoverHandler.hovered
             ? root.accentColor
-            : Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.2)
-        
+            : Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.5)
+
         Behavior on shadow.size { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
         Behavior on shadow.yOffset { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 150 } }
@@ -51,43 +56,50 @@ Kirigami.Card {
                 orientation: Gradient.Horizontal
                 GradientStop {
                     position: 0.0
-                    color: Qt.rgba(Kirigami.Theme.alternateBackgroundColor.r, Kirigami.Theme.alternateBackgroundColor.g, Kirigami.Theme.alternateBackgroundColor.b, 0.75)
+                    color: Qt.tint(Kirigami.Theme.backgroundColor, Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.14))
                 }
                 GradientStop {
                     position: 0.5
-                    color: Qt.tint(Qt.rgba(Kirigami.Theme.alternateBackgroundColor.r, Kirigami.Theme.alternateBackgroundColor.g, Kirigami.Theme.alternateBackgroundColor.b, 0.75), Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.04))
+                    color: Qt.tint(Kirigami.Theme.backgroundColor, Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.28))
                 }
                 GradientStop {
                     position: 1.0
-                    color: Qt.tint(Qt.rgba(Kirigami.Theme.alternateBackgroundColor.r, Kirigami.Theme.alternateBackgroundColor.g, Kirigami.Theme.alternateBackgroundColor.b, 0.75), Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.16))
+                    color: Qt.tint(Kirigami.Theme.backgroundColor, Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.45))
                 }
             }
 
             // Decorative pulsing/ambient glow sphere in top-right
-            Rectangle {
+            Item {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.margins: -width / 4
                 width: parent.width * 0.4
                 height: width
-                radius: width / 2
                 z: -1
 
-                gradient: Gradient {
-                    GradientStop {
-                        position: 0.0
-                        color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.2)
-                    }
-                    GradientStop {
-                        position: 1.0
-                        color: "transparent"
-                    }
-                }
+                opacity: hoverHandler.hovered ? 1.0 : 0.6
+                Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-                SequentialAnimation on opacity {
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 0.5; to: 0.9; duration: 4000; easing.type: Easing.InOutSine }
-                    NumberAnimation { from: 0.9; to: 0.5; duration: 4000; easing.type: Easing.InOutSine }
+                Rectangle {
+                    anchors.fill: parent
+                    radius: width / 2
+
+                    gradient: Gradient {
+                        GradientStop {
+                            position: 0.0
+                            color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.2)
+                        }
+                        GradientStop {
+                            position: 1.0
+                            color: "transparent"
+                        }
+                    }
+
+                    SequentialAnimation on opacity {
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 0.5; to: 0.9; duration: 4000; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 0.9; to: 0.5; duration: 4000; easing.type: Easing.InOutSine }
+                    }
                 }
             }
 

@@ -15,8 +15,9 @@ ColumnLayout {
     spacing: Kirigami.Units.smallSpacing
 
     Kirigami.Heading {
-        level: 3
+        level: 2
         text: root.title
+        Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.largeSpacing
         Layout.rightMargin: Kirigami.Units.largeSpacing
     }

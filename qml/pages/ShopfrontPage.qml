@@ -15,6 +15,21 @@ Kirigami.ScrollablePage {
     title: i18n("Storefront")
     supportsRefreshing: true
 
+    // Search lives in the toolbar so it stays accessible while scrolling.
+    titleDelegate: Kirigami.SearchField {
+        id: searchField
+        Layout.fillWidth: true
+        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+        placeholderText: i18n("Search applications…")
+        onAccepted: {
+            if (text.length > 0) {
+                appListModel.search(text);
+            } else {
+                appListModel.refresh();
+            }
+        }
+    }
+
     property var appListModel: applicationWindow().appListModel
     property var featuredModel: applicationWindow().featuredModel
     
@@ -25,6 +40,9 @@ Kirigami.ScrollablePage {
     property string activeSearchQuery: typeof searchField !== 'undefined' && searchField ? searchField.text : ""
 
     property bool isDefaultView: page.activeSearchQuery.length === 0
+
+    // Cap content width on large displays and centre it, like a modern storefront.
+    readonly property real contentMaxWidth: Kirigami.Units.gridUnit * 70
 
     Component.onCompleted: {
         popularModel.loadPopular();
@@ -50,77 +68,101 @@ Kirigami.ScrollablePage {
         spacing: Kirigami.Units.largeSpacing * 2
         // No animation to prevent blank screen issues
 
-        // ── Search field ────────────────────────────────────────────────
-        Kirigami.SearchField {
-            id: searchField
-            Layout.fillWidth: true
-            Layout.topMargin: Kirigami.Units.largeSpacing
-            Layout.leftMargin: Kirigami.Units.largeSpacing
-            Layout.rightMargin: Kirigami.Units.largeSpacing
-            placeholderText: i18n("Search applications…")
-            onAccepted: {
-                if (text.length > 0) {
-                    appListModel.search(text);
-                } else {
-                    appListModel.refresh();
-                }
-            }
-        }
-
         // ── Hero carousel ───────────────────────────────────────────────
         Components.HeroCarousel {
+            // The carousel insets its own card (for shadow room), so it aligns
+            // with the other bands without extra side margins here.
             Layout.fillWidth: true
-            Layout.leftMargin: Kirigami.Units.largeSpacing
-            Layout.rightMargin: Kirigami.Units.largeSpacing
+            Layout.maximumWidth: page.contentMaxWidth
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: Kirigami.Units.largeSpacing
             model: page.featuredModel
             visible: page.isDefaultView
         }
 
-        // ── Highlight Cards ─────────────────────────────────────────────
-        GridLayout {
+        // ── App of the Day spotlight ────────────────────────────────────
+        // Full-width feature surface; only the first featured entry (the
+        // Flathub App of the Day) is shown, others collapse to take no space.
+        Repeater {
+            model: page.featuredModel
+            delegate: Components.AppOfTheDayCard {
+                Layout.fillWidth: true
+                Layout.maximumWidth: index === 0 ? page.contentMaxWidth : 0
+                Layout.maximumHeight: index === 0 ? -1 : 0
+                Layout.alignment: Qt.AlignHCenter
+                Layout.leftMargin: Kirigami.Units.largeSpacing
+                Layout.rightMargin: Kirigami.Units.largeSpacing
+
+                visible: index === 0 && page.isDefaultView
+
+                cardAppId: typeof appId !== 'undefined' ? appId : ""
+                cardName: typeof name !== 'undefined' ? name : ""
+                cardSummary: typeof summary !== 'undefined' ? summary : ""
+                cardIconUrl: typeof iconUrl !== 'undefined' ? iconUrl : ""
+
+                onClicked: applicationWindow().pushAppDetail(this.cardAppId)
+            }
+        }
+
+        // ── Browse by Category ──────────────────────────────────────────
+        ColumnLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: Kirigami.Units.largeSpacing
-            Layout.rightMargin: Kirigami.Units.largeSpacing
-            
-            // On wide screens side-by-side, on narrow screens stacked
-            columns: width > Kirigami.Units.gridUnit * 35 ? 2 : 1
-            columnSpacing: Kirigami.Units.largeSpacing
-            rowSpacing: Kirigami.Units.largeSpacing
+            Layout.maximumWidth: page.contentMaxWidth
+            Layout.alignment: Qt.AlignHCenter
+            spacing: Kirigami.Units.smallSpacing
             visible: page.isDefaultView
 
-            Repeater {
-                model: page.featuredModel
-                delegate: Components.AppOfTheDayCard {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.preferredWidth: Kirigami.Units.gridUnit * 15
-                    
-                    // Only show the first item; others have 0 dimensions so they take no space
-                    visible: index === 0
-                    Layout.maximumWidth: index === 0 ? -1 : 0
-                    Layout.maximumHeight: index === 0 ? -1 : 0
-                    
-                    cardAppId: typeof appId !== 'undefined' ? appId : ""
-                    cardName: typeof name !== 'undefined' ? name : ""
-                    cardSummary: typeof summary !== 'undefined' ? summary : ""
-                    cardIconUrl: typeof iconUrl !== 'undefined' ? iconUrl : ""
-
-                    onClicked: {
-                        applicationWindow().pushAppDetail(this.cardAppId)
-                    }
-                }
+            Kirigami.Heading {
+                level: 2
+                text: i18n("Browse by Category")
+                Layout.fillWidth: true
+                Layout.leftMargin: Kirigami.Units.largeSpacing
+                Layout.rightMargin: Kirigami.Units.largeSpacing
             }
 
-            Components.WelcomeCard {
+            ListView {
+                id: categoryStrip
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 15
+                Layout.preferredHeight: Kirigami.Units.gridUnit * 2.5
+
+                orientation: ListView.Horizontal
+                clip: true
+                spacing: Kirigami.Units.smallSpacing
+                leftMargin: Kirigami.Units.largeSpacing
+                rightMargin: Kirigami.Units.largeSpacing
+
+                model: applicationWindow().categoriesModel
+
+                delegate: Item {
+                    id: categoryDelegate
+
+                    required property string text
+                    required property string category
+
+                    width: chip.implicitWidth
+                    height: categoryStrip.height
+
+                    Components.CategoryChip {
+                        id: chip
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: i18n(categoryDelegate.text)
+                        categoryId: categoryDelegate.category
+                        onClicked: {
+                            applicationWindow().currentSection = "categories";
+                            applicationWindow().currentCategory = categoryDelegate.category;
+                            applicationWindow().pageStack.push("qrc:/qml/pages/CategoryAppListPage.qml",
+                                { categoryId: categoryDelegate.category, categoryName: categoryDelegate.text });
+                        }
+                    }
+                }
             }
         }
 
         // ── Sections for Default View ───────────────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
+            Layout.maximumWidth: page.contentMaxWidth
+            Layout.alignment: Qt.AlignHCenter
             spacing: Kirigami.Units.largeSpacing * 2
             visible: page.isDefaultView
 
@@ -146,14 +188,20 @@ Kirigami.ScrollablePage {
         // ── Section: Search / Category Applications ──────────────────────
         ColumnLayout {
             Layout.fillWidth: true
+            Layout.maximumWidth: page.contentMaxWidth
+            Layout.alignment: Qt.AlignHCenter
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
             spacing: Kirigami.Units.mediumSpacing
             visible: !page.isDefaultView
 
             Kirigami.Heading {
-                level: 3
-                text: i18n("Search Results")
+                level: 2
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: appGrid.count > 0
+                    ? i18np("%1 result for “%2”", "%1 results for “%2”", appGrid.count, page.activeSearchQuery)
+                    : i18n("Search Results")
             }
 
             // Loading state

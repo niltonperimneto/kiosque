@@ -5,7 +5,7 @@ import org.kde.kirigami as Kirigami
 import org.kde.ki18n
 import com.kiosque
 import org.kde.kirigamiaddons.components as KirigamiAddons
-import Qt.labs.settings as LabsSettings
+import QtCore
 
 Kirigami.ScrollablePage {
     id: page
@@ -25,7 +25,7 @@ Kirigami.ScrollablePage {
         }
     ]
 
-    LabsSettings.Settings {
+    Settings {
         id: localSettings
         category: "SettingsPage"
         property bool showAdvanced: false
@@ -501,6 +501,83 @@ Kirigami.ScrollablePage {
                 }
             }
         }
+
+        // ── About Card ─────────────────────────────────────────────────────
+        Controls.Pane {
+            Layout.fillWidth: true
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
+            Layout.alignment: Qt.AlignHCenter
+            padding: Kirigami.Units.largeSpacing * 1.5
+
+            background: Kirigami.ShadowedRectangle {
+                radius: 12
+                color: Kirigami.Theme.backgroundColor
+                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
+                border.width: 1
+                shadow.size: 10
+                shadow.color: Qt.rgba(0, 0, 0, 0.05)
+            }
+
+            contentItem: ColumnLayout {
+                spacing: Kirigami.Units.largeSpacing
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+                    Kirigami.Icon {
+                        source: "help-about-symbolic"
+                        width: Kirigami.Units.iconSizes.medium
+                        height: width
+                        color: Kirigami.Theme.highlightColor
+                        isMask: true
+                    }
+                    Kirigami.Heading {
+                        text: i18n("About Kiosque")
+                        level: 3
+                        Layout.fillWidth: true
+                    }
+                }
+
+                Kirigami.Separator { Layout.fillWidth: true }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.largeSpacing
+
+                    Image {
+                        source: "qrc:/qml/images/logo.svg"
+                        Layout.preferredWidth: Kirigami.Units.iconSizes.large * 1.5
+                        Layout.preferredHeight: Kirigami.Units.iconSizes.large * 1.5
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: Kirigami.Units.smallSpacing
+
+                        Controls.Label {
+                            text: "Kiosque"
+                            font.bold: true
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.1
+                        }
+
+                        Controls.Label {
+                            text: i18n("Version %1").arg(Qt.application.version)
+                            color: Kirigami.Theme.disabledTextColor
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
+                        }
+                    }
+
+                    Controls.Button {
+                        text: i18n("More Information…")
+                        icon.name: "help-about-symbolic"
+                        onClicked: aboutDialog.open()
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+                }
+            }
+        }
     }
 
     function saveSettings() {
@@ -604,6 +681,90 @@ Kirigami.ScrollablePage {
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
                 color: Kirigami.Theme.negativeTextColor
                 horizontalAlignment: Text.AlignHCenter
+            }
+        }
+    }
+
+    // ── About dialog ────────────────────────────────────────────────────
+    Controls.Dialog {
+        id: aboutDialog
+        anchors.centerIn: parent
+        title: i18n("About Kiosque")
+        standardButtons: Controls.Dialog.Close
+        modal: true
+
+        contentItem: ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+
+            Image {
+                id: aboutLogo
+                source: "qrc:/qml/images/logo.svg"
+                Layout.preferredWidth: Kirigami.Units.iconSizes.huge * 1.5
+                Layout.preferredHeight: Kirigami.Units.iconSizes.huge * 1.5
+                sourceSize.width: 512
+                sourceSize.height: 512
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                mipmap: true
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: Kirigami.Units.largeSpacing
+            }
+
+            Kirigami.Heading {
+                text: "Kiosque"
+                level: 1
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Controls.Label {
+                text: i18n("Version %1", Qt.application.version)
+                font.weight: Font.DemiBold
+                color: Kirigami.Theme.highlightColor
+                Layout.alignment: Qt.AlignHCenter
+                Layout.bottomMargin: Kirigami.Units.largeSpacing
+            }
+
+            Controls.Label {
+                text: i18n("A beautiful, fast, and modern Flatpak storefront for the KDE Plasma desktop, inspired by GNOME's software curation aesthetics.")
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: Kirigami.Units.gridUnit * 22
+            }
+
+            Controls.Label {
+                text: i18n("Kiosque was built to bring a curation-focused storefront to the Qt/KDE ecosystem, showcasing applications in their best light. It integrates a high-performance Rust backend with a modern Qt6/Kirigami frontend.")
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                color: Kirigami.Theme.disabledTextColor
+                font: Kirigami.Theme.smallFont
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: Kirigami.Units.gridUnit * 22
+                Layout.topMargin: Kirigami.Units.smallSpacing
+            }
+
+            Kirigami.Separator {
+                Layout.fillWidth: true
+                Layout.topMargin: Kirigami.Units.largeSpacing
+                Layout.bottomMargin: Kirigami.Units.largeSpacing
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: Kirigami.Units.largeSpacing
+
+                Controls.Button {
+                    icon.name: "code-context"
+                    text: i18n("Source Code")
+                    flat: true
+                    onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque")
+                }
+                Controls.Button {
+                    icon.name: "tools-report-bug"
+                    text: i18n("Report Bug")
+                    flat: true
+                    onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque/issues")
+                }
             }
         }
     }

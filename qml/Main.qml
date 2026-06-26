@@ -28,6 +28,7 @@ Kirigami.ApplicationWindow {
     property AppListModel appListModel: AppListModel {}
     property FeaturedModel featuredModel: FeaturedModel {}
     property InstalledModel installedModel: InstalledModel {}
+    property alias categoriesModel: categoriesModel
 
     // Expose search query for page bindings (no longer bound to a header text field)
     property string searchQuery: ""
@@ -40,19 +41,13 @@ Kirigami.ApplicationWindow {
     }
 
     function switchToPage(pagePath, properties) {
-        console.warn("switchToPage called with:", pagePath, "current depth:", pageStack.depth);
-        if (pageStack.depth === 0) {
-            console.warn("Pushing base ShopfrontPage");
-            pageStack.push("qrc:/qml/pages/TestPage.qml");
-        }
+        // Collapse back to the root page before switching sections.
         while (pageStack.depth > 1) {
             pageStack.pop();
         }
         if (pagePath !== "qrc:/qml/pages/ShopfrontPage.qml") {
-            console.warn("Pushing new page:", pagePath);
             pageStack.push(pagePath, properties || {});
         }
-        console.warn("Finished switchToPage. Depth is now:", pageStack.depth, "currentItem:", pageStack.currentItem);
     }
 
     function pushAppDetail(appId) {
@@ -67,7 +62,6 @@ Kirigami.ApplicationWindow {
         }
 
         if (existingPage !== null) {
-            console.warn("Found existing AppDetailPage in stack, checking appId:", existingPage.appId);
             // If the existing page has the same appId, we just pop back to it and we're done
             if (existingPage.appId === appId) {
                 pageStack.pop(existingPage);
@@ -110,69 +104,61 @@ Kirigami.ApplicationWindow {
     globalDrawer: Kirigami.GlobalDrawer {
         id: mainDrawer
         isMenu: false
+        // Desktop: persistent collapsible sidebar. Mobile: modal overlay drawer.
+        modal: Kirigami.Settings.isMobile
+        collapsible: !Kirigami.Settings.isMobile
 
-        property real customWidth: Kirigami.Units.gridUnit * 16
-        width: !collapsed ? customWidth : collapsedSize
+        // Start retracted to the icon-only rail on desktop, giving content the
+        // full width; the user can expand it via the handle.
+        Component.onCompleted: if (!Kirigami.Settings.isMobile) collapsed = true;
 
-        header: MouseArea {
-            id: headerArea
-            implicitWidth: parent.width
+        // Standard fixed sidebar width; the built-in handle collapses it to an
+        // icon-only rail (collapsedSize) rather than allowing free resizing.
+        width: !collapsed ? Kirigami.Units.gridUnit * 16 : collapsedSize
+
+        header: Controls.ItemDelegate {
+            id: headerDelegate
+            implicitWidth: parent ? parent.width : 0
             implicitHeight: mainDrawer.collapsed ? Kirigami.Units.gridUnit * 3 : Kirigami.Units.gridUnit * 4.5
-            hoverEnabled: true
-            
+            padding: Kirigami.Units.largeSpacing
+
+            // Inherit the drawer's palette and keep the rest state transparent so
+            // the header blends with the drawer background instead of painting a
+            // mismatched View/Button-coloured block.
+            Kirigami.Theme.inherit: true
+
+            background: Rectangle {
+                color: headerDelegate.pressed
+                    ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.2)
+                    : headerDelegate.hovered
+                        ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.1)
+                        : "transparent"
+                Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+            }
+
+            Controls.ToolTip.text: i18n("Open Settings")
+            Controls.ToolTip.visible: mainDrawer.collapsed && hovered
+            Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+
             onClicked: {
-                mainDrawer.close();
+                if (Kirigami.Settings.isMobile) {
+                    mainDrawer.close();
+                }
                 root.currentSection = "settings";
                 root.currentCategory = "";
                 root.switchToPage("qrc:/qml/pages/SettingsPage.qml");
             }
 
-            Rectangle {
-                anchors.fill: parent
-                color: headerArea.containsMouse ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.1) : "transparent"
-            }
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: Kirigami.Units.largeSpacing
+            contentItem: RowLayout {
                 spacing: Kirigami.Units.mediumSpacing
 
-                Item {
-                    id: avatarContainer
-                    Layout.preferredWidth: (mainDrawer.collapsed ? Kirigami.Units.iconSizes.medium : Kirigami.Units.iconSizes.large) + 8
+                KirigamiAddons.Avatar {
+                    id: userAvatar
+                    Layout.preferredWidth: mainDrawer.collapsed ? Kirigami.Units.iconSizes.medium : Kirigami.Units.iconSizes.large
                     Layout.preferredHeight: Layout.preferredWidth
                     Layout.alignment: Qt.AlignVCenter
-
-                    Kirigami.ShadowedRectangle {
-                        id: avatarGlowRing
-                        anchors.fill: parent
-                        radius: width / 2
-                        color: "transparent"
-
-                        border.width: 1.5
-                        border.color: headerArea.containsMouse
-                            ? Kirigami.Theme.highlightColor
-                            : Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.3)
-
-                        shadow.size: headerArea.containsMouse ? 10 : 4
-                        shadow.color: headerArea.containsMouse
-                            ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.4)
-                            : Qt.rgba(0, 0, 0, 0.15)
-                        shadow.yOffset: headerArea.containsMouse ? 2 : 1
-
-                        Behavior on border.color { ColorAnimation { duration: 150 } }
-                        Behavior on shadow.size { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                        Behavior on shadow.color { ColorAnimation { duration: 150 } }
-                    }
-
-                    KirigamiAddons.Avatar {
-                        id: userAvatar
-                        anchors.centerIn: parent
-                        width: parent.width - 8
-                        height: width
-                        source: SettingsController.is_authenticated && SettingsController.oauth_avatar_url !== "" ? SettingsController.oauth_avatar_url : ""
-                        name: SettingsController.is_authenticated ? SettingsController.oauth_username : ""
-                    }
+                    source: SettingsController.is_authenticated && SettingsController.oauth_avatar_url !== "" ? SettingsController.oauth_avatar_url : ""
+                    name: SettingsController.is_authenticated ? SettingsController.oauth_username : ""
                 }
 
                 ColumnLayout {
@@ -183,14 +169,14 @@ Kirigami.ApplicationWindow {
 
                     Controls.Label {
                         text: SettingsController.is_authenticated ? SettingsController.oauth_username : i18n("Sign In")
-                        font.bold: true
+                        font.weight: Font.Bold
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
 
                     Controls.Label {
                         text: SettingsController.is_authenticated ? i18n("Settings & Reviews") : i18n("Local Profile")
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        font: Kirigami.Theme.smallFont
                         color: Kirigami.Theme.disabledTextColor
                         elide: Text.ElideRight
                         Layout.fillWidth: true
@@ -212,118 +198,92 @@ Kirigami.ApplicationWindow {
                 }
             },
             Kirigami.Action {
+                id: categoriesAction
                 text: i18n("Categories")
                 icon.name: "applications-all-symbolic"
+                checked: root.currentSection === "category" || root.currentSection === "categories"
+                onTriggered: {
+                    if (mainDrawer.collapsed) {
+                        mainDrawer.collapsed = false;
+                    }
+                }
+
+                // Helper used by every child to navigate to a category listing.
+                function openCategory(catId, catName) {
+                    root.currentSection = "category";
+                    root.currentCategory = catId;
+                    root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: catId, categoryName: catName });
+                }
 
                 Kirigami.Action {
                     text: i18n("All Categories")
                     icon.name: "applications-all-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === ""
+                    checked: root.currentSection === "categories"
                     onTriggered: {
-                        root.currentSection = "category";
+                        root.currentSection = "categories";
                         root.currentCategory = "";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "", categoryName: "All Categories" });
+                        root.switchToPage("qrc:/qml/pages/CategoriesPage.qml");
                     }
                 }
                 Kirigami.Action {
                     text: i18n("Audio & Video")
                     icon.name: "applications-multimedia-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "AudioVideo"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "AudioVideo";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "AudioVideo", categoryName: "Audio & Video" });
-                    }
+                    onTriggered: categoriesAction.openCategory("AudioVideo", i18n("Audio & Video"))
                 }
                 Kirigami.Action {
                     text: i18n("Games")
                     icon.name: "applications-games-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Game"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "Game";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "Game", categoryName: "Games" });
-                    }
+                    onTriggered: categoriesAction.openCategory("Game", i18n("Games"))
                 }
                 Kirigami.Action {
                     text: i18n("Office")
                     icon.name: "applications-office-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Office"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "Office";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "Office", categoryName: "Office" });
-                    }
+                    onTriggered: categoriesAction.openCategory("Office", i18n("Office"))
                 }
                 Kirigami.Action {
                     text: i18n("Graphics")
                     icon.name: "applications-graphics-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Graphics"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "Graphics";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "Graphics", categoryName: "Graphics" });
-                    }
+                    onTriggered: categoriesAction.openCategory("Graphics", i18n("Graphics"))
                 }
                 Kirigami.Action {
                     text: i18n("Development")
                     icon.name: "applications-development-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Development"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "Development";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "Development", categoryName: "Development" });
-                    }
+                    onTriggered: categoriesAction.openCategory("Development", i18n("Development"))
                 }
                 Kirigami.Action {
                     text: i18n("Internet")
                     icon.name: "applications-internet-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Network"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "Network";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "Network", categoryName: "Internet" });
-                    }
+                    onTriggered: categoriesAction.openCategory("Network", i18n("Internet"))
                 }
                 Kirigami.Action {
                     text: i18n("Utilities")
                     icon.name: "applications-utilities-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Utility"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "Utility";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "Utility", categoryName: "Utilities" });
-                    }
+                    onTriggered: categoriesAction.openCategory("Utility", i18n("Utilities"))
                 }
                 Kirigami.Action {
                     text: i18n("Education")
                     icon.name: "applications-education-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Education"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "Education";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "Education", categoryName: "Education" });
-                    }
+                    onTriggered: categoriesAction.openCategory("Education", i18n("Education"))
                 }
                 Kirigami.Action {
                     text: i18n("System")
                     icon.name: "applications-system-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "System"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "System";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "System", categoryName: "System" });
-                    }
+                    onTriggered: categoriesAction.openCategory("System", i18n("System"))
                 }
                 Kirigami.Action {
                     text: i18n("Science")
                     icon.name: "applications-science-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Science"
-                    onTriggered: {
-                        root.currentSection = "category";
-                        root.currentCategory = "Science";
-                        root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "Science", categoryName: "Science" });
-                    }
+                    onTriggered: categoriesAction.openCategory("Science", i18n("Science"))
                 }
             },
             Kirigami.Action {
@@ -346,11 +306,6 @@ Kirigami.ApplicationWindow {
                     root.currentCategory = "";
                     root.switchToPage("qrc:/qml/pages/SettingsPage.qml");
                 }
-            },
-            Kirigami.Action {
-                text: i18n("About Kiosque")
-                icon.name: "help-about-symbolic"
-                onTriggered: aboutDialog.open()
             }
         ]
     }
@@ -495,90 +450,7 @@ Kirigami.ApplicationWindow {
         }
     }
 
-    // ── About dialog ────────────────────────────────────────────────────
-    Controls.Dialog {
-        id: aboutDialog
-        anchors.centerIn: parent
-        title: i18n("About Kiosque")
-        standardButtons: Controls.Dialog.Close
-        modal: true
 
-        contentItem: ColumnLayout {
-            spacing: Kirigami.Units.largeSpacing
-
-            Image {
-                id: aboutLogo
-                source: "qrc:/qml/images/logo.svg"
-                Layout.preferredWidth: Kirigami.Units.iconSizes.huge * 1.5
-                Layout.preferredHeight: Kirigami.Units.iconSizes.huge * 1.5
-                sourceSize.width: 512
-                sourceSize.height: 512
-                fillMode: Image.PreserveAspectFit
-                smooth: true
-                mipmap: true
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: Kirigami.Units.largeSpacing
-            }
-
-            Kirigami.Heading {
-                text: "Kiosque"
-                level: 1
-                Layout.alignment: Qt.AlignHCenter
-            }
-
-            Controls.Label {
-                text: i18n("Version %1", Qt.application.version)
-                font.weight: Font.DemiBold
-                color: Kirigami.Theme.highlightColor
-                Layout.alignment: Qt.AlignHCenter
-                Layout.bottomMargin: Kirigami.Units.largeSpacing
-            }
-
-            Controls.Label {
-                text: i18n("A beautiful, fast, and modern Flatpak storefront for the KDE Plasma desktop, inspired by GNOME's software curation aesthetics.")
-                wrapMode: Text.WordWrap
-                horizontalAlignment: Text.AlignHCenter
-                Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 22
-            }
-
-            Controls.Label {
-                text: i18n("Kiosque was built to bring a curation-focused storefront to the Qt/KDE ecosystem, showcasing applications in their best light. It integrates a high-performance Rust backend with a modern Qt6/Kirigami frontend.")
-                wrapMode: Text.WordWrap
-                horizontalAlignment: Text.AlignHCenter
-                color: Kirigami.Theme.disabledTextColor
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 22
-                Layout.topMargin: Kirigami.Units.smallSpacing
-            }
-
-
-            Kirigami.Separator {
-                Layout.fillWidth: true
-                Layout.topMargin: Kirigami.Units.largeSpacing
-                Layout.bottomMargin: Kirigami.Units.largeSpacing
-            }
-
-            RowLayout {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: Kirigami.Units.largeSpacing
-
-                Controls.Button {
-                    icon.name: "code-context"
-                    text: i18n("Source Code")
-                    flat: true
-                    onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque")
-                }
-                Controls.Button {
-                    icon.name: "tools-report-bug"
-                    text: i18n("Report Bug")
-                    flat: true
-                    onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque/issues")
-                }
-            }
-        }
-    }
 
 
     // ── Startup ─────────────────────────────────────────────────────────
@@ -589,46 +461,4 @@ Kirigami.ApplicationWindow {
         installedModel.refresh();
     }
 
-    // ── Resizable Sidebar Handle ────────────────────────────────────────
-    Rectangle {
-        id: drawerResizeHandle
-        parent: root.overlay
-        x: mainDrawer.position * mainDrawer.width - width / 2
-        y: 0
-        width: Kirigami.Units.smallSpacing * 2
-        height: parent.height
-        color: Kirigami.Theme.highlightColor
-        opacity: handleMouseArea.containsMouse || handleMouseArea.drag.active ? 0.3 : 0.0
-        visible: !mainDrawer.collapsed && mainDrawer.position > 0 && !mainDrawer.modal
-        z: 9999
-
-        MouseArea {
-            id: handleMouseArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.SplitHCursor
-            drag.target: dummyDragItem
-            drag.axis: Drag.XAxis
-            
-            property real startWidth: 0
-            
-            onPressed: {
-                startWidth = mainDrawer.customWidth
-            }
-            onPositionChanged: {
-                if (drag.active) {
-                    let newWidth = startWidth + dummyDragItem.x
-                    if (newWidth > Kirigami.Units.gridUnit * 12 && newWidth < Kirigami.Units.gridUnit * 40) {
-                        mainDrawer.customWidth = newWidth
-                    }
-                }
-            }
-            onReleased: {
-                dummyDragItem.x = 0
-            }
-        }
-        Item {
-            id: dummyDragItem
-        }
-    }
 }

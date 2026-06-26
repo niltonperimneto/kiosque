@@ -16,6 +16,26 @@ Kirigami.ScrollablePage {
     property string categoryName: ""
     
     title: i18n(categoryName)
+
+    property string searchQuery: ""
+    property bool hasVisibleApps: {
+        if (searchQuery.length === 0) return true;
+        for (let i = 0; i < appGrid.children.length; i++) {
+            let child = appGrid.children[i];
+            if (child.isMatch === true) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    titleDelegate: Kirigami.SearchField {
+        id: searchField
+        Layout.fillWidth: true
+        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+        placeholderText: i18n("Search in %1…").arg(page.title)
+        onTextChanged: page.searchQuery = text
+    }
     
     actions: [
         Kirigami.Action {
@@ -73,7 +93,16 @@ Kirigami.ScrollablePage {
                     text: i18n(modelData.text)
                     icon.name: modelData.icon
                     flat: !highlighted
-                    highlighted: page.categoryId === modelData.categoryId
+                    highlighted: {
+                        if (page.categoryId === modelData.categoryId) return true;
+                        if (page.categoryId.indexOf("-") === -1) {
+                            let parts = modelData.categoryId.split("-");
+                            if (parts[0] === page.categoryId && (parts[1] === "All" || parts[1] === "Game")) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
                     onClicked: {
                         page.categoryId = modelData.categoryId;
                         page.loadData();
@@ -102,7 +131,7 @@ Kirigami.ScrollablePage {
             Layout.preferredHeight: Kirigami.Units.gridUnit * 8
             icon.name: "edit-find"
             text: i18n("No Applications Found")
-            visible: !page.categoryModel.loading && appGridRepeater.count === 0
+            visible: !page.categoryModel.loading && (appGridRepeater.count === 0 || !page.hasVisibleApps)
         }
 
         // App grid
@@ -116,7 +145,7 @@ Kirigami.ScrollablePage {
             columnSpacing: Kirigami.Units.largeSpacing
             rowSpacing: Kirigami.Units.largeSpacing
 
-            visible: appGridRepeater.count > 0
+            visible: appGridRepeater.count > 0 && page.hasVisibleApps
 
             Repeater {
                 id: appGridRepeater
@@ -124,13 +153,20 @@ Kirigami.ScrollablePage {
                 onCountChanged: console.log("Category Repeater count changed to", count)
                 delegate: Item {
                     id: delegateWrapper
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: Kirigami.Units.gridUnit * 12
-
+                    
                     required property string appId
                     required property string name
                     required property string summary
                     required property string iconUrl
+
+                    property bool isMatch: page.searchQuery.length === 0 || 
+                                           name.toLowerCase().indexOf(page.searchQuery.toLowerCase()) !== -1 ||
+                                           appId.toLowerCase().indexOf(page.searchQuery.toLowerCase()) !== -1 ||
+                                           summary.toLowerCase().indexOf(page.searchQuery.toLowerCase()) !== -1
+
+                    Layout.fillWidth: isMatch
+                    Layout.preferredHeight: isMatch ? Kirigami.Units.gridUnit * 12 : 0
+                    visible: isMatch
 
                     Components.AppCard {
                         anchors.fill: parent
