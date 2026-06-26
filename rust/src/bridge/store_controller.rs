@@ -590,13 +590,24 @@ fn apply_details(
     qobject.as_mut().set_detail_name(cxx_qt_lib::QString::from(&details.name));
     qobject.as_mut().set_detail_summary(cxx_qt_lib::QString::from(&details.summary));
     qobject.as_mut().set_detail_description(cxx_qt_lib::QString::from(&details.description.clone().unwrap_or_default()));
-    qobject.as_mut().set_detail_icon_url(cxx_qt_lib::QString::from(&details.icon.clone().unwrap_or_default()));
+    let app_id = details.id.clone();
+    let raw_icon_url = details.icon.clone().unwrap_or_default();
+    crate::image_registry::register_image_url(format!("{}:icon", app_id), raw_icon_url);
+    qobject.as_mut().set_detail_icon_url(cxx_qt_lib::QString::from(&format!("image://kiosque/{}/icon", app_id)));
     qobject.as_mut().set_detail_developer(cxx_qt_lib::QString::from(&details.developer_name.clone().unwrap_or_default()));
     qobject.as_mut().set_detail_license(cxx_qt_lib::QString::from(&details.project_license.clone().unwrap_or_default()));
     qobject.as_mut().set_detail_is_installed(installed);
     qobject.as_mut().set_error_message(cxx_qt_lib::QString::from(""));
 
-    qobject.as_mut().set_detail_screenshots_json(util::json_qstring(&screenshot_urls(&details), "[]"));
+    let raw_screenshot_urls = screenshot_urls(&details);
+    let mut qml_screenshot_urls = Vec::new();
+    for (idx, scr_url) in raw_screenshot_urls.into_iter().enumerate() {
+        let key = format!("{}:screenshot:{}", app_id, idx);
+        crate::image_registry::register_image_url(key, scr_url);
+        qml_screenshot_urls.push(format!("image://kiosque/{}/screenshot/{}", app_id, idx));
+    }
+    qobject.as_mut().set_detail_screenshots_json(util::json_qstring(&qml_screenshot_urls, "[]"));
+
 
     let permissions = permissions_val
         .get("metadata")

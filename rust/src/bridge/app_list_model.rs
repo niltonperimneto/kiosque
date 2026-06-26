@@ -111,7 +111,11 @@ impl qobject::AppListModel {
             match role {
                 Self::NAME_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.name)),
                 Self::SUMMARY_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.summary)),
-                Self::ICON_URL_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.icon_url)),
+                Self::ICON_URL_ROLE => {
+                    let qml_url = format!("image://kiosque/{}/icon", item.app_id);
+                    crate::image_registry::register_image_url(format!("{}:icon", item.app_id), item.icon_url.clone());
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&qml_url))
+                }
                 Self::APP_ID_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.app_id)),
                 _ => cxx_qt_lib::QVariant::default(),
             }
