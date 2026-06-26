@@ -96,6 +96,7 @@ Kirigami.Card {
                     }
 
                     SequentialAnimation on opacity {
+                        running: root.visible
                         loops: Animation.Infinite
                         NumberAnimation { from: 0.5; to: 0.9; duration: 4000; easing.type: Easing.InOutSine }
                         NumberAnimation { from: 0.9; to: 0.5; duration: 4000; easing.type: Easing.InOutSine }
