@@ -304,6 +304,10 @@ int main(int argc, char* argv[]) {
         QDir localeDir(QCoreApplication::applicationDirPath() + QStringLiteral("/../po"));
         if (localeDir.exists()) {
             KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), localeDir.absolutePath());
+        } else {
+#ifdef LOCALE_INSTALL_DIR
+            KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), QStringLiteral(LOCALE_INSTALL_DIR));
+#endif
         }
         KLocalizedString::setApplicationDomain("kiosque");
         
@@ -321,6 +325,10 @@ int main(int argc, char* argv[]) {
     QDir localeDir(QCoreApplication::applicationDirPath() + QStringLiteral("/../po"));
     if (localeDir.exists()) {
         KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), localeDir.absolutePath());
+    } else {
+#ifdef LOCALE_INSTALL_DIR
+        KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), QStringLiteral(LOCALE_INSTALL_DIR));
+#endif
     }
     KLocalizedString::setApplicationDomain("kiosque");
     

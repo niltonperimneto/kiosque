@@ -23,7 +23,7 @@ ki18n_qml_dep = dependency('KF6I18n', method: 'cmake', modules: ['KF6::I18nQml']
 
 cargo = find_program('cargo')
 
-is_release = get_option('buildtype') == 'release'
+is_release = get_option('buildtype') != 'debug'
 cargo_profile = is_release ? 'release' : 'debug'
 cargo_target_dir = meson.current_build_dir() / 'cargo_target'
 manifest_path = meson.current_source_dir() / 'rust/Cargo.toml'
@@ -66,13 +66,16 @@ update_daemon_moc = qt6.preprocess(
   moc_sources: ['src/update_main.cpp']
 )
 
+localedir_path = get_option('prefix') / get_option('localedir')
+
 # Application executable
 executable('kiosque',
   sources: ['src/main.cpp', qrc_files],
   dependencies: [qt_deps, kirigami_dep, rust_dep, dbus_dep, ki18n_dep, ki18n_qml_dep],
   cpp_args: [
     '-DTRANSLATION_DOMAIN="kiosque"',
-    '-DPROJECT_VERSION="' + meson.project_version() + '"'
+    '-DPROJECT_VERSION="' + meson.project_version() + '"',
+    '-DLOCALE_INSTALL_DIR="' + localedir_path + '"'
   ],
   install: true
 )
@@ -82,7 +85,8 @@ executable('kiosque-update',
   dependencies: [qt_deps, rust_dep, dbus_dep, ki18n_dep],
   cpp_args: [
     '-DTRANSLATION_DOMAIN="kiosque"',
-    '-DPROJECT_VERSION="' + meson.project_version() + '"'
+    '-DPROJECT_VERSION="' + meson.project_version() + '"',
+    '-DLOCALE_INSTALL_DIR="' + localedir_path + '"'
   ],
   install: true
 )
@@ -94,5 +98,11 @@ install_data('org.kiosque.Kiosque.desktop',
 install_data('qml/images/logo.svg',
   rename: 'org.kiosque.Kiosque.svg',
   install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps'
+)
+
+gnome = import('gnome')
+gnome.post_install(
+  gtk_update_icon_cache: true,
+  update_desktop_database: true
 )
 
