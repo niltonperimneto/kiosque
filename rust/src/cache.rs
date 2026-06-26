@@ -25,7 +25,7 @@ const STATS_TTL: Duration = Duration::from_secs(60 * 60); // 1 hour
 const EXCEPTIONS_TTL: Duration = Duration::from_secs(24 * 60 * 60); // 24 hours
 
 /// How long the locally-installed apps list remains valid.
-const INSTALLED_TTL: Duration = Duration::from_secs(30); // 30 seconds
+const INSTALLED_TTL: Duration = Duration::from_secs(5 * 60); // 5 minutes
 
 // ── Accessor macro ──────────────────────────────────────────────────────────
 
@@ -65,6 +65,7 @@ pub struct AppCache {
     app_stats: Cache<String, AppStats>,
     global_stats: Cache<(), GlobalStats>,
     exceptions: Cache<String, LinterExceptions>,
+    summaries: Cache<String, serde_json::Value>,
 }
 
 impl AppCache {
@@ -79,6 +80,7 @@ impl AppCache {
             app_stats: Cache::builder().time_to_live(STATS_TTL).max_capacity(200).build(),
             global_stats: Cache::builder().time_to_live(STATS_TTL).max_capacity(1).build(),
             exceptions: Cache::builder().time_to_live(EXCEPTIONS_TTL).max_capacity(200).build(),
+            summaries: Cache::builder().time_to_live(DETAILS_TTL).max_capacity(100).build(),
         }
     }
 
@@ -142,6 +144,10 @@ impl AppCache {
 
     string_keyed_accessors!(exceptions, LinterExceptions, "exceptions", get_exceptions, put_exceptions);
 
+    // ── Summary cache ───────────────────────────────────────────────────
+
+    string_keyed_accessors!(summaries, serde_json::Value, "summaries", get_summary, put_summary);
+
     // ── Installed list cache ────────────────────────────────────────────
 
     pub async fn get_installed_list(&self) -> Option<Vec<FlatpakJsonApp>> {
@@ -177,6 +183,7 @@ impl AppCache {
         klog!("CACHE INVALIDATE installed_list + installed_set");
         self.installed_list.invalidate(&()).await;
         self.installed_set.invalidate(&()).await;
+        crate::disk_cache::invalidate_installed_cache().await;
     }
 
     pub async fn clear(&self) {
@@ -190,6 +197,7 @@ impl AppCache {
         self.app_stats.invalidate_all();
         self.global_stats.invalidate_all();
         self.exceptions.invalidate_all();
+        self.summaries.invalidate_all();
     }
 }
 

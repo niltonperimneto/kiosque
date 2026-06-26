@@ -82,6 +82,7 @@ pub mod qobject {
     impl cxx_qt::Threading for AppListModel {}
 }
 
+#[derive(Clone)]
 pub struct AppEntry {
     pub name: String,
     pub summary: String,
@@ -139,30 +140,63 @@ impl qobject::AppListModel {
         self.as_mut().set_loading(true);
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
-            let client = crate::flathub::client::FlathubClient::new();
-            let items = match client.fetch_popular().await {
-                Ok(apps) => {
-                    klog!("AppListModel::refresh: mapping {} apps to entries", apps.len());
-                    apps.into_iter().map(|app| AppEntry {
-                        name: app.name,
-                        summary: app.summary.unwrap_or_default(),
-                        icon_url: app.icon.unwrap_or_default(),
-                        app_id: app.app_id,
-                    }).collect()
-                }
-                Err(e) => {
-                    kerr!("AppListModel::refresh: {}", e);
-                    vec![]
-                }
-            };
+            // SWR Step 1: Try reading from disk cache first
+            let mut cached_items = None;
+            let mut is_expired = true;
             
-            let _ = qt_thread.queue(move |mut qobject| {
-                klog!("AppListModel::refresh: updating UI with {} items", items.len());
-                qobject.as_mut().begin_reset_model();
-                qobject.as_mut().rust_mut().items = items;
-                qobject.as_mut().end_reset_model();
-                qobject.as_mut().set_loading(false);
-            });
+            if let Some((timestamp, items)) = crate::disk_cache::load_popular_cache().await {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                is_expired = now.saturating_sub(timestamp) > 300; // 5 minutes TTL
+                cached_items = Some(items.clone());
+                
+                // Yield cached items to Qt immediately (Instant load)
+                let _ = qt_thread.queue(move |mut qobject| {
+                    klog!("AppListModel::refresh: Loading cached popular list ({} items)", items.len());
+                    qobject.as_mut().begin_reset_model();
+                    qobject.as_mut().rust_mut().items = items;
+                    qobject.as_mut().end_reset_model();
+                });
+            }
+            
+            // SWR Step 2: Fetch from network if cache is expired or missing
+            if is_expired || cached_items.is_none() {
+                let client = crate::flathub::client::FlathubClient::new();
+                let items = match client.fetch_popular().await {
+                    Ok(apps) => {
+                        klog!("AppListModel::refresh: mapping {} apps to entries", apps.len());
+                        apps.into_iter().map(|app| AppEntry {
+                            name: app.name,
+                            summary: app.summary.unwrap_or_default(),
+                            icon_url: app.icon.unwrap_or_default(),
+                            app_id: app.app_id,
+                        }).collect()
+                    }
+                    Err(e) => {
+                        kerr!("AppListModel::refresh: {}", e);
+                        vec![]
+                    }
+                };
+                
+                // Write back to cache
+                if !items.is_empty() {
+                    let _ = crate::disk_cache::save_popular_cache(&items).await;
+                }
+                
+                let _ = qt_thread.queue(move |mut qobject| {
+                    klog!("AppListModel::refresh: updating UI with fresh {} items", items.len());
+                    qobject.as_mut().begin_reset_model();
+                    qobject.as_mut().rust_mut().items = items;
+                    qobject.as_mut().end_reset_model();
+                    qobject.as_mut().set_loading(false);
+                });
+            } else {
+                let _ = qt_thread.queue(move |mut qobject| {
+                    qobject.as_mut().set_loading(false);
+                });
+            }
         });
     }
 

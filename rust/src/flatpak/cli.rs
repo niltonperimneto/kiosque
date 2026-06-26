@@ -32,6 +32,9 @@ pub struct FlatpakJsonApp {
     /// `"installed-size"` (with a hyphen) or `"installed_size"`.
     #[serde(default, alias = "installed-size")]
     pub installed_size: Option<String>,
+
+    #[serde(default)]
+    pub options: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
@@ -45,12 +48,12 @@ pub struct Remote {
     pub description: String,
 }
 
-/// List all installed Flatpak applications as structured JSON.
+/// List all installed Flatpak applications and runtimes as structured JSON.
 pub async fn list_installed() -> Result<String, String> {
     let output = Command::new("flatpak")
         .env("LC_ALL", "C")
         .args([
-            "list", "--app", "-j", "--columns=application,name,version,branch,origin,installation,arch,size",
+            "list", "-j", "--columns=application,name,version,branch,origin,installation,arch,size,options",
         ])
         .output()
         .await

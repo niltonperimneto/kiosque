@@ -116,6 +116,7 @@ pub mod qobject {
     impl cxx_qt::Threading for InstalledModel {}
 }
 
+#[derive(Clone)]
 pub struct InstalledEntry {
     pub name: String,
     pub app_id: String,
@@ -145,6 +146,7 @@ pub struct InstalledModelRust {
     pub show_updates_only: bool,
     // show_runtimes is a qproperty so the section toggle in QML can bind to it
     pub show_runtimes: bool,
+    pub filtered_indices_cache: std::cell::RefCell<Option<Vec<usize>>>,
 }
 
 impl Default for InstalledModelRust {
@@ -165,6 +167,7 @@ impl Default for InstalledModelRust {
             search_filter: String::new(),
             show_updates_only: false,
             show_runtimes: false,
+            filtered_indices_cache: std::cell::RefCell::new(None),
         }
     }
 }
@@ -182,11 +185,17 @@ impl qobject::InstalledModel {
 
     /// Returns the indices into `self.items` that pass the current filter.
     fn filtered_indices(&self) -> Vec<usize> {
+        if let Ok(cache) = self.filtered_indices_cache.try_borrow() {
+            if let Some(ref indices) = *cache {
+                return indices.clone();
+            }
+        }
+
         let filter = self.search_filter.to_lowercase();
         let updates_only = self.show_updates_only;
         let show_runtimes = self.show_runtimes;
 
-        self.items
+        let indices: Vec<usize> = self.items
             .iter()
             .enumerate()
             .filter(|(_, item)| {
@@ -201,7 +210,12 @@ impl qobject::InstalledModel {
                 matches_search && matches_updates
             })
             .map(|(i, _)| i)
-            .collect()
+            .collect();
+
+        if let Ok(mut cache) = self.filtered_indices_cache.try_borrow_mut() {
+            *cache = Some(indices.clone());
+        }
+        indices
     }
 
     pub fn data(&self, index: &cxx_qt_lib::QModelIndex, role: i32) -> cxx_qt_lib::QVariant {
@@ -274,40 +288,87 @@ impl qobject::InstalledModel {
         self.as_mut().set_loading(true);
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
-            let items = match crate::flatpak::cli::list_installed_cached().await {
-                Ok(parsed) => {
-                    klog!("InstalledModel::refresh: got {} installed apps", parsed.len());
-                    parsed.into_iter().map(|app| InstalledEntry {
-                        name: app.name,
-                        app_id: app.application_id,
-                        version: app.version.unwrap_or_default(),
-                        size: app.installed_size.unwrap_or_default(),
-                        origin: app.origin.unwrap_or_default(),
-                        has_update: false,
-                        is_checked_for_update: false,
-                        is_runtime: false,
-                    }).collect()
+            // SWR Step 1: Try reading from disk cache first
+            let mut cached_items = None;
+            let mut is_expired = true;
+            
+            if let Some((timestamp, items)) = crate::disk_cache::load_installed_cache().await {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                is_expired = now.saturating_sub(timestamp) > 300; // 5 minutes (300 seconds) TTL
+                cached_items = Some(items.clone());
+                
+                // Yield cached items to Qt immediately (Instant load)
+                let _ = qt_thread.queue(move |mut qobject| {
+                    klog!("InstalledModel::refresh: Loading cached installed list ({} items)", items.len());
+                    qobject.as_mut().begin_reset_model();
+                    {
+                        let mut rust_mut = qobject.as_mut().rust_mut();
+                        rust_mut.items = items;
+                        rust_mut.filtered_indices_cache.replace(None);
+                        let criterion = rust_mut.current_sort_criterion.clone();
+                        let ascending = rust_mut.current_sort_ascending;
+                        sort_items_helper(&mut rust_mut.items, &criterion, ascending);
+                    }
+                    qobject.as_mut().end_reset_model();
+                    qobject.as_mut().sync_update_counts();
+                });
+            }
+            
+            // SWR Step 2: Fetch fresh state if cache is expired or missing
+            if is_expired || cached_items.is_none() {
+                let items = match crate::flatpak::cli::list_installed_cached().await {
+                    Ok(parsed) => {
+                        klog!("InstalledModel::refresh: got {} installed apps", parsed.len());
+                        parsed.into_iter().map(|app| {
+                            let is_runtime = app.options.as_ref()
+                                .map(|opt| opt.contains("runtime"))
+                                .unwrap_or(false);
+                            InstalledEntry {
+                                name: app.name,
+                                app_id: app.application_id,
+                                version: app.version.unwrap_or_default(),
+                                size: app.installed_size.unwrap_or_default(),
+                                origin: app.origin.unwrap_or_default(),
+                                has_update: false,
+                                is_checked_for_update: false,
+                                is_runtime,
+                            }
+                        }).collect()
+                    }
+                    Err(e) => {
+                        kerr!("InstalledModel::refresh: {}", e);
+                        vec![]
+                    }
+                };
+                
+                // Write back to cache
+                if !items.is_empty() {
+                    let _ = crate::disk_cache::save_installed_cache(&items).await;
                 }
-                Err(e) => {
-                    kerr!("InstalledModel::refresh: {}", e);
-                    vec![]
-                }
-            };
-
-            let _ = qt_thread.queue(move |mut qobject| {
-                klog!("InstalledModel::refresh: updating UI with {} items", items.len());
-                qobject.as_mut().begin_reset_model();
-                {
-                    let mut rust_mut = qobject.as_mut().rust_mut();
-                    rust_mut.items = items;
-                    let criterion = rust_mut.current_sort_criterion.clone();
-                    let ascending = rust_mut.current_sort_ascending;
-                    sort_items_helper(&mut rust_mut.items, &criterion, ascending);
-                }
-                qobject.as_mut().end_reset_model();
-                qobject.as_mut().set_loading(false);
-                qobject.as_mut().sync_update_counts();
-            });
+                
+                let _ = qt_thread.queue(move |mut qobject| {
+                    klog!("InstalledModel::refresh: updating UI with fresh {} items", items.len());
+                    qobject.as_mut().begin_reset_model();
+                    {
+                        let mut rust_mut = qobject.as_mut().rust_mut();
+                        rust_mut.items = items;
+                        rust_mut.filtered_indices_cache.replace(None);
+                        let criterion = rust_mut.current_sort_criterion.clone();
+                        let ascending = rust_mut.current_sort_ascending;
+                        sort_items_helper(&mut rust_mut.items, &criterion, ascending);
+                    }
+                    qobject.as_mut().end_reset_model();
+                    qobject.as_mut().set_loading(false);
+                    qobject.as_mut().sync_update_counts();
+                });
+            } else {
+                let _ = qt_thread.queue(move |mut qobject| {
+                    qobject.as_mut().set_loading(false);
+                });
+            }
         });
     }
 
@@ -319,6 +380,7 @@ impl qobject::InstalledModel {
             let mut rust_mut = qobject.as_mut().rust_mut();
             rust_mut.current_sort_criterion = criterion_str.clone();
             rust_mut.current_sort_ascending = ascending;
+            rust_mut.filtered_indices_cache.replace(None);
             let c = rust_mut.current_sort_criterion.clone();
             sort_items_helper(&mut rust_mut.items, &c, ascending);
         }
@@ -329,21 +391,33 @@ impl qobject::InstalledModel {
         let filter_str = filter.to_string();
         let mut qobject = self;
         qobject.as_mut().begin_reset_model();
-        qobject.as_mut().rust_mut().search_filter = filter_str;
+        {
+            let mut rust_mut = qobject.as_mut().rust_mut();
+            rust_mut.search_filter = filter_str;
+            rust_mut.filtered_indices_cache.replace(None);
+        }
         qobject.as_mut().end_reset_model();
     }
 
     pub fn apply_show_updates_only(self: std::pin::Pin<&mut Self>, enabled: bool) {
         let mut qobject = self;
         qobject.as_mut().begin_reset_model();
-        qobject.as_mut().rust_mut().show_updates_only = enabled;
+        {
+            let mut rust_mut = qobject.as_mut().rust_mut();
+            rust_mut.show_updates_only = enabled;
+            rust_mut.filtered_indices_cache.replace(None);
+        }
         qobject.as_mut().end_reset_model();
     }
 
     pub fn apply_show_runtimes(self: std::pin::Pin<&mut Self>, enabled: bool) {
         let mut qobject = self;
         qobject.as_mut().begin_reset_model();
-        qobject.as_mut().rust_mut().show_runtimes = enabled;
+        {
+            let mut rust_mut = qobject.as_mut().rust_mut();
+            rust_mut.show_runtimes = enabled;
+            rust_mut.filtered_indices_cache.replace(None);
+        }
         qobject.as_mut().end_reset_model();
         // Keep the qproperty in sync so QML bindings on show_runtimes still work
         qobject.as_mut().set_show_runtimes(enabled);
@@ -426,7 +500,8 @@ impl qobject::InstalledModel {
                 qobject.as_mut().begin_reset_model();
                 {
                     let mut rust_mut = qobject.as_mut().rust_mut();
-
+                    rust_mut.filtered_indices_cache.replace(None);
+ 
                     let mut found_app_updates = std::collections::HashSet::new();
 
                     for item in &mut rust_mut.items {

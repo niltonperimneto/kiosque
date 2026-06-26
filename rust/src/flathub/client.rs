@@ -192,9 +192,15 @@ impl FlathubClient {
     }
 
     pub async fn fetch_summary(&self, app_id: &str) -> Result<serde_json::Value, FlathubError> {
+        let cache = crate::cache::app_cache();
+        if let Some(cached) = cache.get_summary(app_id).await {
+            return Ok(cached);
+        }
+
         let url = format!("https://flathub.org/api/v2/summary/{}", app_id);
         let body = fetch_text(&url).await?;
         let val = serde_json::from_str::<serde_json::Value>(&body)?;
+        cache.put_summary(app_id.to_string(), val.clone()).await;
         Ok(val)
     }
 
