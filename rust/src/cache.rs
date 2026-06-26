@@ -27,6 +27,30 @@ const EXCEPTIONS_TTL: Duration = Duration::from_secs(24 * 60 * 60); // 24 hours
 /// How long the locally-installed apps list remains valid.
 const INSTALLED_TTL: Duration = Duration::from_secs(30); // 30 seconds
 
+// ── Accessor macro ──────────────────────────────────────────────────────────
+
+/// Generates the standard `get_*` / `put_*` pair for a string-keyed cache field
+/// whose log lines are simply `CACHE HIT <label> "<key>"` / `CACHE STORE <label>
+/// "<key>"`. Fields with count-bearing or unit-keyed log lines are written by
+/// hand below.
+macro_rules! string_keyed_accessors {
+    ($field:ident, $ty:ty, $label:literal, $get:ident, $put:ident) => {
+        pub async fn $get(&self, key: &str) -> Option<$ty> {
+            if let Some(value) = self.$field.get(key).await {
+                klog!(concat!("CACHE HIT ", $label, " \"{}\""), key);
+                Some(value)
+            } else {
+                None
+            }
+        }
+
+        pub async fn $put(&self, key: String, value: $ty) {
+            klog!(concat!("CACHE STORE ", $label, " \"{}\""), key);
+            self.$field.insert(key, value).await;
+        }
+    };
+}
+
 // ── Main application cache ──────────────────────────────────────────────────
 
 /// Thread-safe, TTL-based in-memory cache for Flathub API responses and
@@ -62,7 +86,7 @@ impl AppCache {
 
     pub async fn get_collection(&self, key: &str) -> Option<Vec<FlathubApp>> {
         if let Some(value) = self.collections.get(key).await {
-            eprintln!("[kiosque] CACHE HIT collection \"{}\"", key);
+            klog!("CACHE HIT collection \"{}\"", key);
             Some(value)
         } else {
             None
@@ -70,45 +94,21 @@ impl AppCache {
     }
 
     pub async fn put_collection(&self, key: String, value: Vec<FlathubApp>) {
-        eprintln!("[kiosque] CACHE STORE collection \"{}\" ({} items)", key, value.len());
+        klog!("CACHE STORE collection \"{}\" ({} items)", key, value.len());
         self.collections.insert(key, value).await;
     }
 
     // ── Details cache ───────────────────────────────────────────────────
 
-    pub async fn get_details(&self, app_id: &str) -> Option<AppDetails> {
-        if let Some(value) = self.details.get(app_id).await {
-            eprintln!("[kiosque] CACHE HIT details \"{}\"", app_id);
-            Some(value)
-        } else {
-            None
-        }
-    }
-
-    pub async fn put_details(&self, app_id: String, value: AppDetails) {
-        eprintln!("[kiosque] CACHE STORE details \"{}\"", app_id);
-        self.details.insert(app_id, value).await;
-    }
+    string_keyed_accessors!(details, AppDetails, "details", get_details, put_details);
 
     // ── ODRS cache ──────────────────────────────────────────────────────
 
-    pub async fn get_odrs_ratings(&self, app_id: &str) -> Option<OdrsRatings> {
-        if let Some(value) = self.odrs_ratings.get(app_id).await {
-            eprintln!("[kiosque] CACHE HIT odrs_ratings \"{}\"", app_id);
-            Some(value)
-        } else {
-            None
-        }
-    }
-
-    pub async fn put_odrs_ratings(&self, app_id: String, value: OdrsRatings) {
-        eprintln!("[kiosque] CACHE STORE odrs_ratings \"{}\"", app_id);
-        self.odrs_ratings.insert(app_id, value).await;
-    }
+    string_keyed_accessors!(odrs_ratings, OdrsRatings, "odrs_ratings", get_odrs_ratings, put_odrs_ratings);
 
     pub async fn get_odrs_reviews(&self, app_id: &str) -> Option<Vec<OdrsReview>> {
         if let Some(value) = self.odrs_reviews.get(app_id).await {
-            eprintln!("[kiosque] CACHE HIT odrs_reviews \"{}\" ({} reviews)", app_id, value.len());
+            klog!("CACHE HIT odrs_reviews \"{}\" ({} reviews)", app_id, value.len());
             Some(value)
         } else {
             None
@@ -116,29 +116,17 @@ impl AppCache {
     }
 
     pub async fn put_odrs_reviews(&self, app_id: String, value: Vec<OdrsReview>) {
-        eprintln!("[kiosque] CACHE STORE odrs_reviews \"{}\" ({} reviews)", app_id, value.len());
+        klog!("CACHE STORE odrs_reviews \"{}\" ({} reviews)", app_id, value.len());
         self.odrs_reviews.insert(app_id, value).await;
     }
 
     // ── Stats cache ─────────────────────────────────────────────────────
 
-    pub async fn get_app_stats(&self, app_id: &str) -> Option<AppStats> {
-        if let Some(value) = self.app_stats.get(app_id).await {
-            eprintln!("[kiosque] CACHE HIT app_stats \"{}\"", app_id);
-            Some(value)
-        } else {
-            None
-        }
-    }
-
-    pub async fn put_app_stats(&self, app_id: String, value: AppStats) {
-        eprintln!("[kiosque] CACHE STORE app_stats \"{}\"", app_id);
-        self.app_stats.insert(app_id, value).await;
-    }
+    string_keyed_accessors!(app_stats, AppStats, "app_stats", get_app_stats, put_app_stats);
 
     pub async fn get_global_stats(&self) -> Option<GlobalStats> {
         if let Some(value) = self.global_stats.get(&()).await {
-            eprintln!("[kiosque] CACHE HIT global_stats");
+            klog!("CACHE HIT global_stats");
             Some(value)
         } else {
             None
@@ -146,31 +134,19 @@ impl AppCache {
     }
 
     pub async fn put_global_stats(&self, value: GlobalStats) {
-        eprintln!("[kiosque] CACHE STORE global_stats");
+        klog!("CACHE STORE global_stats");
         self.global_stats.insert((), value).await;
     }
 
     // ── Exceptions cache ────────────────────────────────────────────────
 
-    pub async fn get_exceptions(&self, app_id: &str) -> Option<LinterExceptions> {
-        if let Some(value) = self.exceptions.get(app_id).await {
-            eprintln!("[kiosque] CACHE HIT exceptions \"{}\"", app_id);
-            Some(value)
-        } else {
-            None
-        }
-    }
-
-    pub async fn put_exceptions(&self, app_id: String, value: LinterExceptions) {
-        eprintln!("[kiosque] CACHE STORE exceptions \"{}\"", app_id);
-        self.exceptions.insert(app_id, value).await;
-    }
+    string_keyed_accessors!(exceptions, LinterExceptions, "exceptions", get_exceptions, put_exceptions);
 
     // ── Installed list cache ────────────────────────────────────────────
 
     pub async fn get_installed_list(&self) -> Option<Vec<FlatpakJsonApp>> {
         if let Some(value) = self.installed_list.get(&()).await {
-            eprintln!("[kiosque] CACHE HIT installed_list ({} apps)", value.len());
+            klog!("CACHE HIT installed_list ({} apps)", value.len());
             Some(value)
         } else {
             None
@@ -178,7 +154,7 @@ impl AppCache {
     }
 
     pub async fn put_installed_list(&self, apps: Vec<FlatpakJsonApp>) {
-        eprintln!("[kiosque] CACHE STORE installed_list ({} apps)", apps.len());
+        klog!("CACHE STORE installed_list ({} apps)", apps.len());
         let id_set: HashSet<String> = apps.iter()
             .map(|app| app.application_id.clone())
             .collect();
@@ -190,7 +166,7 @@ impl AppCache {
     pub async fn is_installed(&self, app_id: &str) -> Option<bool> {
         if let Some(set) = self.installed_set.get(&()).await {
             let result = set.contains(app_id);
-            eprintln!("[kiosque] CACHE HIT is_installed(\"{}\") = {}", app_id, result);
+            klog!("CACHE HIT is_installed(\"{}\") = {}", app_id, result);
             Some(result)
         } else {
             None
@@ -198,13 +174,13 @@ impl AppCache {
     }
 
     pub async fn invalidate_installed(&self) {
-        eprintln!("[kiosque] CACHE INVALIDATE installed_list + installed_set");
+        klog!("CACHE INVALIDATE installed_list + installed_set");
         self.installed_list.invalidate(&()).await;
         self.installed_set.invalidate(&()).await;
     }
 
     pub async fn clear(&self) {
-        eprintln!("[kiosque] CACHE CLEAR: Invalidate all moka cache entries");
+        klog!("CACHE CLEAR: Invalidate all moka cache entries");
         self.collections.invalidate_all();
         self.details.invalidate_all();
         self.odrs_ratings.invalidate_all();

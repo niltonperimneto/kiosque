@@ -1,5 +1,7 @@
 use cxx_qt::{CxxQtType, Threading};
 
+use crate::bridge::util;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -274,7 +276,7 @@ impl qobject::InstalledModel {
         crate::runtime::runtime().spawn(async move {
             let items = match crate::flatpak::cli::list_installed_cached().await {
                 Ok(parsed) => {
-                    eprintln!("[kiosque] InstalledModel::refresh: got {} installed apps", parsed.len());
+                    klog!("InstalledModel::refresh: got {} installed apps", parsed.len());
                     parsed.into_iter().map(|app| InstalledEntry {
                         name: app.name,
                         app_id: app.application_id,
@@ -287,13 +289,13 @@ impl qobject::InstalledModel {
                     }).collect()
                 }
                 Err(e) => {
-                    eprintln!("[kiosque] ERROR InstalledModel::refresh: {}", e);
+                    kerr!("InstalledModel::refresh: {}", e);
                     vec![]
                 }
             };
 
             let _ = qt_thread.queue(move |mut qobject| {
-                eprintln!("[kiosque] InstalledModel::refresh: updating UI with {} items", items.len());
+                klog!("InstalledModel::refresh: updating UI with {} items", items.len());
                 qobject.as_mut().begin_reset_model();
                 {
                     let mut rust_mut = qobject.as_mut().rust_mut();
@@ -352,7 +354,7 @@ impl qobject::InstalledModel {
         let actual_idx = match filtered.get(index as usize) {
             Some(&i) => i,
             None => {
-                eprintln!("[kiosque] ERROR InstalledModel::uninstall_app: index {} out of filtered bounds", index);
+                kerr!("InstalledModel::uninstall_app: index {} out of filtered bounds", index);
                 return;
             }
         };
@@ -362,49 +364,29 @@ impl qobject::InstalledModel {
         self.as_mut().set_uninstall_progress(0.01);
 
         let qt_thread = self.qt_thread();
-        eprintln!("[kiosque] InstalledModel::uninstall_app: uninstalling \"{}\"", app_id);
+        klog!("InstalledModel::uninstall_app: uninstalling \"{}\"", app_id);
 
-        crate::runtime::runtime().spawn(async move {
-            let qt_thread_prog = qt_thread.clone();
-            let mut progress = 0.01;
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(250));
-            let (tx, mut rx) = tokio::sync::oneshot::channel();
-
-            let app_id_clone = app_id.clone();
-            tokio::spawn(async move {
-                let res = crate::flatpak::cli::uninstall_app(&app_id_clone).await;
-                let _ = tx.send(res);
-            });
-
-            loop {
-                tokio::select! {
-                    res_opt = &mut rx => {
-                        let res = res_opt.unwrap_or_else(|_| Err("Uninstall task panicked".into()));
-                        let _ = qt_thread.queue(move |mut qobject| {
-                            qobject.as_mut().set_uninstalling_app_id(cxx_qt_lib::QString::from(""));
-                            qobject.as_mut().set_uninstall_progress(0.0);
-                            match res {
-                                Ok(()) => {
-                                    eprintln!("[kiosque] InstalledModel::uninstall_app: successfully uninstalled \"{}\"", app_id);
-                                    qobject.as_mut().refresh();
-                                }
-                                Err(e) => {
-                                    eprintln!("[kiosque] ERROR InstalledModel::uninstall_app: {}", e);
-                                }
-                            }
-                        });
-                        break;
+        let op_app_id = app_id.clone();
+        util::run_with_progress(
+            qt_thread,
+            async move { crate::flatpak::cli::uninstall_app(&op_app_id).await },
+            None,
+            |q, p| q.set_uninstall_progress(p),
+            |_| {},
+            move |mut q, res| {
+                q.as_mut().set_uninstalling_app_id(cxx_qt_lib::QString::from(""));
+                q.as_mut().set_uninstall_progress(0.0);
+                match res {
+                    Ok(()) => {
+                        klog!("InstalledModel::uninstall_app: successfully uninstalled \"{}\"", app_id);
+                        q.as_mut().refresh();
                     }
-                    _ = interval.tick() => {
-                        progress += (0.95 - progress) * 0.05;
-                        let p = progress;
-                        let _ = qt_thread_prog.queue(move |mut qobject| {
-                            qobject.as_mut().set_uninstall_progress(p);
-                        });
+                    Err(e) => {
+                        kerr!("InstalledModel::uninstall_app: {}", e);
                     }
                 }
-            }
-        });
+            },
+        );
     }
 
     pub fn launch_app(self: std::pin::Pin<&mut Self>, index: i32) {
@@ -412,15 +394,15 @@ impl qobject::InstalledModel {
         let actual_idx = match filtered.get(index as usize) {
             Some(&i) => i,
             None => {
-                eprintln!("[kiosque] ERROR InstalledModel::launch_app: index {} out of filtered bounds", index);
+                kerr!("InstalledModel::launch_app: index {} out of filtered bounds", index);
                 return;
             }
         };
         let app_id = self.items[actual_idx].app_id.clone();
-        eprintln!("[kiosque] InstalledModel::launch_app: launching \"{}\"", app_id);
+        klog!("InstalledModel::launch_app: launching \"{}\"", app_id);
         crate::runtime::runtime().spawn(async move {
             if let Err(e) = crate::flatpak::cli::launch_app(&app_id).await {
-                eprintln!("[kiosque] ERROR InstalledModel::launch_app: {}", e);
+                kerr!("InstalledModel::launch_app: {}", e);
             }
         });
     }
@@ -431,11 +413,11 @@ impl qobject::InstalledModel {
         crate::runtime::runtime().spawn(async move {
             let updates = match crate::flatpak::cli::list_updates().await {
                 Ok(ids) => {
-                    eprintln!("[kiosque] InstalledModel::check_for_updates: found {} updates", ids.len());
+                    klog!("InstalledModel::check_for_updates: found {} updates", ids.len());
                     ids
                 }
                 Err(e) => {
-                    eprintln!("[kiosque] ERROR InstalledModel::check_for_updates: {}", e);
+                    kerr!("InstalledModel::check_for_updates: {}", e);
                     vec![]
                 }
             };
@@ -532,56 +514,38 @@ impl qobject::InstalledModel {
         self.as_mut().set_update_progress(0.01);
         self.as_mut().set_update_status_text(cxx_qt_lib::QString::from("Initializing update…"));
         let qt_thread = self.qt_thread();
+        let qt_thread_status = qt_thread.clone();
 
-        crate::runtime::runtime().spawn(async move {
-            let qt_thread_prog = qt_thread.clone();
-            let qt_thread_status = qt_thread.clone();
-            let mut progress = 0.01;
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(250));
-            let (tx, mut rx) = tokio::sync::oneshot::channel();
-            let app_ids_clone = app_ids.clone();
+        let operation = async move {
+            crate::flatpak::cli::update_apps(&app_ids, move |line| {
+                let line_qs = cxx_qt_lib::QString::from(&line);
+                let _ = qt_thread_status.queue(move |mut qobject| {
+                    qobject.as_mut().set_update_status_text(line_qs);
+                });
+            }).await
+        };
 
-            tokio::spawn(async move {
-                let res = crate::flatpak::cli::update_apps(&app_ids_clone, move |line| {
-                    let line_qs = cxx_qt_lib::QString::from(&line);
-                    let _ = qt_thread_status.queue(move |mut qobject| {
-                        qobject.as_mut().set_update_status_text(line_qs);
-                    });
-                }).await;
-                let _ = tx.send(res);
-            });
-
-            loop {
-                tokio::select! {
-                    res_opt = &mut rx => {
-                        let res = res_opt.unwrap_or_else(|_| Err("Update task panicked".into()));
-                        let _ = qt_thread.queue(move |mut qobject| {
-                            qobject.as_mut().set_updating(false);
-                            qobject.as_mut().set_update_progress(0.0);
-                            qobject.as_mut().set_update_status_text(cxx_qt_lib::QString::from(""));
-                            match res {
-                                Ok(()) => {
-                                    eprintln!("[kiosque] InstalledModel::update_selected_apps: successfully updated");
-                                    qobject.as_mut().refresh();
-                                }
-                                Err(e) => {
-                                    eprintln!("[kiosque] ERROR InstalledModel::update_selected_apps: {}", e);
-                                    qobject.as_mut().refresh();
-                                }
-                            }
-                        });
-                        break;
+        util::run_with_progress(
+            qt_thread,
+            operation,
+            None,
+            |q, p| q.set_update_progress(p),
+            |_| {},
+            |mut q, res| {
+                q.as_mut().set_updating(false);
+                q.as_mut().set_update_progress(0.0);
+                q.as_mut().set_update_status_text(cxx_qt_lib::QString::from(""));
+                match res {
+                    Ok(()) => {
+                        klog!("InstalledModel::update_selected_apps: successfully updated");
                     }
-                    _ = interval.tick() => {
-                        progress += (0.95 - progress) * 0.05;
-                        let p = progress;
-                        let _ = qt_thread_prog.queue(move |mut qobject| {
-                            qobject.as_mut().set_update_progress(p);
-                        });
+                    Err(e) => {
+                        kerr!("InstalledModel::update_selected_apps: {}", e);
                     }
                 }
-            }
-        });
+                q.as_mut().refresh();
+            },
+        );
     }
 }
 

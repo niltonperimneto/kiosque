@@ -1,5 +1,7 @@
 use cxx_qt::{CxxQtType, Threading};
 
+use crate::flathub::types::FlathubApp;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -140,7 +142,7 @@ impl qobject::AppListModel {
             let client = crate::flathub::client::FlathubClient::new();
             let items = match client.fetch_popular().await {
                 Ok(apps) => {
-                    eprintln!("[kiosque] AppListModel::refresh: mapping {} apps to entries", apps.len());
+                    klog!("AppListModel::refresh: mapping {} apps to entries", apps.len());
                     apps.into_iter().map(|app| AppEntry {
                         name: app.name,
                         summary: app.summary.unwrap_or_default(),
@@ -149,14 +151,13 @@ impl qobject::AppListModel {
                     }).collect()
                 }
                 Err(e) => {
-                    eprintln!("[kiosque] ERROR AppListModel::refresh: {}", e);
+                    kerr!("AppListModel::refresh: {}", e);
                     vec![]
                 }
             };
             
             let _ = qt_thread.queue(move |mut qobject| {
-                eprintln!("[kiosque] AppListModel::refresh: updating UI with {} items", items.len());
-                eprintln!("[kiosque] AppListModel::load_category: updating UI with {} items", items.len());
+                klog!("AppListModel::refresh: updating UI with {} items", items.len());
                 qobject.as_mut().begin_reset_model();
                 qobject.as_mut().rust_mut().items = items;
                 qobject.as_mut().end_reset_model();
@@ -182,7 +183,7 @@ impl qobject::AppListModel {
                 Err(_) => vec![],
             };
             let _ = qt_thread.queue(move |mut qobject| {
-                eprintln!("[kiosque] AppListModel::load_category: updating UI with {} items", items.len());
+                klog!("AppListModel::load_popular: updating UI with {} items", items.len());
                 qobject.as_mut().begin_reset_model();
                 qobject.as_mut().rust_mut().items = items;
                 qobject.as_mut().end_reset_model();
@@ -208,7 +209,7 @@ impl qobject::AppListModel {
                 Err(_) => vec![],
             };
             let _ = qt_thread.queue(move |mut qobject| {
-                eprintln!("[kiosque] AppListModel::load_category: updating UI with {} items", items.len());
+                klog!("AppListModel::load_new: updating UI with {} items", items.len());
                 qobject.as_mut().begin_reset_model();
                 qobject.as_mut().rust_mut().items = items;
                 qobject.as_mut().end_reset_model();
@@ -234,7 +235,7 @@ impl qobject::AppListModel {
                 Err(_) => vec![],
             };
             let _ = qt_thread.queue(move |mut qobject| {
-                eprintln!("[kiosque] AppListModel::load_category: updating UI with {} items", items.len());
+                klog!("AppListModel::load_updated: updating UI with {} items", items.len());
                 qobject.as_mut().begin_reset_model();
                 qobject.as_mut().rust_mut().items = items;
                 qobject.as_mut().end_reset_model();
@@ -251,7 +252,7 @@ impl qobject::AppListModel {
             let client = crate::flathub::client::FlathubClient::new();
             let items = match client.search(&query_str).await {
                 Ok(apps) => {
-                    eprintln!("[kiosque] AppListModel::search(\"{}\"): {} results", query_str, apps.len());
+                    klog!("AppListModel::search(\"{}\"): {} results", query_str, apps.len());
                     apps.into_iter().map(|app| AppEntry {
                         name: app.name,
                         summary: app.summary.unwrap_or_default(),
@@ -260,13 +261,13 @@ impl qobject::AppListModel {
                     }).collect()
                 }
                 Err(e) => {
-                    eprintln!("[kiosque] ERROR AppListModel::search: {}", e);
+                    kerr!("AppListModel::search: {}", e);
                     vec![]
                 }
             };
-            
+
             let _ = qt_thread.queue(move |mut qobject| {
-                eprintln!("[kiosque] AppListModel::load_category: updating UI with {} items", items.len());
+                klog!("AppListModel::search: updating UI with {} items", items.len());
                 qobject.as_mut().begin_reset_model();
                 qobject.as_mut().rust_mut().items = items;
                 qobject.as_mut().end_reset_model();
@@ -290,113 +291,19 @@ impl qobject::AppListModel {
 
             let items = match client.fetch_category(api_category).await {
                 Ok(apps) => {
-                    eprintln!("[kiosque] AppListModel::load_category(\"{}\"): {} apps from API", category_str, apps.len());
-                    
+                    klog!("AppListModel::load_category(\"{}\"): {} apps from API", category_str, apps.len());
+
+                    // Categories without a "Prefix-SubId" form keep every app; otherwise
+                    // narrow to the apps matching the requested subcategory.
                     let filtered: Vec<_> = apps.into_iter().filter(|app| {
-                        let hyphen_idx = match category_str.find('-') {
-                            Some(idx) => idx,
-                            None => return true,
-                        };
-                        let prefix = &category_str[..hyphen_idx];
-                        let sub_id = &category_str[hyphen_idx + 1..];
-
-                        match prefix {
-                            "Game" => {
-                                let name_lower = app.name.to_lowercase();
-                                let summary_lower = app.summary.as_ref().map(|s| s.to_lowercase()).unwrap_or_default();
-                                let is_emulator = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("emulator"));
-                                
-                                let is_launcher = (
-                                    app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("packagemanager")) ||
-                                    name_lower.contains("launcher") ||
-                                    name_lower.contains("client") ||
-                                    summary_lower.contains("launcher")
-                                ) && !is_emulator;
-                                
-                                let tool_keywords = ["tool", "compat", "patcher", "config", "manager", "overlay", "hud", "backup", "setup"];
-                                let is_tool = (
-                                    app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("utility")) ||
-                                    tool_keywords.iter().any(|kw| name_lower.contains(kw)) ||
-                                    tool_keywords.iter().any(|kw| summary_lower.contains(kw))
-                                ) && !is_emulator && !is_launcher;
-
-                                match sub_id {
-                                    "Emulator" => is_emulator,
-                                    "Launcher" => is_launcher,
-                                    "Tool" => is_tool,
-                                    "Game" => !is_emulator && !is_launcher && !is_tool,
-                                    _ => true,
-                                }
-                            }
-                            "AudioVideo" => {
-                                let is_player = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("player"));
-                                let is_recorder = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("recorder"));
-                                let is_editing = app.sub_categories.iter().any(|s| {
-                                    s.eq_ignore_ascii_case("audiovideoediting") ||
-                                    s.eq_ignore_ascii_case("midi") ||
-                                    s.eq_ignore_ascii_case("sequencer") ||
-                                    s.eq_ignore_ascii_case("mixer")
-                                });
-
-                                match sub_id {
-                                    "Player" => is_player,
-                                    "Recorder" => is_recorder,
-                                    "Editing" => is_editing,
-                                    "All" => !is_player && !is_recorder && !is_editing,
-                                    _ => true,
-                                }
-                            }
-                            "Development" => {
-                                let is_ide = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("ide") || s.eq_ignore_ascii_case("guidedesigner"));
-                                let is_debugger = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("debugger") || s.eq_ignore_ascii_case("profiler"));
-                                let is_web = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("webdevelopment"));
-
-                                match sub_id {
-                                    "IDE" => is_ide,
-                                    "Debugger" => is_debugger,
-                                    "Web" => is_web,
-                                    "All" => !is_ide && !is_debugger && !is_web,
-                                    _ => true,
-                                }
-                            }
-                            "Graphics" => {
-                                let is_3d = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("3dgraphics"));
-                                let is_vector = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("vectorgraphics"));
-                                let is_raster = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("rastergraphics"));
-                                let is_photography = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("photography"));
-                                let is_viewer = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("viewer"));
-
-                                match sub_id {
-                                    "3D" => is_3d,
-                                    "Vector" => is_vector,
-                                    "Raster" => is_raster,
-                                    "Photography" => is_photography,
-                                    "Viewer" => is_viewer,
-                                    "All" => !is_3d && !is_vector && !is_raster && !is_photography && !is_viewer,
-                                    _ => true,
-                                }
-                            }
-                            "Office" => {
-                                let is_word = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("wordprocessor"));
-                                let is_spreadsheet = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("spreadsheet"));
-                                let is_presentation = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("presentation"));
-                                let is_finance = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("finance"));
-
-                                match sub_id {
-                                    "WordProcessor" => is_word,
-                                    "Spreadsheet" => is_spreadsheet,
-                                    "Presentation" => is_presentation,
-                                    "Finance" => is_finance,
-                                    "All" => !is_word && !is_spreadsheet && !is_presentation && !is_finance,
-                                    _ => true,
-                                }
-                            }
-                            _ => true,
+                        match category_str.split_once('-') {
+                            Some((prefix, sub_id)) => matches_subcategory(app, prefix, sub_id),
+                            None => true,
                         }
                     }).collect();
 
-                    eprintln!("[kiosque] AppListModel::load_category(\"{}\"): {} apps after filter", category_str, filtered.len());
-                    
+                    klog!("AppListModel::load_category(\"{}\"): {} apps after filter", category_str, filtered.len());
+
                     filtered.into_iter().map(|app| AppEntry {
                         name: app.name,
                         summary: app.summary.unwrap_or_default(),
@@ -405,18 +312,119 @@ impl qobject::AppListModel {
                     }).collect()
                 }
                 Err(e) => {
-                    eprintln!("[kiosque] ERROR AppListModel::load_category: {}", e);
+                    kerr!("AppListModel::load_category: {}", e);
                     vec![]
                 }
             };
-            
+
             let _ = qt_thread.queue(move |mut qobject| {
-                eprintln!("[kiosque] AppListModel::load_category: updating UI with {} items", items.len());
+                klog!("AppListModel::load_category: updating UI with {} items", items.len());
                 qobject.as_mut().begin_reset_model();
                 qobject.as_mut().rust_mut().items = items;
                 qobject.as_mut().end_reset_model();
                 qobject.as_mut().set_loading(false);
             });
         });
+    }
+}
+
+/// Decide whether `app` belongs in the `<prefix>-<sub_id>` subcategory, e.g.
+/// `Game-Emulator` or `Graphics-Vector`. Flathub only tags apps with broad
+/// top-level categories, so the finer subcategory split is derived here from the
+/// app's `sub_categories` plus a few name/summary keyword heuristics for games.
+/// Unknown prefixes/sub-ids fall through to `true` (keep the app).
+fn matches_subcategory(app: &FlathubApp, prefix: &str, sub_id: &str) -> bool {
+    match prefix {
+        "Game" => {
+            let name_lower = app.name.to_lowercase();
+            let summary_lower = app.summary.as_ref().map(|s| s.to_lowercase()).unwrap_or_default();
+            let is_emulator = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("emulator"));
+
+            let is_launcher = (
+                app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("packagemanager")) ||
+                name_lower.contains("launcher") ||
+                name_lower.contains("client") ||
+                summary_lower.contains("launcher")
+            ) && !is_emulator;
+
+            let tool_keywords = ["tool", "compat", "patcher", "config", "manager", "overlay", "hud", "backup", "setup"];
+            let is_tool = (
+                app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("utility")) ||
+                tool_keywords.iter().any(|kw| name_lower.contains(kw)) ||
+                tool_keywords.iter().any(|kw| summary_lower.contains(kw))
+            ) && !is_emulator && !is_launcher;
+
+            match sub_id {
+                "Emulator" => is_emulator,
+                "Launcher" => is_launcher,
+                "Tool" => is_tool,
+                "Game" => !is_emulator && !is_launcher && !is_tool,
+                _ => true,
+            }
+        }
+        "AudioVideo" => {
+            let is_player = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("player"));
+            let is_recorder = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("recorder"));
+            let is_editing = app.sub_categories.iter().any(|s| {
+                s.eq_ignore_ascii_case("audiovideoediting") ||
+                s.eq_ignore_ascii_case("midi") ||
+                s.eq_ignore_ascii_case("sequencer") ||
+                s.eq_ignore_ascii_case("mixer")
+            });
+
+            match sub_id {
+                "Player" => is_player,
+                "Recorder" => is_recorder,
+                "Editing" => is_editing,
+                "All" => !is_player && !is_recorder && !is_editing,
+                _ => true,
+            }
+        }
+        "Development" => {
+            let is_ide = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("ide") || s.eq_ignore_ascii_case("guidedesigner"));
+            let is_debugger = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("debugger") || s.eq_ignore_ascii_case("profiler"));
+            let is_web = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("webdevelopment"));
+
+            match sub_id {
+                "IDE" => is_ide,
+                "Debugger" => is_debugger,
+                "Web" => is_web,
+                "All" => !is_ide && !is_debugger && !is_web,
+                _ => true,
+            }
+        }
+        "Graphics" => {
+            let is_3d = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("3dgraphics"));
+            let is_vector = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("vectorgraphics"));
+            let is_raster = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("rastergraphics"));
+            let is_photography = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("photography"));
+            let is_viewer = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("viewer"));
+
+            match sub_id {
+                "3D" => is_3d,
+                "Vector" => is_vector,
+                "Raster" => is_raster,
+                "Photography" => is_photography,
+                "Viewer" => is_viewer,
+                "All" => !is_3d && !is_vector && !is_raster && !is_photography && !is_viewer,
+                _ => true,
+            }
+        }
+        "Office" => {
+            let is_word = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("wordprocessor"));
+            let is_spreadsheet = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("spreadsheet"));
+            let is_presentation = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("presentation"));
+            let is_finance = app.sub_categories.iter().any(|s| s.eq_ignore_ascii_case("finance"));
+
+            match sub_id {
+                "WordProcessor" => is_word,
+                "Spreadsheet" => is_spreadsheet,
+                "Presentation" => is_presentation,
+                "Finance" => is_finance,
+                "All" => !is_word && !is_spreadsheet && !is_presentation && !is_finance,
+                _ => true,
+            }
+        }
+        _ => true,
     }
 }

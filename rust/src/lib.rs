@@ -1,3 +1,5 @@
+#[macro_use]
+pub mod log;
 pub mod bridge;
 pub mod cache;
 pub mod flathub;

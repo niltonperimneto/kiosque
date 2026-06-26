@@ -1,3 +1,4 @@
+pub mod util;
 pub mod app_list_model;
 pub mod featured_model;
 pub mod installed_model;
