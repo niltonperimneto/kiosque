@@ -450,8 +450,33 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    // ── Auto-check for updates ──────────────────────────────────────────
+    property bool initialUpdateCheckDone: false
 
+    Timer {
+        id: autoUpdateCheckTimer
+        interval: 14400000 // 4 hours in milliseconds
+        running: true
+        repeat: true
+        triggeredOnStart: false
+        onTriggered: {
+            console.log("[kiosque] Auto check: periodic check for updates");
+            installedModel.checkForUpdates();
+        }
+    }
 
+    Connections {
+        target: installedModel
+        ignoreUnknownSignals: true
+
+        function onLoadingChanged() {
+            if (!installedModel.loading && !root.initialUpdateCheckDone) {
+                root.initialUpdateCheckDone = true;
+                console.log("[kiosque] Auto check: initial check for updates on startup");
+                installedModel.checkForUpdates();
+            }
+        }
+    }
 
     // ── Startup ─────────────────────────────────────────────────────────
     Component.onCompleted: {
