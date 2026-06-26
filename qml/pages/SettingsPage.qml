@@ -548,6 +548,8 @@ Kirigami.ScrollablePage {
                         source: "qrc:/qml/images/logo.svg"
                         Layout.preferredWidth: Kirigami.Units.iconSizes.large * 1.5
                         Layout.preferredHeight: Kirigami.Units.iconSizes.large * 1.5
+                        sourceSize.width: Kirigami.Units.iconSizes.large * 1.5
+                        sourceSize.height: Kirigami.Units.iconSizes.large * 1.5
                         fillMode: Image.PreserveAspectFit
                         smooth: true
                     }
