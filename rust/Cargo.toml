@@ -38,6 +38,11 @@ sha2 = "0.11.0"
 hmac = "0.13.0"
 rand = "0.10.1"
 
+# Image processing & JXL caching
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+jxl-oxide = { version = "0.12", features = ["image"] }
+jxl-encoder = "0.3.1"
+
 
 [build-dependencies]
 cxx-qt-build = "0.9"

@@ -7,3 +7,6 @@ pub mod flatpak;
 pub mod runtime;
 pub mod settings;
 pub mod disk_cache;
+pub mod image_registry;
+pub mod image_cache;
+
