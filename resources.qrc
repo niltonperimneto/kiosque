@@ -1,8 +1,14 @@
 <!DOCTYPE RCC><RCC version="1.0">
 <qresource prefix="/">
     <file>qml/Main.qml</file>
+    <file>qml/style/qmldir</file>
+    <file>qml/style/Style.qml</file>
     <file>qml/components/AppCard.qml</file>
     <file>qml/components/AppOfTheDayCard.qml</file>
+    <file>qml/components/GamesSection.qml</file>
+    <file>qml/components/TopCropImage.qml</file>
+    <file>qml/components/StorefrontAppCard.qml</file>
+    <file>qml/components/HeroBanner.qml</file>
     <file>qml/components/CategoryChip.qml</file>
     <file>qml/components/FeatureCard.qml</file>
     <file>qml/components/HeroCarousel.qml</file>

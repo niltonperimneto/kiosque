@@ -168,12 +168,12 @@ Kirigami.ScrollablePage {
                     Layout.preferredHeight: isMatch ? Kirigami.Units.gridUnit * 12 : 0
                     visible: isMatch
 
-                    Components.AppCard {
+                    Components.StorefrontAppCard {
                         anchors.fill: parent
-                        appId: delegateWrapper.appId
-                        name: delegateWrapper.name
-                        summary: delegateWrapper.summary
+                        appName: delegateWrapper.name
+                        appSummary: delegateWrapper.summary
                         iconUrl: delegateWrapper.iconUrl
+                        onClicked: applicationWindow().pushAppDetail(delegateWrapper.appId)
                     }
                 }
             }
