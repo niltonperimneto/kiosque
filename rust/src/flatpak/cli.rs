@@ -352,4 +352,23 @@ where
     }
 }
 
+/// Update every installed app (`flatpak update --assumeyes --noninteractive`),
+/// invalidating the installed cache on success. Mirrors `update_apps`' tail but
+/// updates all refs at once rather than a specific subset.
+pub async fn update_all() -> Result<(), String> {
+    let output = Command::new("flatpak")
+        .args(["update", "--assumeyes", "--noninteractive"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute `flatpak update`: {}", e))?;
+
+    if output.status.success() {
+        crate::cache::app_cache().invalidate_installed().await;
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("flatpak update failed: {}", stderr))
+    }
+}
+
 

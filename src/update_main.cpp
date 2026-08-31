@@ -22,6 +22,11 @@
 #include <KLocalizedString>
 #include <QDebug>
 
+// Implemented in the Rust backend (rust/src/updater.rs). Performs a one-shot
+// "check for updates and apply them" using the shared flatpak logic, returning a
+// process exit code. Needs no Qt event loop.
+extern "C" int kiosque_oneshot_update();
+
 class UpdateDaemon : public QObject {
     Q_OBJECT
 public:
@@ -250,42 +255,6 @@ private:
     bool m_updating = false;
 };
 
-void runOneShotCheck() {
-    qInfo() << "kiosque-update: Running one-shot update check...";
-    QProcess checkProc;
-    checkProc.start("flatpak", QStringList() << "remote-ls" << "--updates" << "-j");
-    if (!checkProc.waitForFinished(30000)) {
-        qCritical() << "Failed to check for updates: flatpak process timed out.";
-        QCoreApplication::exit(-1);
-        return;
-    }
-    
-    QByteArray out = checkProc.readAllStandardOutput().trimmed();
-    if (out.isEmpty() || out == "[]") {
-        qInfo() << "No updates available.";
-        QCoreApplication::exit(0);
-        return;
-    }
-    
-    qInfo() << "Updates are available. Running flatpak update...";
-    QProcess updateProc;
-    updateProc.setProcessChannelMode(QProcess::ForwardedChannels);
-    updateProc.start("flatpak", QStringList() << "update" << "-y");
-    if (!updateProc.waitForFinished(600000)) { // 10 minutes
-        qCritical() << "Flatpak update timed out or failed.";
-        QCoreApplication::exit(-1);
-        return;
-    }
-    
-    if (updateProc.exitCode() == 0) {
-        qInfo() << "Updates completed successfully.";
-        QCoreApplication::exit(0);
-    } else {
-        qCritical() << "Flatpak update failed with exit code" << updateProc.exitCode();
-        QCoreApplication::exit(updateProc.exitCode());
-    }
-}
-
 int main(int argc, char* argv[]) {
     bool daemonMode = true;
     for (int i = 1; i < argc; ++i) {
@@ -294,27 +263,13 @@ int main(int argc, char* argv[]) {
             break;
         }
     }
-    
+
     if (!daemonMode) {
-        QCoreApplication app(argc, argv);
-        QCoreApplication::setApplicationName(QStringLiteral("KiosqueUpdate"));
-        QCoreApplication::setOrganizationName(QStringLiteral("Kiosque"));
-        QCoreApplication::setOrganizationDomain(QStringLiteral("kiosque.app"));
-        
-        QDir localeDir(QCoreApplication::applicationDirPath() + QStringLiteral("/../po"));
-        if (localeDir.exists()) {
-            KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), localeDir.absolutePath());
-        } else {
-#ifdef LOCALE_INSTALL_DIR
-            KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), QStringLiteral(LOCALE_INSTALL_DIR));
-#endif
-        }
-        KLocalizedString::setApplicationDomain("kiosque");
-        
-        QTimer::singleShot(0, &runOneShotCheck);
-        return app.exec();
+        // One-shot check + update lives in Rust (shared flatpak logic); no Qt
+        // event loop is needed for this path.
+        return kiosque_oneshot_update();
     }
-    
+
     QApplication app(argc, argv);
     QApplication::setDesktopFileName(QStringLiteral("org.kiosque.Kiosque"));
     QApplication::setApplicationName(QStringLiteral("KiosqueUpdate"));

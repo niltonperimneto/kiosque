@@ -9,4 +9,5 @@ pub mod settings;
 pub mod disk_cache;
 pub mod image_registry;
 pub mod image_cache;
+pub mod updater;
 
