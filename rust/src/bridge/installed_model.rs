@@ -116,7 +116,7 @@ pub mod qobject {
     impl cxx_qt::Threading for InstalledModel {}
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct InstalledEntry {
     pub name: String,
     pub app_id: String,
@@ -292,12 +292,8 @@ impl qobject::InstalledModel {
             let mut cached_items = None;
             let mut is_expired = true;
             
-            if let Some((timestamp, items)) = crate::disk_cache::load_installed_cache().await {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                is_expired = now.saturating_sub(timestamp) > 300; // 5 minutes (300 seconds) TTL
+            if let Some((items, expired)) = crate::disk_cache::load_installed_cache().await {
+                is_expired = expired;
                 cached_items = Some(items.clone());
                 
                 // Yield cached items to Qt immediately (Instant load)

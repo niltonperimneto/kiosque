@@ -1,6 +1,10 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::bridge::featured_model::FeaturedEntry;
 use crate::bridge::app_list_model::AppEntry;
@@ -9,217 +13,123 @@ use crate::bridge::installed_model::InstalledEntry;
 // ── Cache Dir Helper ────────────────────────────────────────────────────────
 
 pub fn cache_dir() -> PathBuf {
-    let mut path = dirs::cache_dir().unwrap_or_else(|| PathBuf::from("~/.cache"));
-    path.push("kiosque");
-    fs::create_dir_all(&path).ok();
-    path
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let mut path = dirs::cache_dir().unwrap_or_else(|| PathBuf::from("~/.cache"));
+        path.push("kiosque");
+        fs::create_dir_all(&path).ok();
+
+        // Best-effort removal of the legacy hand-rolled binary cache files
+        // (superseded by the versioned JSON envelopes below).
+        for legacy in ["featured.bin", "popular.bin", "installed.bin"] {
+            let _ = fs::remove_file(path.join(legacy));
+        }
+
+        path
+    })
+    .clone()
 }
 
-// ── Custom Binary Serialization Primitives ──────────────────────────────────
+// ── Generic versioned cache envelope ─────────────────────────────────────────
 
-fn write_u32(bytes: &mut Vec<u8>, val: u32) {
-    bytes.extend_from_slice(&val.to_le_bytes());
+/// Bumped whenever the on-disk schema changes; mismatched files are treated as a
+/// cache miss and transparently re-fetched.
+const CACHE_VERSION: u8 = 1;
+
+/// How long a persisted list stays fresh before the caller should revalidate.
+pub const DISK_CACHE_TTL_SECS: u64 = 5 * 60; // 5 minutes
+
+#[derive(serde::Deserialize)]
+struct CacheEnvelope<T> {
+    version: u8,
+    timestamp: u64,
+    items: Vec<T>,
 }
 
-fn read_u32(bytes: &[u8], cursor: &mut usize) -> Option<u32> {
-    if *cursor + 4 > bytes.len() {
+/// Borrowing twin of [`CacheEnvelope`] used on the write path so we can serialize
+/// directly from a `&[T]` without cloning into a `Vec`.
+#[derive(Serialize)]
+struct CacheEnvelopeRef<'a, T> {
+    version: u8,
+    timestamp: u64,
+    items: &'a [T],
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn cache_path(name: &str) -> PathBuf {
+    cache_dir().join(format!("{}.json", name))
+}
+
+/// Atomically replace `path` with `bytes` (write a sibling temp file, then rename)
+/// so a crash mid-write can never leave a truncated cache file behind.
+async fn write_atomic(path: &Path, bytes: Vec<u8>) -> std::io::Result<()> {
+    let tmp = path.with_extension("json.tmp");
+    tokio::fs::write(&tmp, bytes).await?;
+    tokio::fs::rename(&tmp, path).await
+}
+
+/// Serialize `items` into a versioned, timestamped envelope and persist it.
+pub async fn save_cache<T: Serialize>(name: &str, items: &[T]) -> Result<(), String> {
+    let envelope = CacheEnvelopeRef {
+        version: CACHE_VERSION,
+        timestamp: now_secs(),
+        items,
+    };
+    let bytes = serde_json::to_vec(&envelope)
+        .map_err(|e| format!("Failed to serialize {} cache: {}", name, e))?;
+    write_atomic(&cache_path(name), bytes)
+        .await
+        .map_err(|e| format!("Failed to write {} cache: {}", name, e))
+}
+
+/// Load a persisted list, returning `(items, is_expired)`. Returns `None` when the
+/// file is missing, unreadable, the wrong version, or malformed — callers treat
+/// that as a plain cache miss.
+pub async fn load_cache<T: DeserializeOwned>(name: &str) -> Option<(Vec<T>, bool)> {
+    let bytes = tokio::fs::read(cache_path(name)).await.ok()?;
+    let envelope: CacheEnvelope<T> = serde_json::from_slice(&bytes).ok()?;
+    if envelope.version != CACHE_VERSION {
         return None;
     }
-    let val = u32::from_le_bytes(bytes[*cursor..*cursor + 4].try_into().ok()?);
-    *cursor += 4;
-    Some(val)
+    let is_expired = now_secs().saturating_sub(envelope.timestamp) > DISK_CACHE_TTL_SECS;
+    Some((envelope.items, is_expired))
 }
 
-fn write_u64(bytes: &mut Vec<u8>, val: u64) {
-    bytes.extend_from_slice(&val.to_le_bytes());
-}
-
-fn read_u64(bytes: &[u8], cursor: &mut usize) -> Option<u64> {
-    if *cursor + 8 > bytes.len() {
-        return None;
-    }
-    let val = u64::from_le_bytes(bytes[*cursor..*cursor + 8].try_into().ok()?);
-    *cursor += 8;
-    Some(val)
-}
-
-fn write_string(bytes: &mut Vec<u8>, s: &str) {
-    write_u32(bytes, s.len() as u32);
-    bytes.extend_from_slice(s.as_bytes());
-}
-
-fn read_string(bytes: &[u8], cursor: &mut usize) -> Option<String> {
-    let len = read_u32(bytes, cursor)? as usize;
-    if *cursor + len > bytes.len() {
-        return None;
-    }
-    let s = std::str::from_utf8(&bytes[*cursor..*cursor + len]).ok()?.to_string();
-    *cursor += len;
-    Some(s)
-}
-
-// ── Featured Cache ──────────────────────────────────────────────────────────
+// ── Typed wrappers ───────────────────────────────────────────────────────────
 
 pub async fn save_featured_cache(items: &[FeaturedEntry]) -> Result<(), String> {
-    let mut bytes = Vec::new();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    
-    write_u64(&mut bytes, now);
-    write_u32(&mut bytes, items.len() as u32);
-    
-    for item in items {
-        write_string(&mut bytes, &item.name);
-        write_string(&mut bytes, &item.summary);
-        write_string(&mut bytes, &item.icon_url);
-        write_string(&mut bytes, &item.app_id);
-        write_string(&mut bytes, &item.description);
-        write_string(&mut bytes, &item.developer);
-    }
-    
-    let path = cache_dir().join("featured.bin");
-    tokio::fs::write(&path, bytes).await.map_err(|e| format!("Failed to write featured cache: {}", e))?;
-    Ok(())
+    // "featured_v2": FeaturedEntry gained screenshot/branding fields; the old
+    // cache would deserialize with empty defaults and pin a screenshot-less
+    // hero until expiry, so it is simply left behind.
+    save_cache("featured_v2", items).await
 }
 
-pub async fn load_featured_cache() -> Option<(u64, Vec<FeaturedEntry>)> {
-    let path = cache_dir().join("featured.bin");
-    let bytes = tokio::fs::read(&path).await.ok()?;
-    let mut cursor = 0;
-    
-    let timestamp = read_u64(&bytes, &mut cursor)?;
-    let len = read_u32(&bytes, &mut cursor)? as usize;
-    let mut items = Vec::with_capacity(len);
-    
-    for _ in 0..len {
-        items.push(FeaturedEntry {
-            name: read_string(&bytes, &mut cursor)?,
-            summary: read_string(&bytes, &mut cursor)?,
-            icon_url: read_string(&bytes, &mut cursor)?,
-            app_id: read_string(&bytes, &mut cursor)?,
-            description: read_string(&bytes, &mut cursor)?,
-            developer: read_string(&bytes, &mut cursor)?,
-        });
-    }
-    
-    Some((timestamp, items))
+pub async fn load_featured_cache() -> Option<(Vec<FeaturedEntry>, bool)> {
+    load_cache("featured_v2").await
 }
-
-// ── Popular Cache ───────────────────────────────────────────────────────────
 
 pub async fn save_popular_cache(items: &[AppEntry]) -> Result<(), String> {
-    let mut bytes = Vec::new();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    
-    write_u64(&mut bytes, now);
-    write_u32(&mut bytes, items.len() as u32);
-    
-    for item in items {
-        write_string(&mut bytes, &item.name);
-        write_string(&mut bytes, &item.summary);
-        write_string(&mut bytes, &item.icon_url);
-        write_string(&mut bytes, &item.app_id);
-    }
-    
-    let path = cache_dir().join("popular.bin");
-    tokio::fs::write(&path, bytes).await.map_err(|e| format!("Failed to write popular cache: {}", e))?;
-    Ok(())
+    save_cache("popular", items).await
 }
 
-pub async fn load_popular_cache() -> Option<(u64, Vec<AppEntry>)> {
-    let path = cache_dir().join("popular.bin");
-    let bytes = tokio::fs::read(&path).await.ok()?;
-    let mut cursor = 0;
-    
-    let timestamp = read_u64(&bytes, &mut cursor)?;
-    let len = read_u32(&bytes, &mut cursor)? as usize;
-    let mut items = Vec::with_capacity(len);
-    
-    for _ in 0..len {
-        items.push(AppEntry {
-            name: read_string(&bytes, &mut cursor)?,
-            summary: read_string(&bytes, &mut cursor)?,
-            icon_url: read_string(&bytes, &mut cursor)?,
-            app_id: read_string(&bytes, &mut cursor)?,
-        });
-    }
-    
-    Some((timestamp, items))
+pub async fn load_popular_cache() -> Option<(Vec<AppEntry>, bool)> {
+    load_cache("popular").await
 }
-
-// ── Installed Cache ─────────────────────────────────────────────────────────
 
 pub async fn save_installed_cache(items: &[InstalledEntry]) -> Result<(), String> {
-    let mut bytes = Vec::new();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    
-    write_u64(&mut bytes, now);
-    write_u32(&mut bytes, items.len() as u32);
-    
-    for item in items {
-        write_string(&mut bytes, &item.name);
-        write_string(&mut bytes, &item.app_id);
-        write_string(&mut bytes, &item.version);
-        write_string(&mut bytes, &item.size);
-        write_string(&mut bytes, &item.origin);
-        bytes.push(item.has_update as u8);
-        bytes.push(item.is_checked_for_update as u8);
-        bytes.push(item.is_runtime as u8);
-    }
-    
-    let path = cache_dir().join("installed.bin");
-    tokio::fs::write(&path, bytes).await.map_err(|e| format!("Failed to write installed cache: {}", e))?;
-    Ok(())
+    save_cache("installed", items).await
 }
 
-pub async fn load_installed_cache() -> Option<(u64, Vec<InstalledEntry>)> {
-    let path = cache_dir().join("installed.bin");
-    let bytes = tokio::fs::read(&path).await.ok()?;
-    let mut cursor = 0;
-    
-    let timestamp = read_u64(&bytes, &mut cursor)?;
-    let len = read_u32(&bytes, &mut cursor)? as usize;
-    let mut items = Vec::with_capacity(len);
-    
-    for _ in 0..len {
-        let name = read_string(&bytes, &mut cursor)?;
-        let app_id = read_string(&bytes, &mut cursor)?;
-        let version = read_string(&bytes, &mut cursor)?;
-        let size = read_string(&bytes, &mut cursor)?;
-        let origin = read_string(&bytes, &mut cursor)?;
-        
-        if cursor + 3 > bytes.len() {
-            return None;
-        }
-        let has_update = bytes[cursor] != 0;
-        let is_checked_for_update = bytes[cursor + 1] != 0;
-        let is_runtime = bytes[cursor + 2] != 0;
-        cursor += 3;
-        
-        items.push(InstalledEntry {
-            name,
-            app_id,
-            version,
-            size,
-            origin,
-            has_update,
-            is_checked_for_update,
-            is_runtime,
-        });
-    }
-    
-    Some((timestamp, items))
+pub async fn load_installed_cache() -> Option<(Vec<InstalledEntry>, bool)> {
+    load_cache("installed").await
 }
 
 pub async fn invalidate_installed_cache() {
-    let path = cache_dir().join("installed.bin");
-    let _ = tokio::fs::remove_file(path).await;
+    let _ = tokio::fs::remove_file(cache_path("installed")).await;
 }
