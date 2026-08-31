@@ -62,11 +62,19 @@ pub mod qobject {
         fn load_updated(self: Pin<&mut AppListModel>);
 
         #[qinvokable]
+        #[cxx_name = "loadMobile"]
+        fn load_mobile(self: Pin<&mut AppListModel>);
+
+        #[qinvokable]
         fn search(self: Pin<&mut AppListModel>, query: QString);
 
         #[qinvokable]
         #[cxx_name = "loadCategory"]
         fn load_category(self: Pin<&mut AppListModel>, category: QString);
+
+        #[qinvokable]
+        #[cxx_name = "loadCategorySorted"]
+        fn load_category_sorted(self: Pin<&mut AppListModel>, category: QString, sort_by: QString);
     }
 
     unsafe extern "RustQt" {
@@ -82,7 +90,7 @@ pub mod qobject {
     impl cxx_qt::Threading for AppListModel {}
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct AppEntry {
     pub name: String,
     pub summary: String,
@@ -148,12 +156,8 @@ impl qobject::AppListModel {
             let mut cached_items = None;
             let mut is_expired = true;
             
-            if let Some((timestamp, items)) = crate::disk_cache::load_popular_cache().await {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                is_expired = now.saturating_sub(timestamp) > 300; // 5 minutes TTL
+            if let Some((items, expired)) = crate::disk_cache::load_popular_cache().await {
+                is_expired = expired;
                 cached_items = Some(items.clone());
                 
                 // Yield cached items to Qt immediately (Instant load)
@@ -282,6 +286,32 @@ impl qobject::AppListModel {
         });
     }
 
+    pub fn load_mobile(mut self: std::pin::Pin<&mut Self>) {
+        self.as_mut().set_loading(true);
+        let qt_thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            let client = crate::flathub::client::FlathubClient::new();
+            let items = match client.fetch_mobile().await {
+                Ok(apps) => {
+                    apps.into_iter().map(|app| AppEntry {
+                        name: app.name,
+                        summary: app.summary.unwrap_or_default(),
+                        icon_url: app.icon.unwrap_or_default(),
+                        app_id: app.app_id,
+                    }).collect()
+                }
+                Err(_) => vec![],
+            };
+            let _ = qt_thread.queue(move |mut qobject| {
+                klog!("AppListModel::load_mobile: updating UI with {} items", items.len());
+                qobject.as_mut().begin_reset_model();
+                qobject.as_mut().rust_mut().items = items;
+                qobject.as_mut().end_reset_model();
+                qobject.as_mut().set_loading(false);
+            });
+        });
+    }
+
     pub fn search(mut self: std::pin::Pin<&mut Self>, query: cxx_qt_lib::QString) {
         self.as_mut().set_loading(true);
         let qt_thread = self.qt_thread();
@@ -357,6 +387,59 @@ impl qobject::AppListModel {
 
             let _ = qt_thread.queue(move |mut qobject| {
                 klog!("AppListModel::load_category: updating UI with {} items", items.len());
+                qobject.as_mut().begin_reset_model();
+                qobject.as_mut().rust_mut().items = items;
+                qobject.as_mut().end_reset_model();
+                qobject.as_mut().set_loading(false);
+            });
+        });
+    }
+
+    /// Storefront rows for a category: "trending" and "installs_last_month"
+    /// sort server-side; "newest" reuses the plain (cached) category fetch and
+    /// sorts by `added_at` locally, since the API has no such sort. No
+    /// subcategory filtering here — that belongs to the drill-down browser.
+    pub fn load_category_sorted(mut self: std::pin::Pin<&mut Self>, category: cxx_qt_lib::QString, sort_by: cxx_qt_lib::QString) {
+        self.as_mut().set_loading(true);
+        let qt_thread = self.qt_thread();
+        let category_str = category.to_string();
+        let sort_str = sort_by.to_string();
+        crate::runtime::runtime().spawn(async move {
+            let client = crate::flathub::client::FlathubClient::new();
+
+            let apps = match sort_str.as_str() {
+                "trending" | "installs_last_month" => {
+                    client.fetch_category_sorted(&category_str, &sort_str).await
+                }
+                "newest" => client.fetch_category(&category_str).await.map(|mut apps| {
+                    apps.sort_by_key(|a| std::cmp::Reverse(a.added_at.unwrap_or(0)));
+                    apps.truncate(30);
+                    apps
+                }),
+                other => {
+                    kerr!("AppListModel::load_category_sorted: unknown sort \"{}\"", other);
+                    Ok(vec![])
+                }
+            };
+
+            let items: Vec<AppEntry> = match apps {
+                Ok(apps) => {
+                    klog!("AppListModel::load_category_sorted(\"{}\", \"{}\"): {} apps", category_str, sort_str, apps.len());
+                    apps.into_iter().map(|app| AppEntry {
+                        name: app.name,
+                        summary: app.summary.unwrap_or_default(),
+                        icon_url: app.icon.unwrap_or_default(),
+                        app_id: app.app_id,
+                    }).collect()
+                }
+                Err(e) => {
+                    kerr!("AppListModel::load_category_sorted: {}", e);
+                    vec![]
+                }
+            };
+
+            let _ = qt_thread.queue(move |mut qobject| {
+                klog!("AppListModel::load_category_sorted: updating UI with {} items", items.len());
                 qobject.as_mut().begin_reset_model();
                 qobject.as_mut().rust_mut().items = items;
                 qobject.as_mut().end_reset_model();

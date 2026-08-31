@@ -126,6 +126,15 @@ impl FlathubClient {
         ).await
     }
 
+    /// Apps adapted for phones and tablets ("On the Go" on flathub.org).
+    pub async fn fetch_mobile(&self) -> Result<Vec<FlathubApp>, FlathubError> {
+        self.fetch_collection_cached(
+            "mobile",
+            "https://flathub.org/api/v2/collection/mobile",
+            "fetch_mobile",
+        ).await
+    }
+
     pub async fn fetch_category(&self, category_id: &str) -> Result<Vec<FlathubApp>, FlathubError> {
         let cache_key = format!("category/{}", category_id);
         let url = format!("https://flathub.org/api/v2/collection/category/{}", category_id);
@@ -133,6 +142,22 @@ impl FlathubClient {
             &cache_key,
             &url,
             &format!("fetch_category({})", category_id),
+        ).await
+    }
+
+    /// Category collection sorted server-side. Flathub only accepts
+    /// "trending" or "installs_last_month" here; `page` is mandatory once
+    /// query parameters are present.
+    pub async fn fetch_category_sorted(&self, category_id: &str, sort_by: &str) -> Result<Vec<FlathubApp>, FlathubError> {
+        let cache_key = format!("category/{}/sorted/{}", category_id, sort_by);
+        let url = format!(
+            "https://flathub.org/api/v2/collection/category/{}?sort_by={}&page=1&per_page=30",
+            category_id, sort_by
+        );
+        self.fetch_collection_cached(
+            &cache_key,
+            &url,
+            &format!("fetch_category_sorted({}, {})", category_id, sort_by),
         ).await
     }
 

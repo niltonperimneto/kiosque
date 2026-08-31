@@ -29,6 +29,7 @@ pub mod qobject {
         #[base = QAbstractListModel]
         #[qml_element]
         #[qproperty(bool, loading)]
+        #[qproperty(QString, aotd_json)]
         type FeaturedModel = super::FeaturedModelRust;
 
         #[qinvokable]
@@ -62,7 +63,7 @@ pub mod qobject {
     impl cxx_qt::Threading for FeaturedModel {}
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FeaturedEntry {
     pub name: String,
     pub summary: String,
@@ -70,12 +71,27 @@ pub struct FeaturedEntry {
     pub app_id: String,
     pub description: String,
     pub developer: String,
+    /// Raw remote URL of the app's primary screenshot ("" when absent).
+    #[serde(default)]
+    pub screenshot_url: String,
+    /// Appstream branding primary colors ("" when the app has none).
+    #[serde(default)]
+    pub brand_color_light: String,
+    #[serde(default)]
+    pub brand_color_dark: String,
+    /// Marks Flathub's App of the Day, which is shown in a dedicated banner
+    /// instead of the carousel. Matched by id, not index: failed detail
+    /// fetches can shift positions in the list.
+    #[serde(default)]
+    pub is_app_of_the_day: bool,
 }
 
 #[derive(Default)]
 pub struct FeaturedModelRust {
     pub items: Vec<FeaturedEntry>,
     pub loading: bool,
+    pub aotd: Option<FeaturedEntry>,
+    pub aotd_json: cxx_qt_lib::QString,
 }
 
 impl qobject::FeaturedModel {
@@ -85,6 +101,9 @@ impl qobject::FeaturedModel {
     pub const APP_ID_ROLE: i32 = 259;
     pub const DESCRIPTION_ROLE: i32 = 260;
     pub const DEVELOPER_ROLE: i32 = 261;
+    pub const SCREENSHOT_URL_ROLE: i32 = 262;
+    pub const BRAND_COLOR_LIGHT_ROLE: i32 = 263;
+    pub const BRAND_COLOR_DARK_ROLE: i32 = 264;
 
     pub fn data(&self, index: &cxx_qt_lib::QModelIndex, role: i32) -> cxx_qt_lib::QVariant {
         if !index.is_valid() {
@@ -103,6 +122,16 @@ impl qobject::FeaturedModel {
                 Self::APP_ID_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.app_id)),
                 Self::DESCRIPTION_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.description)),
                 Self::DEVELOPER_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.developer)),
+                Self::SCREENSHOT_URL_ROLE => {
+                    if item.screenshot_url.is_empty() {
+                        return cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::default());
+                    }
+                    let qml_url = format!("image://kiosque/{}/screenshot/0", item.app_id);
+                    crate::image_registry::register_image_url(format!("{}:screenshot:0", item.app_id), item.screenshot_url.clone());
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&qml_url))
+                }
+                Self::BRAND_COLOR_LIGHT_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.brand_color_light)),
+                Self::BRAND_COLOR_DARK_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.brand_color_dark)),
                 _ => cxx_qt_lib::QVariant::default(),
             }
         } else {
@@ -125,7 +154,49 @@ impl qobject::FeaturedModel {
         roles.insert(Self::APP_ID_ROLE, cxx_qt_lib::QByteArray::from("appId"));
         roles.insert(Self::DESCRIPTION_ROLE, cxx_qt_lib::QByteArray::from("description"));
         roles.insert(Self::DEVELOPER_ROLE, cxx_qt_lib::QByteArray::from("developer"));
+        roles.insert(Self::SCREENSHOT_URL_ROLE, cxx_qt_lib::QByteArray::from("screenshotUrl"));
+        roles.insert(Self::BRAND_COLOR_LIGHT_ROLE, cxx_qt_lib::QByteArray::from("brandColorLight"));
+        roles.insert(Self::BRAND_COLOR_DARK_ROLE, cxx_qt_lib::QByteArray::from("brandColorDark"));
         roles
+    }
+
+    /// Split the App of the Day out of `items`, reset the carousel model with
+    /// the remainder, and publish the AotD through the `aotd_json` property.
+    /// The AotD never flows through `data()`, so its image URLs must be
+    /// registered here or the banner would have nothing to load.
+    fn apply_items(mut self: std::pin::Pin<&mut Self>, mut items: Vec<FeaturedEntry>) {
+        let aotd = items.iter().find(|i| i.is_app_of_the_day).cloned();
+        items.retain(|i| !i.is_app_of_the_day);
+
+        self.as_mut().begin_reset_model();
+        self.as_mut().rust_mut().items = items;
+        self.as_mut().end_reset_model();
+
+        let json = match &aotd {
+            Some(entry) => {
+                crate::image_registry::register_image_url(format!("{}:icon", entry.app_id), entry.icon_url.clone());
+                let screenshot_qml_url = if entry.screenshot_url.is_empty() {
+                    String::new()
+                } else {
+                    crate::image_registry::register_image_url(format!("{}:screenshot:0", entry.app_id), entry.screenshot_url.clone());
+                    format!("image://kiosque/{}/screenshot/0", entry.app_id)
+                };
+                serde_json::json!({
+                    "appId": entry.app_id,
+                    "name": entry.name,
+                    "summary": entry.summary,
+                    "developer": entry.developer,
+                    "iconUrl": format!("image://kiosque/{}/icon", entry.app_id),
+                    "screenshotUrl": screenshot_qml_url,
+                    "brandColorLight": entry.brand_color_light,
+                    "brandColorDark": entry.brand_color_dark,
+                })
+                .to_string()
+            }
+            None => "{}".to_string(),
+        };
+        self.as_mut().rust_mut().aotd = aotd;
+        self.as_mut().set_aotd_json(cxx_qt_lib::QString::from(&json));
     }
 
     pub fn refresh(mut self: std::pin::Pin<&mut Self>) {
@@ -136,20 +207,14 @@ impl qobject::FeaturedModel {
             let mut cached_items = None;
             let mut is_expired = true;
             
-            if let Some((timestamp, items)) = crate::disk_cache::load_featured_cache().await {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                is_expired = now.saturating_sub(timestamp) > 300; // 5 minutes TTL
+            if let Some((items, expired)) = crate::disk_cache::load_featured_cache().await {
+                is_expired = expired;
                 cached_items = Some(items.clone());
                 
                 // Yield cached items to Qt immediately (Instant load)
                 let _ = qt_thread.queue(move |mut qobject| {
                     eprintln!("[kiosque] FeaturedModel::refresh: Loading cached featured list ({} items)", items.len());
-                    qobject.as_mut().begin_reset_model();
-                    qobject.as_mut().rust_mut().items = items;
-                    qobject.as_mut().end_reset_model();
+                    qobject.as_mut().apply_items(items);
                 });
             }
             
@@ -196,13 +261,19 @@ impl qobject::FeaturedModel {
                 let mut items = Vec::new();
                 for handle in handles {
                     if let Ok(Ok(details)) = handle.await {
+                        let screenshot_url = details.best_screenshot_url().unwrap_or_default();
+                        let (brand_light, brand_dark) = details.brand_colors();
                         items.push(FeaturedEntry {
                             name: details.name,
                             summary: details.summary.clone(),
                             icon_url: details.icon.unwrap_or_default(),
-                            app_id: details.id,
                             description: details.description.unwrap_or_else(|| details.summary.clone()),
                             developer: details.developer_name.unwrap_or_default(),
+                            screenshot_url,
+                            brand_color_light: brand_light.unwrap_or_default(),
+                            brand_color_dark: brand_dark.unwrap_or_default(),
+                            is_app_of_the_day: Some(details.id.as_str()) == aotd_id.as_deref(),
+                            app_id: details.id,
                         });
                     }
                 }
@@ -218,6 +289,12 @@ impl qobject::FeaturedModel {
                             app_id: app.app_id,
                             description: app.description.unwrap_or_else(|| app.summary.unwrap_or_default()),
                             developer: app.developer_name.unwrap_or_default(),
+                            // Collection entries carry no screenshots or
+                            // branding; the banner degrades to icon + tint.
+                            screenshot_url: String::new(),
+                            brand_color_light: String::new(),
+                            brand_color_dark: String::new(),
+                            is_app_of_the_day: false,
                         }).collect::<Vec<_>>();
                     }
                 }
@@ -229,10 +306,16 @@ impl qobject::FeaturedModel {
                 }
                 
                 let _ = qt_thread.queue(move |mut qobject| {
+                    // Skip the second model reset when the fresh list is identical to
+                    // what we already showed from cache: a redundant reset only causes
+                    // flicker and risks the SwipeView relayout glitch.
+                    if Some(&items) == cached_items.as_ref() {
+                        eprintln!("[kiosque] FeaturedModel::refresh: fresh list identical to cache, skipping reset");
+                        qobject.as_mut().set_loading(false);
+                        return;
+                    }
                     eprintln!("[kiosque] FeaturedModel::refresh: updating UI with fresh {} items", items.len());
-                    qobject.as_mut().begin_reset_model();
-                    qobject.as_mut().rust_mut().items = items;
-                    qobject.as_mut().end_reset_model();
+                    qobject.as_mut().apply_items(items);
                     qobject.as_mut().set_loading(false);
                 });
             } else {

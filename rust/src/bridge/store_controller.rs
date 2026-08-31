@@ -520,26 +520,7 @@ async fn fetch_supplementary(
 /// Pick the highest-resolution screenshot URL for each screenshot entry,
 /// falling back to the first available size.
 fn screenshot_urls(details: &AppDetails) -> Vec<String> {
-    details
-        .screenshots
-        .iter()
-        .filter_map(|s| {
-            s.sizes
-                .iter()
-                .max_by_key(|size| {
-                    size.width
-                        .as_ref()
-                        .and_then(|w| {
-                            w.as_str()
-                                .and_then(|s| s.parse::<i32>().ok())
-                                .or_else(|| w.as_i64().map(|i| i as i32))
-                        })
-                        .unwrap_or(0)
-                })
-                .map(|size| size.src.clone())
-                .or_else(|| s.sizes.first().map(|size| size.src.clone()))
-        })
-        .collect()
+    details.screenshots.iter().filter_map(|s| s.best_url()).collect()
 }
 
 /// Collect the app's external URLs (homepage, bugtracker, donation, …) plus the
