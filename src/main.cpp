@@ -15,6 +15,7 @@
 void qml_register_types_com_kiosque();
 
 #include <QQuickImageProvider>
+#include <QDebug>
 #include <cstdint>
 #include <cstring>
 
@@ -35,6 +36,8 @@ extern "C" {
     void free_rust_image(RustImageResult res);
 }
 
+#include <iostream>
+
 class KiosqueImageProvider : public QQuickImageProvider
 {
 public:
@@ -45,8 +48,12 @@ public:
 
     QImage requestImage(const QString &id, QSize *size, const QSize &requestedSize) override
     {
+        std::cerr << "[kiosque-cpp] requestImage id: " << id.toStdString() 
+                  << " reqSize: " << requestedSize.width() << "x" << requestedSize.height() << std::endl;
+
         QStringList parts = id.split(QLatin1Char('/'));
         if (parts.size() < 2) {
+            std::cerr << "[kiosque-cpp] Error: id has less than 2 parts: " << id.toStdString() << std::endl;
             return QImage();
         }
         
@@ -66,21 +73,43 @@ public:
         );
 
         if (res.data == nullptr || res.len <= 0 || res.width <= 0 || res.height <= 0) {
+            std::cerr << "[kiosque-cpp] Rust returned null/empty image for " << id.toStdString() << std::endl;
             return QImage();
         }
 
-        QImage img(res.width, res.height, QImage::Format_RGBA8888);
-        if (img.sizeInBytes() == res.len) {
-            std::memcpy(img.bits(), res.data, res.len);
-        } else {
-            img = QImage();
+        std::cerr << "[kiosque-cpp] Rust returned image size: " << res.width << "x" << res.height
+                  << " len: " << res.len << std::endl;
+
+        // Validate the buffer is exactly width*height*4 (RGBA8888, no row padding)
+        // before letting QImage read through it.
+        const qsizetype expectedBytes = qsizetype(res.width) * res.height * 4;
+        if (res.len != expectedBytes) {
+            std::cerr << "[kiosque-cpp] Size mismatch! res.len: " << res.len
+                      << " expected: " << expectedBytes << std::endl;
+            free_rust_image(res);
+            return QImage();
         }
+
+        // Wrap the Rust buffer directly (no memcpy) and let convertToFormat do
+        // the single pixel-format pass. The wrapper owns the buffer and frees it
+        // via free_rust_image once it is destroyed (after the conversion copies).
+        auto *info = new RustImageResult(res);
+        QImage wrapped(
+            res.data, res.width, res.height, QImage::Format_RGBA8888,
+            [](void *p) {
+                auto *r = static_cast<RustImageResult *>(p);
+                free_rust_image(*r);
+                delete r;
+            },
+            info);
+
+        QImage img = wrapped.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 
         if (size) {
             *size = QSize(res.width, res.height);
         }
 
-        free_rust_image(res);
+        std::cerr << "[kiosque-cpp] requestImage finished, isNull: " << img.isNull() << std::endl;
         return img;
     }
 };

@@ -1,6 +1,6 @@
 [package]
 name = "libkiosque"
-version = "1.0.0"
+version = "1.0.2"
 edition = "2024"
 authors = ["Kiosque Contributors"]
 description = "Rust backend for the Kiosque Flatpak storefront"
@@ -42,7 +42,13 @@ rand = "0.10.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 jxl-oxide = { version = "0.12", features = ["image"] }
 jxl-encoder = "0.3.1"
+# SIMD-accelerated (AVX2/SSE4/NEON) downscaling
+fast_image_resize = "6"
 
 
 [build-dependencies]
 cxx-qt-build = "0.9"
+
+# Optimize all dependencies in dev/debug mode so that JXL compression/decompression and image processing run at release speed.
+[profile.dev.package."*"]
+opt-level = 3
