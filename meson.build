@@ -15,10 +15,17 @@ qt6 = import('qt6')
 
 # Dependencies
 qt_deps = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'QuickControls2', 'DBus', 'Widgets'])
-kirigami_dep = dependency('KF6Kirigami')
+cpp = meson.get_compiler('cpp')
+kirigami_dep = declare_dependency(include_directories: include_directories('/usr/include/KF6/Kirigami', is_system: true))
 dbus_dep = dependency('dbus-1', required: false)
-ki18n_dep = dependency('KF6I18n', method: 'cmake', modules: ['KF6::I18n'])
-ki18n_qml_dep = dependency('KF6I18n', method: 'cmake', modules: ['KF6::I18nQml'])
+ki18n_dep = declare_dependency(
+  dependencies: [cpp.find_library('KF6I18n')],
+  include_directories: include_directories('/usr/include/KF6/KI18n', is_system: true)
+)
+ki18n_qml_dep = declare_dependency(
+  dependencies: [cpp.find_library('KF6I18nQml')],
+  include_directories: include_directories('/usr/include/KF6/KI18n', is_system: true)
+)
 
 
 cargo = find_program('cargo')
@@ -31,13 +38,13 @@ manifest_path = meson.current_source_dir() / 'rust/Cargo.toml'
 if is_release
   cargo_cmd = [
     'sh', '-c',
-    'env CARGO_TARGET_DIR="$1" "$2" build --manifest-path "$3" --release && cp "$1/$4/libkiosque.a" "$5"',
+    'env QMAKE=qmake6 CARGO_TARGET_DIR="$1" "$2" build --manifest-path "$3" --release && cp "$1/$4/libkiosque.a" "$5"',
     'sh', cargo_target_dir, cargo.full_path(), manifest_path, cargo_profile, '@OUTPUT@'
   ]
 else
   cargo_cmd = [
     'sh', '-c',
-    'env CARGO_TARGET_DIR="$1" "$2" build --manifest-path "$3" && cp "$1/$4/libkiosque.a" "$5"',
+    'env QMAKE=qmake6 CARGO_TARGET_DIR="$1" "$2" build --manifest-path "$3" && cp "$1/$4/libkiosque.a" "$5"',
     'sh', cargo_target_dir, cargo.full_path(), manifest_path, cargo_profile, '@OUTPUT@'
   ]
 endif
