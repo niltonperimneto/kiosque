@@ -223,11 +223,7 @@ pub fn init() -> &'static Translator {
         let exe = std::env::current_exe().ok();
         let languages = languages_from_env(env);
         let dirs = locale_dirs(env, exe.as_deref());
-        let t = Translator::load(&dirs, &languages, DOMAIN);
-        if !languages.is_empty() && t.is_empty() {
-            klog!("l10n: no catalog for {:?} in {:?}", languages, dirs);
-        }
-        t
+        Translator::load(&dirs, &languages, DOMAIN)
     })
 }
 

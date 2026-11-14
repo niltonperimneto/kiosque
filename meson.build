@@ -25,20 +25,24 @@ ki18n_qml_dep = dependency('KF6I18n', method: 'cmake', modules: ['KF6::I18nQml']
 python = find_program('python3')
 is_release = get_option('buildtype') != 'debug'
 cargo_profile = is_release ? 'release' : 'debug'
+localedir_path = get_option('prefix') / get_option('localedir')
 cargo_target_dir = get_option('cargo_target_dir') == '' ? meson.current_build_dir() / 'cargo_target' : get_option('cargo_target_dir')
 rust_lib = custom_target(
   'cargo-build',
   build_by_default: true,
   build_always_stale: true,
-  output: ['libkiosque.a', 'kiosque_initializers.o'],
+  output: ['libkiosque.a', 'kiosque_initializers.o', 'kiosque-update'],
   console: true,
+  install: true,
+  install_dir: [false, false, get_option('bindir')],
   command: [python, files('scripts/build_rust.py'),
     '--manifest', meson.current_source_dir() / 'rust/Cargo.toml',
     '--target-dir', cargo_target_dir,
     '--profile', cargo_profile,
     '--backend', get_option('flatpak_backend'),
     '--test-support', get_option('test_support') ? 'true' : 'false',
-    '--output', '@OUTPUT0@', '--initializers', '@OUTPUT1@']
+    '--output', '@OUTPUT0@', '--initializers', '@OUTPUT1@', '--updater', '@OUTPUT2@',
+    '--localedir', localedir_path]
 )
 backend_deps = []
 if get_option('flatpak_backend') == 'native'
@@ -51,12 +55,6 @@ qrc_files = qt6.compile_resources(sources: 'resources.qrc')
 
 subdir('po')
 
-# Preprocess Qt files
-update_daemon_moc = qt6.preprocess(
-  moc_sources: ['src/update_main.cpp']
-)
-
-localedir_path = get_option('prefix') / get_option('localedir')
 
 # Application executable
 executable('kiosque',
@@ -64,19 +62,6 @@ executable('kiosque',
   link_with: rust_lib[0],
   objects: [rust_lib[1]],
   dependencies: [qt_deps, kirigami_dep, rust_dep, dbus_dep, ki18n_dep, ki18n_qml_dep],
-  cpp_args: [
-    '-DTRANSLATION_DOMAIN="kiosque"',
-    '-DPROJECT_VERSION="' + meson.project_version() + '"',
-    '-DLOCALE_INSTALL_DIR="' + localedir_path + '"'
-  ],
-  install: true
-)
-
-executable('kiosque-update',
-  sources: ['src/update_main.cpp', update_daemon_moc],
-  link_with: rust_lib[0],
-  objects: [rust_lib[1]],
-  dependencies: [qt_deps, rust_dep, dbus_dep, ki18n_dep],
   cpp_args: [
     '-DTRANSLATION_DOMAIN="kiosque"',
     '-DPROJECT_VERSION="' + meson.project_version() + '"',

@@ -31,7 +31,7 @@ Meson builds the explicit `kiosque` package, links its static library and export
 
 The new core cache format is versioned. Old incompatible cache files are ignored. No settings schema migration is required; older records without an ODRS salt receive a generated salt when loaded.
 
-The updater's existing C++ tray/one-shot shell is retained. The core daemon modules expose the ongoing Rust daemon refactor; a broader rewrite of the C++ shell is not part of the test architecture migration.
+`kiosque-update` (`rust/updater`) is pure Rust: it owns the daemon bus name (single instance, no replacement), serves a StatusNotifierItem with a dbusmenu, sends `org.freedesktop.Notifications` with `update`/`open` actions and reacts to `kiosque_core::daemon::DaemonEvent`s. Its behaviour is a pure state machine (`shell.rs`) tested without a bus. It never enables autostart; `kiosque_core::autostart::apply` runs only when the user saves settings.
 
 ## Sandbox and trust boundaries
 

@@ -1526,7 +1526,11 @@ dependencies = [
 name = "kiosque-update"
 version = "1.0.0"
 dependencies = [
+ "futures-util",
  "kiosque-core",
+ "serde",
+ "tokio",
+ "zbus",
 ]
 
 [[package]]

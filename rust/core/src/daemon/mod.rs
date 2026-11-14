@@ -244,6 +244,11 @@ async fn job_notifier() {
 
 static CONNECTION: OnceLock<zbus::Connection> = OnceLock::new();
 
+/// The daemon's session bus connection, once [`start`] has succeeded.
+pub fn connection() -> Option<zbus::Connection> {
+    CONNECTION.get().cloned()
+}
+
 /// Own the daemon bus name and start the scheduler. `background` keeps it
 /// alive while idle (autostart); otherwise it emits [`DaemonEvent::IdleExit`]
 /// after [`IDLE_TIMEOUT`]. Fails if the name is taken or the bus is
@@ -252,12 +257,25 @@ pub async fn start(background: bool) -> Result<(), String> {
     BACKGROUND.store(background, Ordering::SeqCst);
     touch();
     let conn = zbus::connection::Builder::session()
-        .name(BUS_NAME)
         .serve_at(OBJECT_PATH, service::Service)
         .serve_at(RUNNER_PATH, runner::Runner)
         .build()
         .await
         .map_err(|e| e.to_string())?;
+    // Single instance: neither replace a running daemon nor wait in line
+    // (zbus' defaults would do the former).
+    match conn
+        .request_name_with_flags(BUS_NAME, zbus::fdo::RequestNameFlags::DO_NOT_QUEUE)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        zbus::fdo::RequestNameReply::PrimaryOwner | zbus::fdo::RequestNameReply::AlreadyOwner => {}
+        _ => {
+            return Err(format!(
+                "{BUS_NAME} is already owned; another instance is running"
+            ));
+        }
+    }
     let _ = CONNECTION.set(conn.clone());
     klog!("daemon: serving {} (background={})", BUS_NAME, background);
 
