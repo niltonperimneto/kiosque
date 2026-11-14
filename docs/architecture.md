@@ -32,3 +32,17 @@ Meson builds the explicit `libkiosque` package, links its static library and exp
 The new core cache format is versioned. Old incompatible cache files are ignored. No settings schema migration is required; older records without an ODRS salt receive a generated salt when loaded.
 
 The updater's existing C++ tray/one-shot shell is retained. The core daemon modules expose the ongoing Rust daemon refactor; a broader rewrite of the C++ shell is not part of the test architecture migration.
+
+## Sandbox and trust boundaries
+
+The Flatpak build uses the CLI backend and runs `flatpak-spawn --host flatpak …`, which needs `--talk-name=org.freedesktop.Flatpak`. That name lets the app run host commands, so every value that becomes a `flatpak` argument (app ids, refs, remote names, repository URLs) is validated in `flatpak/cli.rs` before spawning. Option-like values (leading `-`) and characters outside flatpak's own id and name syntax are rejected. Keep this check in front of any new CLI call.
+
+Every other permission is read-only and scoped to what the code reads:
+
+| Permission | Reason |
+| --- | --- |
+| `/var/lib/flatpak:ro`, `xdg-data/flatpak:ro` | AppStream catalog and installed-state monitoring (`flatpak::installation_paths`) |
+| `host-etc:ro`, `host-os:ro` | Distributor configuration under `/run/host/etc/kiosque` and `/run/host/usr/share/kiosque` |
+| `org.freedesktop.Notifications`, `org.kde.StatusNotifierWatcher` | Update notifier notifications and tray icon |
+
+The app writes only to its own `~/.var/app` directories. Temporary `.flatpakref`/`.flatpakrepo` files go to its cache directory, which has the same path on the host. Do not reintroduce `--filesystem=host`. Never include OAuth response bodies in errors or logs, since they can contain tokens.

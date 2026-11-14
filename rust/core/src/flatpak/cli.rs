@@ -68,6 +68,65 @@ pub fn flatpak_command() -> Command {
     CliBackend::new().command()
 }
 
+// ── Argument validation ─────────────────────────────────────────────────────
+//
+// App ids, refs and remote names reach us from AppStream data, the Flathub
+// API, `appstream://` URLs and D-Bus callers. They are passed as positional
+// arguments, so a value such as `--command=/bin/sh` would otherwise be parsed
+// as an option by `flatpak run`. Reject anything outside the character sets
+// flatpak itself accepts, and anything that starts like an option.
+
+fn invalid(kind: &str, value: &str) -> FlatpakError {
+    FlatpakError::Failed(format!("invalid {}: {:?}", kind, value))
+}
+
+/// An app id (`org.example.App`) or full ref (`app/org.example.App/x86_64/stable`).
+fn check_ref(value: &str) -> Result<&str> {
+    let ok = !value.is_empty()
+        && value.len() <= 512
+        && !value.starts_with(['-', '.', '/'])
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'));
+    if ok {
+        Ok(value)
+    } else {
+        Err(invalid("application id", value))
+    }
+}
+
+fn check_remote_name(value: &str) -> Result<&str> {
+    let ok = !value.is_empty()
+        && value.len() <= 255
+        && !value.starts_with(['-', '.'])
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    if ok {
+        Ok(value)
+    } else {
+        Err(invalid("remote name", value))
+    }
+}
+
+/// Repository URLs: a known scheme, no whitespace or control characters.
+fn check_remote_url(value: &str) -> Result<&str> {
+    const SCHEMES: [&str; 5] = [
+        "https://",
+        "http://",
+        "file://",
+        "oci+https://",
+        "oci+http://",
+    ];
+    let ok = SCHEMES.iter().any(|s| value.starts_with(s))
+        && !value.chars().any(|c| c.is_whitespace() || c.is_control());
+    if ok {
+        Ok(value)
+    } else {
+        Err(invalid("remote URL", value))
+    }
+}
+
 async fn output(backend: &CliBackend, args: &[&str]) -> Result<String> {
     let out = backend
         .command()
@@ -135,8 +194,10 @@ impl FlatpakBackend for CliBackend {
     }
 
     async fn add_remote(&self, name: &str, source: RemoteSource, scope: Scope) -> Result<()> {
+        check_remote_name(name)?;
         match source {
             RemoteSource::Url(url) => {
+                check_remote_url(&url)?;
                 output(
                     self,
                     &[
@@ -165,6 +226,7 @@ impl FlatpakBackend for CliBackend {
     }
 
     async fn remove_remote(&self, name: &str, scope: Option<Scope>) -> Result<()> {
+        check_remote_name(name)?;
         let scopes = match scope {
             Some(s) => vec![s],
             None => vec![Scope::User, Scope::System],
@@ -187,6 +249,21 @@ impl FlatpakBackend for CliBackend {
     ) -> Result<()> {
         if cancel.is_cancelled() {
             return Err(FlatpakError::Cancelled);
+        }
+        match &op {
+            Operation::Install { remote, id, .. } => {
+                check_remote_name(remote)?;
+                check_ref(id)?;
+            }
+            Operation::Uninstall { id, .. } => {
+                check_ref(id)?;
+            }
+            Operation::Update { ids } => {
+                for id in ids {
+                    check_ref(id)?;
+                }
+            }
+            Operation::InstallRefFile { .. } => {}
         }
         let mut temp = None;
         let mut args: Vec<String> = vec![];
@@ -231,6 +308,7 @@ impl FlatpakBackend for CliBackend {
     }
 
     async fn launch(&self, id: &str) -> Result<()> {
+        check_ref(id)?;
         self.command()
             .args(["run", id])
             .kill_on_drop(false)
@@ -243,6 +321,7 @@ impl FlatpakBackend for CliBackend {
     }
 
     async fn refresh_appstream(&self, remote: &RemoteInfo) -> Result<()> {
+        check_remote_name(&remote.name)?;
         output(
             self,
             &[
@@ -535,6 +614,63 @@ pub fn parse_remotes(out: &str) -> Vec<RemoteInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_option_like_and_malformed_arguments() {
+        for ok in [
+            "org.mozilla.firefox",
+            "app/org.kde.Platform/x86_64/6.8",
+            "io.github.foo_bar-baz",
+        ] {
+            assert!(check_ref(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            "--command=/bin/sh",
+            "-v",
+            "/etc/passwd",
+            "a b",
+            "org.x;rm",
+            "org.x\n",
+        ] {
+            assert!(check_ref(bad).is_err(), "{bad:?}");
+        }
+        assert!(check_remote_name("flathub-beta").is_ok());
+        for bad in ["", "--system", ".hidden", "a/b", "x y"] {
+            assert!(check_remote_name(bad).is_err(), "{bad:?}");
+        }
+        assert!(check_remote_url("https://dl.flathub.org/repo/flathub.flatpakrepo").is_ok());
+        assert!(check_remote_url("oci+https://registry.example.org").is_ok());
+        for bad in [
+            "--gpg-import=/x",
+            "ftp://x",
+            "https://x y",
+            "javascript:alert(1)",
+        ] {
+            assert!(check_remote_url(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn option_injection_never_reaches_the_process() {
+        // A program that cannot exist: if validation failed open we would get
+        // a spawn error instead of the validation error.
+        let backend = CliBackend::with_command("/nonexistent/kiosque-flatpak", vec![]);
+        let err = backend.launch("--command=/bin/sh").await.unwrap_err();
+        assert!(
+            err.to_string().starts_with("invalid application id"),
+            "{err}"
+        );
+        let err = backend
+            .add_remote(
+                "evil",
+                RemoteSource::Url("--gpg-import=/tmp/k".into()),
+                Scope::User,
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().starts_with("invalid remote URL"), "{err}");
+    }
 
     #[test]
     fn list_parsing() {

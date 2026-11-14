@@ -285,12 +285,9 @@ pub async fn perform_login(provider: OAuthProvider) -> Result<(), String> {
         error_description: Option<String>,
     }
 
-    let token_data: TokenResponse = serde_json::from_str(&token_body).map_err(|e| {
-        format!(
-            "Failed to parse token JSON: {}\nResponse: {}",
-            e, token_body
-        )
-    })?;
+    // The body may contain the access token, so never echo it into errors/logs.
+    let token_data: TokenResponse = serde_json::from_str(&token_body)
+        .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
     if let Some(err) = token_data.error {
         let desc = token_data.error_description.unwrap_or_default();

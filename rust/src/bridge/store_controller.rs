@@ -384,19 +384,12 @@ impl qobject::StoreController {
 
         crate::runtime::runtime().spawn(async move {
             // Distro auto-detection if empty
+            // Inside the sandbox /etc/os-release describes the KDE runtime;
+            // `distro_id` reads the host's /run/host/os-release first.
             if distro_str.is_empty() {
-                distro_str = if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
-                    let mut found = None;
-                    for line in content.lines() {
-                        if line.starts_with("ID=") {
-                            found =
-                                Some(line.trim_start_matches("ID=").trim_matches('"').to_string());
-                            break;
-                        }
-                    }
-                    found.unwrap_or_else(|| "Linux".to_string())
-                } else {
-                    "Linux".to_string()
+                distro_str = match kiosque_core::config::distro_id() {
+                    id if id == "generic" => "Linux".to_string(),
+                    id => id,
                 };
             }
 

@@ -12,9 +12,14 @@
         "--socket=fallback-x11",
         "--socket=wayland",
         "--device=dri",
-        "--filesystem=host",
         "--share=network",
-        "--talk-name=org.freedesktop.Flatpak"
+        "--filesystem=/var/lib/flatpak:ro",
+        "--filesystem=xdg-data/flatpak:ro",
+        "--filesystem=host-etc:ro",
+        "--filesystem=host-os:ro",
+        "--talk-name=org.freedesktop.Flatpak",
+        "--talk-name=org.freedesktop.Notifications",
+        "--talk-name=org.kde.StatusNotifierWatcher"
     ],
     "build-options": {
         "append-path": "/usr/lib/sdk/rust-stable/bin",
