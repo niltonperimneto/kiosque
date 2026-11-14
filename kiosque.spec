@@ -8,6 +8,7 @@ URL:            https://github.com/Kiosque/kiosque
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  meson
+BuildRequires:  desktop-file-utils
 BuildRequires:  gcc-c++
 BuildRequires:  cargo
 BuildRequires:  rust

@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install desktop test dependencies
-        run: dnf install -y cargo rust meson ninja-build gcc-c++ cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
+        run: dnf install -y desktop-file-utils cargo rust meson ninja-build gcc-c++ cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
       - run: python3 scripts/test.py qt --backend ${{ matrix.backend }}
       - run: python3 scripts/test.py qml --backend ${{ matrix.backend }}
       - uses: actions/upload-artifact@v7
@@ -104,7 +104,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          dnf install -y meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style flatpak-devel dbus-devel rpm-build tar
+          dnf install -y desktop-file-utils meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style flatpak-devel dbus-devel rpm-build tar
 
       - name: Build RPM Package
         run: |
@@ -134,7 +134,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          dnf install -y meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style kf6-sonnet plasma-breeze-qt6 qqc2-breeze-style flatpak-devel dbus-devel file wget curl file-devel
+          dnf install -y desktop-file-utils meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style kf6-sonnet plasma-breeze-qt6 qqc2-breeze-style flatpak-devel dbus-devel file wget curl file-devel
 
       - name: Build and Install to AppDir
         run: |
