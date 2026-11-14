@@ -17,9 +17,9 @@ parser.add_argument('--test-support', choices=['true', 'false'], required=True)
 args = parser.parse_args()
 export = args.target_dir / 'cxxqt'
 env = os.environ.copy()
-env.update(CARGO_TARGET_DIR=str(args.target_dir), CXX_QT_EXPORT_DIR=str(export), CXX_QT_EXPORT_CRATE_libkiosque='1')
+env.update(CARGO_TARGET_DIR=str(args.target_dir), CXX_QT_EXPORT_DIR=str(export), CXX_QT_EXPORT_CRATE_kiosque='1')
 env.setdefault('CARGO_BUILD_JOBS', '2')
-command = ['cargo', 'build', '--locked', '--manifest-path', str(args.manifest), '-p', 'libkiosque']
+command = ['cargo', 'build', '--locked', '--manifest-path', str(args.manifest), '-p', 'kiosque']
 if args.profile == 'release':
     command.append('--release')
 if args.backend == 'cli':
@@ -28,4 +28,4 @@ if args.test_support == 'true':
     command.extend(['--features', 'test-util'])
 subprocess.run(command, env=env, check=True)
 shutil.copy2(args.target_dir / args.profile / 'libkiosque.a', args.output)
-shutil.copy2(export / 'crates/libkiosque/initializers.o', args.initializers)
+shutil.copy2(export / 'crates/kiosque/initializers.o', args.initializers)

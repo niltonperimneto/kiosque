@@ -92,6 +92,7 @@ def guidance():
 def core():
     cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--lib')
     cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--doc')
+    cargo('test', '--locked', '-p', 'kiosque-update', '--no-default-features')
 
 
 def services():
@@ -100,7 +101,18 @@ def services():
 
 def lint():
     cargo('fmt', '--all', '--check')
-    cargo('clippy', '--locked', '-p', 'kiosque-core', '--no-default-features', '--all-targets', '--', '-D', 'warnings')
+    cargo('clippy', '--locked', '-p', 'kiosque-core', '-p', 'kiosque-update', '--no-default-features', '--all-targets', '--', '-D', 'warnings')
+
+
+def require_qmake():
+    """Qt Bridge and cxx-qt locate Qt through qmake; honour QMAKE like their build scripts do."""
+    qmake = os.environ.get('QMAKE')
+    if qmake:
+        if not (shutil.which(qmake) or Path(qmake).is_file()):
+            raise RuntimeError(f'missing prerequisites: QMAKE={qmake} is not executable')
+        return
+    if not (shutil.which('qmake6') or shutil.which('qmake')):
+        raise RuntimeError('missing prerequisites: qmake6 (or set QMAKE)')
 
 
 @contextlib.contextmanager
@@ -120,6 +132,7 @@ def desktop_environment():
 
 def desktop(suite, backend):
     require('meson', 'ninja', 'dbus-run-session', 'xvfb-run')
+    require_qmake()
     directory = ROOT / 'build' / f'tests-{backend}'
     setup = ['meson', 'setup', directory]
     if (directory / 'meson-private/coredata.dat').exists():
@@ -139,7 +152,9 @@ def selected_suites(paths):
     for path in paths:
         if path.startswith('rust/core/'):
             selected.update(('core', 'services'))
-        if path.startswith(('rust/src/', 'rust/build.rs', 'src/', 'qml/', 'meson')):
+        if path.startswith('rust/updater/'):
+            selected.add('core')
+        if path.startswith(('rust/app/', 'src/', 'qml/', 'meson', 'tests/qml/', 'po/')):
             selected.update(('core', 'services', 'qt', 'qml'))
         if '/flatpak/' in path or '/transactions' in path or '/daemon/' in path:
             selected.add('system')

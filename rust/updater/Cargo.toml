@@ -1,0 +1,19 @@
+[package]
+name = "kiosque-update"
+description = "Background update notifier for the Kiosque Flatpak storefront"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "kiosque-update"
+path = "src/main.rs"
+
+[features]
+default = []
+libflatpak = ["kiosque-core/libflatpak"]
+
+[dependencies]
+kiosque-core = { path = "../core", default-features = false }

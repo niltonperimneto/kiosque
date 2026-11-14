@@ -1,34 +1,10 @@
 [workspace]
-members = ["core"]
+members = ["core", "app", "updater"]
 resolver = "3"
 
-[package]
-name = "libkiosque"
+[workspace.package]
 version = "1.0.0"
 edition = "2024"
-authors = ["Kiosque Contributors"]
-description = "Rust and Qt adapter for the Kiosque Flatpak storefront"
+rust-version = "1.89"
 license = "GPL-3.0-or-later"
-
-[lib]
-name = "kiosque"
-crate-type = ["staticlib", "lib"]
-
-[features]
-default = ["libflatpak"]
-libflatpak = ["kiosque-core/libflatpak"]
-test-util = ["kiosque-core/test-util"]
-
-[dependencies]
-kiosque-core = { path = "core", default-features = false }
-cxx = "1.0.205"
-cxx-qt = "0.10.0"
-cxx-qt-lib = { version = "0.10.0", features = ["full"] }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
-tokio-util = "0.7.20"
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
-chrono = "0.4.45"
-
-[build-dependencies]
-cxx-qt-build = "0.10.0"
+authors = ["Kiosque Contributors"]

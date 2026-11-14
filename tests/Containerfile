@@ -1,4 +1,4 @@
 FROM registry.fedoraproject.org/fedora@sha256:f8593ba07b355b0af185181d590bce9b32c4f390bb125a15829059755c8a5052
-RUN dnf install -y cargo rust gcc-c++ meson ninja-build cmake qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3 mold && dnf clean all
+RUN dnf install -y cargo rust gcc-c++ meson ninja-build cmake qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3 mold && dnf clean all
 WORKDIR /work
-ENV CARGO_BUILD_JOBS=2
+ENV CARGO_BUILD_JOBS=2 QMAKE=/usr/bin/qmake6

@@ -1396,6 +1396,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiosque"
+version = "1.0.0"
+dependencies = [
+ "chrono",
+ "cxx",
+ "cxx-qt",
+ "cxx-qt-build",
+ "cxx-qt-lib",
+ "kiosque-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "kiosque-core"
 version = "1.0.0"
 dependencies = [
@@ -1429,6 +1445,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiosque-update"
+version = "1.0.0"
+dependencies = [
+ "kiosque-core",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1458,22 +1481,6 @@ dependencies = [
  "libc",
  "pkg-config",
  "system-deps",
-]
-
-[[package]]
-name = "libkiosque"
-version = "1.0.0"
-dependencies = [
- "chrono",
- "cxx",
- "cxx-qt",
- "cxx-qt-build",
- "cxx-qt-lib",
- "kiosque-core",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
 ]
 
 [[package]]

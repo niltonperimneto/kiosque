@@ -17,5 +17,11 @@ class RoutingTests(unittest.TestCase):
     def test_guidance_does_not_trigger_installation(self):
         self.assertEqual(runner.selected_suites(['skills/kiosque-rust-core/SKILL.md']), ['guidance'])
 
+    def test_app_crate_changes_require_desktop_suites(self):
+        self.assertTrue({'qt', 'qml'} <= set(runner.selected_suites(['rust/app/src/bridge/app_list_model.rs'])))
+
+    def test_updater_changes_run_core(self):
+        self.assertIn('core', runner.selected_suites(['rust/updater/src/main.rs']))
+
     def test_package_changes_check_artifacts(self):
         self.assertIn('packages', runner.selected_suites(['kiosque.spec']))
