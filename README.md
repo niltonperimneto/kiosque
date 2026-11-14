@@ -35,12 +35,13 @@ To minimize redundant network transactions and maintain a highly responsive UI, 
 - **Collection Cache (TTL: 5 mins)**: Caches general feeds (popular, trending, recently added/updated).
 - **Details Cache (TTL: 10 mins)**: Caches specific app metadata stream payloads to allow instant back-and-forth navigation.
 - **ODRS Ratings/Reviews Cache (TTL: 10 mins)**: Caches user review lists and rating distributions.
-- **Installed State Cache (TTL: 30 secs)**: Caches the list of locally installed applications. Kept short to quickly reflect user-triggered installation actions.
+- **Installed State Registry**: Shares installed refs, updates, and transaction state across views. Transactions reload installed state before publishing completion; installation monitors detect external changes.
 
-### 5. Asynchronous Flatpak CLI Execution Wrapper
-- **Non-blocking Subprocesses**: Orchestrates local Flatpak state modifications via `tokio::process::Command` without blocking the Qt event loop.
-- **Structured Parser**: Invokes `flatpak list --app -j` to acquire local installations in JSON formats, parsing it into structured `FlatpakJsonApp` schemas supporting backward compatibility with varying Flatpak versions.
-- **Command Set**: Wraps critical transactional CLI actions: `flatpak install --assumeyes`, `flatpak uninstall`, `flatpak update`, and `flatpak remote-ls`.
+### 5. Flatpak Backends and Transactions
+- **Native backend by default**: Uses libflatpak for installation queries, transaction progress, cancellation, and installation monitoring.
+- **CLI fallback**: Runs non-blocking subprocesses and parses stable tab-separated `--columns` output. The Flatpak package selects this backend to route commands through the host.
+- **Shared state**: A registry and serialized transaction queue keep application views consistent and support explicit cancellation and worker shutdown.
+- **Testable core**: Domain and service code lives in `kiosque-core`, which builds without Qt/KDE development libraries when its optional native feature is disabled.
 
 ### 6. Background Update Daemon (`kiosque-update`)
 - **Independent Execution**: A dedicated helper binary that uses the Rust backend to check for updates and schedule downloads.
@@ -71,7 +72,7 @@ graph TD
     subgraph Backend ["Rust Backend Core (libkiosque)"]
         Cache[("AppCache (Moka Cache)")]
         Flathub["Flathub API Client (reqwest)"]
-        FlatpakCLI["Flatpak CLI Process Wrapper"]
+        FlatpakCLI["Native / CLI Flatpak Backends"]
         Tokio["Tokio Async Runtime"]
     end
 
@@ -169,13 +170,14 @@ Rather than writing unsafe manual JNI/C-FFI code, Kiosque integrates Qt6 and Rus
 
 To build and run Kiosque from source, ensure you have the following dependencies:
 
-- **Compiler**: GCC/Clang with C++17 support, and the Rust toolchain (`cargo` and `rustc` version 1.75+)
-- **Build System**: Meson (version 0.60+) and Ninja
+- **Compiler**: GCC/Clang with C++17 support, and the current stable Rust toolchain (`cargo` and `rustc`, with Rust 2024 edition support)
+- **Build System**: Meson (version 1.1+), Ninja, and a supported linker such as mold for cxx-qt initializer exports
 - **System Libraries**:
   - Qt6 (Core, Gui, Qml, Quick, QuickControls2, DBus, Widgets)
   - KF6 Kirigami (KDE Frameworks 6 UI component system)
   - KF6 I18n & I18nQml (KDE Frameworks 6 translation support)
   - `dbus-1` (D-Bus message bus system library)
+  - libflatpak development libraries for the default native backend (`-Dflatpak_backend=cli` selects the CLI-only build)
 
 ---
 
@@ -211,3 +213,16 @@ Once built, you can launch Kiosque or the background update utility:
 This project is licensed under the terms of the **GNU General Public License version 3, or (at your option) any later version** (GPL-3.0-or-later).
 
 For the complete license text, please refer to the [LICENSE](file:///home/niltonperimneto/Kiosque/LICENSE) file in the root of this repository.
+
+## Development guidance and testing
+
+Read [AGENTS.md](AGENTS.md) for repository workflows and [architecture](docs/architecture.md) for the Qt-free Rust core boundary. The shared [test runner](docs/testing.md) runs locally and in CI:
+
+```sh
+python3 scripts/test.py guidance
+python3 scripts/test.py core
+python3 scripts/test.py services
+python3 scripts/test.py pr --backend native
+```
+
+Real Flatpak lifecycle checks run only in disposable VMs. See the testing guide for desktop prerequisites, CLI-only builds, artifact smoke tests and release qualification.

@@ -62,15 +62,7 @@ pub mod qobject {
     impl cxx_qt::Threading for FeaturedModel {}
 }
 
-#[derive(Clone)]
-pub struct FeaturedEntry {
-    pub name: String,
-    pub summary: String,
-    pub icon_url: String,
-    pub app_id: String,
-    pub description: String,
-    pub developer: String,
-}
+pub use kiosque_core::entries::FeaturedEntry;
 
 #[derive(Default)]
 pub struct FeaturedModelRust {
@@ -93,16 +85,25 @@ impl qobject::FeaturedModel {
         let row = index.row() as usize;
         if let Some(item) = self.items.get(row) {
             match role {
-                Self::NAME_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.name)),
-                Self::SUMMARY_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.summary)),
+                Self::NAME_ROLE => {
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.name))
+                }
+                Self::SUMMARY_ROLE => {
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.summary))
+                }
                 Self::ICON_URL_ROLE => {
-                    let qml_url = format!("image://kiosque/{}/icon", item.app_id);
-                    crate::image_registry::register_image_url(format!("{}:icon", item.app_id), item.icon_url.clone());
+                    let qml_url = crate::image_cache::image_url(&item.icon_url);
                     cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&qml_url))
                 }
-                Self::APP_ID_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.app_id)),
-                Self::DESCRIPTION_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.description)),
-                Self::DEVELOPER_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.developer)),
+                Self::APP_ID_ROLE => {
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.app_id))
+                }
+                Self::DESCRIPTION_ROLE => {
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.description))
+                }
+                Self::DEVELOPER_ROLE => {
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.developer))
+                }
                 _ => cxx_qt_lib::QVariant::default(),
             }
         } else {
@@ -123,8 +124,14 @@ impl qobject::FeaturedModel {
         roles.insert(Self::SUMMARY_ROLE, cxx_qt_lib::QByteArray::from("summary"));
         roles.insert(Self::ICON_URL_ROLE, cxx_qt_lib::QByteArray::from("iconUrl"));
         roles.insert(Self::APP_ID_ROLE, cxx_qt_lib::QByteArray::from("appId"));
-        roles.insert(Self::DESCRIPTION_ROLE, cxx_qt_lib::QByteArray::from("description"));
-        roles.insert(Self::DEVELOPER_ROLE, cxx_qt_lib::QByteArray::from("developer"));
+        roles.insert(
+            Self::DESCRIPTION_ROLE,
+            cxx_qt_lib::QByteArray::from("description"),
+        );
+        roles.insert(
+            Self::DEVELOPER_ROLE,
+            cxx_qt_lib::QByteArray::from("developer"),
+        );
         roles
     }
 
@@ -135,7 +142,7 @@ impl qobject::FeaturedModel {
             // SWR Step 1: Try reading from disk cache first
             let mut cached_items = None;
             let mut is_expired = true;
-            
+
             if let Some((timestamp, items)) = crate::disk_cache::load_featured_cache().await {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -143,7 +150,7 @@ impl qobject::FeaturedModel {
                     .as_secs();
                 is_expired = now.saturating_sub(timestamp) > 300; // 5 minutes TTL
                 cached_items = Some(items.clone());
-                
+
                 // Yield cached items to Qt immediately (Instant load)
                 let _ = qt_thread.queue(move |mut qobject| {
                     eprintln!("[kiosque] FeaturedModel::refresh: Loading cached featured list ({} items)", items.len());
@@ -152,22 +159,22 @@ impl qobject::FeaturedModel {
                     qobject.as_mut().end_reset_model();
                 });
             }
-            
+
             // SWR Step 2: Fetch from network if cache is expired or missing
             if is_expired || cached_items.is_none() {
                 let distro_id = detect_distro_id();
                 eprintln!("[kiosque] FeaturedModel::refresh: detected distro ID: {}, fetching fresh content", distro_id);
                 let curated_app_ids = get_curated_apps_for_distro(&distro_id);
-                
-                let client = std::sync::Arc::new(crate::flathub::client::FlathubClient::new());
-                
+
+                let client = std::sync::Arc::new(crate::services::services().flathub.clone());
+
                 let mut all_ids = Vec::new();
-                
+
                 // 1. Try to fetch the Flathub App of the Day
                 let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                let aotd_url = format!("https://flathub.org/api/v2/app-picks/app-of-the-day/{}", today);
+                let aotd_url = format!("app-picks/app-of-the-day/{}", today);
                 let mut aotd_id = None;
-                if let Ok(body) = crate::flathub::client::fetch_text(&aotd_url).await {
+                if let Ok(body) = client.fetch_text(&aotd_url).await {
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
                         if let Some(id) = json.get("app_id").and_then(|v| v.as_str()) {
                             aotd_id = Some(id.to_string());
@@ -192,7 +199,7 @@ impl qobject::FeaturedModel {
                         client.fetch_details(&app_id_str).await
                     }));
                 }
-                
+
                 let mut items = Vec::new();
                 for handle in handles {
                     if let Ok(Ok(details)) = handle.await {
@@ -222,12 +229,12 @@ impl qobject::FeaturedModel {
                     }
                 }
                 items.truncate(5);
-                
+
                 // Write back to cache
                 if !items.is_empty() {
                     let _ = crate::disk_cache::save_featured_cache(&items).await;
                 }
-                
+
                 let _ = qt_thread.queue(move |mut qobject| {
                     eprintln!("[kiosque] FeaturedModel::refresh: updating UI with fresh {} items", items.len());
                     qobject.as_mut().begin_reset_model();
@@ -245,7 +252,11 @@ impl qobject::FeaturedModel {
 }
 
 fn detect_distro_id() -> String {
-    let paths = ["/run/host/os-release", "/etc/os-release", "/usr/lib/os-release"];
+    let paths = [
+        "/run/host/os-release",
+        "/etc/os-release",
+        "/usr/lib/os-release",
+    ];
     for path in &paths {
         if let Ok(content) = std::fs::read_to_string(path) {
             for line in content.lines() {

@@ -13,7 +13,8 @@
         "--socket=wayland",
         "--device=dri",
         "--filesystem=host",
-        "--share=network"
+        "--share=network",
+        "--talk-name=org.freedesktop.Flatpak"
     ],
     "build-options": {
         "append-path": "/usr/lib/sdk/rust-stable/bin",
@@ -29,12 +30,27 @@
             "name": "kiosque",
             "buildsystem": "meson",
             "config-opts": [
-                "--buildtype=release"
+                "--buildtype=release",
+                "-Dflatpak_backend=cli"
             ],
             "sources": [
                 {
                     "type": "dir",
-                    "path": "."
+                    "path": ".",
+                    "skip": [
+                        ".git",
+                        ".agents",
+                        ".codex",
+                        ".aws",
+                        ".cache",
+                        ".test-results",
+                        ".flatpak-builder",
+                        "build",
+                        "builddir",
+                        "rust/target",
+                        "AppDir",
+                        "repo"
+                    ]
                 }
             ]
         }

@@ -1,0 +1,36 @@
+name: Packaged artifact smoke tests
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  smoke:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        artifact: [Kiosque-Flatpak, Kiosque-RPM, Kiosque-AppImage]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.artifact }}
+          path: artifacts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils openssh-client
+      - name: Test each produced binary package inside a disposable VM
+        run: python3 scripts/test_artifacts.py artifacts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: package-results-${{ matrix.artifact }}
+          include-hidden-files: true
+          path: .test-results/

@@ -1,48 +1,34 @@
+[workspace]
+members = ["core"]
+resolver = "3"
+
 [package]
 name = "libkiosque"
 version = "1.0.0"
 edition = "2024"
 authors = ["Kiosque Contributors"]
-description = "Rust backend for the Kiosque Flatpak storefront"
+description = "Rust and Qt adapter for the Kiosque Flatpak storefront"
+license = "GPL-3.0-or-later"
 
 [lib]
 name = "kiosque"
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "lib"]
+
+[features]
+default = ["libflatpak"]
+libflatpak = ["kiosque-core/libflatpak"]
+test-util = ["kiosque-core/test-util"]
 
 [dependencies]
-cxx = "1.0.194"
-cxx-qt = "0.9"
-cxx-qt-lib = { version = "0.9", features = ["full"] }
-
-# Async runtime
-tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "process", "io-util", "sync"] }
-
-# HTTP client for Flathub API
-reqwest = { version = "0.13.4", features = ["json", "rustls", "form", "gzip", "brotli", "deflate", "zstd"], default-features = false }
-
-# Serialization
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-
-# Error Handling
-thiserror = "2.0.18"
-
-# D-Bus (Flatpak availability check, signal monitoring)
-zbus = { version = "5.16.0", features = ["tokio"] }
-dirs = "6.0.0"
+kiosque-core = { path = "core", default-features = false }
+cxx = "1.0.205"
+cxx-qt = "0.10.0"
+cxx-qt-lib = { version = "0.10.0", features = ["full"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-util = "0.7.20"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 chrono = "0.4.45"
 
-# Caching & Cryptography for ODRS
-moka = { version = "0.12.15", features = ["future"] }
-sha2 = "0.11.0"
-hmac = "0.13.0"
-rand = "0.10.1"
-
-# Image processing & JXL caching
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-jxl-oxide = { version = "0.12", features = ["image"] }
-jxl-encoder = "0.3.1"
-
-
 [build-dependencies]
-cxx-qt-build = "0.9"
+cxx-qt-build = "0.10.0"

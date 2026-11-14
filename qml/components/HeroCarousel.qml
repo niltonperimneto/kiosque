@@ -53,7 +53,7 @@ ColumnLayout {
                         // A full-bleed slide must not scale (it would clip in the
                         // SwipeView); the gradient/glow/hover-border still apply.
                         hoverScale: false
-                        animateGlow: slideDelegate.SwipeView.isCurrentItem && root.visible
+                        animateGlow: slideDelegate.Controls.SwipeView.isCurrentItem && root.visible
 
                         onClicked: applicationWindow().pushAppDetail(slideDelegate.appId)
 

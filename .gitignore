@@ -1,3 +1,14 @@
 build/
 rust/target/
 .cache/
+
+.test-results/
+__pycache__/
+
+builddir/
+.flatpak-builder/
+AppDir/
+repo/
+*.rpm
+*.flatpak
+*.AppImage
