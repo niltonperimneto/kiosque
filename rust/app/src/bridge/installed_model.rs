@@ -1,6 +1,7 @@
 use cxx_qt::{CxxQtType, Threading};
 
 use crate::bridge::util;
+use crate::view::installed::sort_items_helper;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -653,65 +654,4 @@ impl qobject::InstalledModel {
             },
         );
     }
-}
-
-fn parse_size_to_bytes(size_str: &str) -> u64 {
-    let size_str = size_str.trim().to_lowercase();
-    let parts: Vec<&str> = size_str.split_whitespace().collect();
-    if parts.is_empty() {
-        return 0;
-    }
-    let num_val: f64 = parts[0].parse().unwrap_or(0.0);
-    if parts.len() < 2 {
-        return num_val as u64;
-    }
-    let unit = parts[1];
-    if unit.contains("gb") || unit.contains("g") {
-        (num_val * 1024.0 * 1024.0 * 1024.0) as u64
-    } else if unit.contains("mb") || unit.contains("m") {
-        (num_val * 1024.0 * 1024.0) as u64
-    } else if unit.contains("kb") || unit.contains("k") {
-        (num_val * 1024.0) as u64
-    } else {
-        num_val as u64
-    }
-}
-
-fn sort_items_helper(items: &mut [InstalledEntry], criterion: &str, ascending: bool) {
-    items.sort_by(|a, b| {
-        // Runtimes always sort last regardless of other criteria
-        if a.is_runtime != b.is_runtime {
-            return if a.is_runtime {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Less
-            };
-        }
-        // Items with updates sort before up-to-date items
-        if a.has_update != b.has_update {
-            return if a.has_update {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            };
-        }
-
-        match criterion {
-            "name" | "" => {
-                let res = a.name.to_lowercase().cmp(&b.name.to_lowercase());
-                if ascending { res } else { res.reverse() }
-            }
-            "app_id" => {
-                let res = a.app_id.to_lowercase().cmp(&b.app_id.to_lowercase());
-                if ascending { res } else { res.reverse() }
-            }
-            "size" => {
-                let size_a = parse_size_to_bytes(&a.size);
-                let size_b = parse_size_to_bytes(&b.size);
-                let res = size_a.cmp(&size_b);
-                if ascending { res } else { res.reverse() }
-            }
-            _ => std::cmp::Ordering::Equal,
-        }
-    });
 }

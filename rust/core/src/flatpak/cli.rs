@@ -127,6 +127,86 @@ fn check_remote_url(value: &str) -> Result<&str> {
     }
 }
 
+// ── Argument vectors ────────────────────────────────────────────────────────
+//
+// Every command line is `[subcommand, options…, "--", positionals…]`. The
+// `--` ends option parsing, so even a value that slipped past validation can
+// only ever be read as an operand.
+
+fn argv(subcommand: &str, options: &[&str], positionals: &[&str]) -> Vec<String> {
+    let mut out = Vec::with_capacity(options.len() + positionals.len() + 2);
+    out.push(subcommand.to_string());
+    out.extend(options.iter().map(|o| o.to_string()));
+    out.push("--".into());
+    out.extend(positionals.iter().map(|p| p.to_string()));
+    out
+}
+
+const NONINTERACTIVE: [&str; 2] = ["--assumeyes", "--noninteractive"];
+
+/// The validated command line for `op`. `ref_file` is where the contents of
+/// an [`Operation::InstallRefFile`] were written.
+pub(crate) fn operation_argv(op: &Operation, ref_file: Option<&str>) -> Result<Vec<String>> {
+    Ok(match op {
+        Operation::Install { remote, id, scope } => argv(
+            "install",
+            &[scope.cli_flag(), NONINTERACTIVE[0], NONINTERACTIVE[1]],
+            &[check_remote_name(remote)?, check_ref(id)?],
+        ),
+        Operation::InstallRefFile { scope, .. } => {
+            let path =
+                ref_file.ok_or_else(|| FlatpakError::Failed("missing .flatpakref path".into()))?;
+            argv(
+                "install",
+                &[
+                    scope.cli_flag(),
+                    "--from",
+                    NONINTERACTIVE[0],
+                    NONINTERACTIVE[1],
+                ],
+                &[path],
+            )
+        }
+        Operation::Uninstall { id, scope } => {
+            let mut options: Vec<&str> = scope.iter().map(|s| s.cli_flag()).collect();
+            options.extend(NONINTERACTIVE);
+            argv("uninstall", &options, &[check_ref(id)?])
+        }
+        Operation::Update { ids } => {
+            let ids = ids
+                .iter()
+                .map(|id| check_ref(id))
+                .collect::<Result<Vec<_>>>()?;
+            argv("update", &NONINTERACTIVE, &ids)
+        }
+    })
+}
+
+fn remote_add_argv(name: &str, location: &str, scope: Scope) -> Vec<String> {
+    argv(
+        "remote-add",
+        &["--if-not-exists", scope.cli_flag()],
+        &[name, location],
+    )
+}
+
+fn remote_delete_argv(name: &str, scope: Scope) -> Vec<String> {
+    argv("remote-delete", &[scope.cli_flag(), "--force"], &[name])
+}
+
+fn refresh_argv(name: &str, scope: Scope) -> Vec<String> {
+    argv("update", &["--appstream", scope.cli_flag()], &[name])
+}
+
+fn launch_argv(id: &str) -> Vec<String> {
+    argv("run", &[], &[id])
+}
+
+async fn output_owned(backend: &CliBackend, args: &[String]) -> Result<String> {
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    output(backend, &args).await
+}
+
 async fn output(backend: &CliBackend, args: &[&str]) -> Result<String> {
     let out = backend
         .command()
@@ -198,26 +278,12 @@ impl FlatpakBackend for CliBackend {
         match source {
             RemoteSource::Url(url) => {
                 check_remote_url(&url)?;
-                output(
-                    self,
-                    &[
-                        "remote-add",
-                        "--if-not-exists",
-                        scope.cli_flag(),
-                        name,
-                        &url,
-                    ],
-                )
-                .await?;
+                output_owned(self, &remote_add_argv(name, &url, scope)).await?;
             }
             RemoteSource::FlatpakRepo(data) => {
                 let path = write_temp("remote.flatpakrepo", &data).await?;
                 let p = path.to_string_lossy().to_string();
-                let res = output(
-                    self,
-                    &["remote-add", "--if-not-exists", scope.cli_flag(), name, &p],
-                )
-                .await;
+                let res = output_owned(self, &remote_add_argv(name, &p, scope)).await;
                 let _ = tokio::fs::remove_file(&path).await;
                 res?;
             }
@@ -233,7 +299,7 @@ impl FlatpakBackend for CliBackend {
         };
         let mut last_err = None;
         for s in scopes {
-            match output(self, &["remote-delete", s.cli_flag(), "--force", name]).await {
+            match output_owned(self, &remote_delete_argv(name, s)).await {
                 Ok(_) => return Ok(()),
                 Err(e) => last_err = Some(e),
             }
@@ -250,55 +316,14 @@ impl FlatpakBackend for CliBackend {
         if cancel.is_cancelled() {
             return Err(FlatpakError::Cancelled);
         }
-        match &op {
-            Operation::Install { remote, id, .. } => {
-                check_remote_name(remote)?;
-                check_ref(id)?;
-            }
-            Operation::Uninstall { id, .. } => {
-                check_ref(id)?;
-            }
-            Operation::Update { ids } => {
-                for id in ids {
-                    check_ref(id)?;
-                }
-            }
-            Operation::InstallRefFile { .. } => {}
-        }
+        // Validate before writing any temporary file.
+        let mut args = operation_argv(&op, Some(""))?;
         let mut temp = None;
-        let mut args: Vec<String> = vec![];
-        match &op {
-            Operation::Install { remote, id, scope } => {
-                args.extend([
-                    "install".into(),
-                    scope.cli_flag().into(),
-                    remote.clone(),
-                    id.clone(),
-                ]);
-            }
-            Operation::InstallRefFile { data, scope } => {
-                let path = write_temp("install.flatpakref", data).await?;
-                args.extend([
-                    "install".into(),
-                    scope.cli_flag().into(),
-                    "--from".into(),
-                    path.to_string_lossy().into(),
-                ]);
-                temp = Some(path);
-            }
-            Operation::Uninstall { id, scope } => {
-                args.push("uninstall".into());
-                if let Some(s) = scope {
-                    args.push(s.cli_flag().into());
-                }
-                args.push(id.clone());
-            }
-            Operation::Update { ids } => {
-                args.push("update".into());
-                args.extend(ids.iter().cloned());
-            }
+        if let Operation::InstallRefFile { data, .. } = &op {
+            let path = write_temp("install.flatpakref", data).await?;
+            args = operation_argv(&op, Some(&path.to_string_lossy()))?;
+            temp = Some(path);
         }
-        args.extend(["--assumeyes".into(), "--noninteractive".into()]);
 
         let res = run_streaming(self, &args, progress, cancel).await;
         if let Some(p) = temp {
@@ -310,7 +335,7 @@ impl FlatpakBackend for CliBackend {
     async fn launch(&self, id: &str) -> Result<()> {
         check_ref(id)?;
         self.command()
-            .args(["run", id])
+            .args(launch_argv(id))
             .kill_on_drop(false)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -322,16 +347,7 @@ impl FlatpakBackend for CliBackend {
 
     async fn refresh_appstream(&self, remote: &RemoteInfo) -> Result<()> {
         check_remote_name(&remote.name)?;
-        output(
-            self,
-            &[
-                "update",
-                "--appstream",
-                remote.scope.cli_flag(),
-                &remote.name,
-            ],
-        )
-        .await?;
+        output_owned(self, &refresh_argv(&remote.name, remote.scope)).await?;
         Ok(())
     }
 }
@@ -649,6 +665,123 @@ mod tests {
         ] {
             assert!(check_remote_url(bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn every_operation_has_an_exact_argv() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let install = Operation::Install {
+            remote: "flathub".into(),
+            id: "org.gimp.GIMP".into(),
+            scope: Scope::System,
+        };
+        assert_eq!(
+            operation_argv(&install, None).unwrap(),
+            v(&[
+                "install",
+                "--system",
+                "--assumeyes",
+                "--noninteractive",
+                "--",
+                "flathub",
+                "org.gimp.GIMP"
+            ])
+        );
+        let reffile = Operation::InstallRefFile {
+            data: b"[Flatpak Ref]".to_vec(),
+            scope: Scope::User,
+        };
+        assert_eq!(
+            operation_argv(&reffile, Some("/c/1-install.flatpakref")).unwrap(),
+            v(&[
+                "install",
+                "--user",
+                "--from",
+                "--assumeyes",
+                "--noninteractive",
+                "--",
+                "/c/1-install.flatpakref"
+            ])
+        );
+        assert!(operation_argv(&reffile, None).is_err());
+        let uninstall = Operation::Uninstall {
+            id: "org.gimp.GIMP".into(),
+            scope: None,
+        };
+        assert_eq!(
+            operation_argv(&uninstall, None).unwrap(),
+            v(&[
+                "uninstall",
+                "--assumeyes",
+                "--noninteractive",
+                "--",
+                "org.gimp.GIMP"
+            ])
+        );
+        let uninstall_user = Operation::Uninstall {
+            id: "app/org.gimp.GIMP/x86_64/stable".into(),
+            scope: Some(Scope::User),
+        };
+        assert_eq!(
+            operation_argv(&uninstall_user, None).unwrap(),
+            v(&[
+                "uninstall",
+                "--user",
+                "--assumeyes",
+                "--noninteractive",
+                "--",
+                "app/org.gimp.GIMP/x86_64/stable"
+            ])
+        );
+        assert_eq!(
+            operation_argv(&Operation::Update { ids: vec![] }, None).unwrap(),
+            v(&["update", "--assumeyes", "--noninteractive", "--"])
+        );
+        assert_eq!(
+            operation_argv(
+                &Operation::Update {
+                    ids: vec!["a.b.C".into(), "d.e.F".into()]
+                },
+                None
+            )
+            .unwrap(),
+            v(&[
+                "update",
+                "--assumeyes",
+                "--noninteractive",
+                "--",
+                "a.b.C",
+                "d.e.F"
+            ])
+        );
+        assert_eq!(
+            remote_add_argv("beta", "https://x/y.flatpakrepo", Scope::User),
+            v(&[
+                "remote-add",
+                "--if-not-exists",
+                "--user",
+                "--",
+                "beta",
+                "https://x/y.flatpakrepo"
+            ])
+        );
+        assert_eq!(
+            remote_delete_argv("beta", Scope::System),
+            v(&["remote-delete", "--system", "--force", "--", "beta"])
+        );
+        assert_eq!(
+            refresh_argv("flathub", Scope::User),
+            v(&["update", "--appstream", "--user", "--", "flathub"])
+        );
+        assert_eq!(
+            launch_argv("org.gimp.GIMP"),
+            v(&["run", "--", "org.gimp.GIMP"])
+        );
+        // Validation still runs inside the builder.
+        let evil = Operation::Update {
+            ids: vec!["--system".into()],
+        };
+        assert!(operation_argv(&evil, None).is_err());
     }
 
     #[tokio::test]

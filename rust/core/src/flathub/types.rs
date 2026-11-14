@@ -16,7 +16,7 @@ pub struct FlathubResponse {
 /// Every field except `app_id` and `name` is optional because different
 /// endpoints populate different subsets, and even within the same endpoint
 /// individual apps may omit fields.
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct FlathubApp {
     /// Human-readable display name.
     #[serde(default)]

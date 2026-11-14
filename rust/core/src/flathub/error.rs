@@ -13,4 +13,7 @@ pub enum FlathubError {
 
     #[error("Not Found (404)")]
     NotFound,
+
+    #[error("response larger than {max} bytes")]
+    TooLarge { max: usize },
 }

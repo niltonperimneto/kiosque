@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::bridge::util;
-use crate::flathub::client::FlathubClient;
 use crate::flathub::types::{AppDetails, FlathubApp};
+use crate::view::details::{fetch_supplementary, screenshot_urls, urls_object};
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -551,117 +551,6 @@ impl qobject::StoreController {
 }
 
 // ── Detail-loading helpers ────────────────────────────────────────────────────
-
-/// Concurrently fetch the supplementary detail lists for an app: its sandbox
-/// permissions (from the summary endpoint), other apps by the same developer,
-/// and similar apps from its primary category. Failures degrade to empty values
-/// rather than aborting the whole detail load. The current app is removed from
-/// the similar list and both app lists are capped at 8 entries.
-async fn fetch_supplementary(
-    client: &FlathubClient,
-    details: &AppDetails,
-    app_id: &str,
-) -> (serde_json::Value, Vec<FlathubApp>, Vec<FlathubApp>) {
-    let dev_name = details.developer_name.clone();
-    let category = details.categories.first().cloned();
-
-    let perm_fut = async {
-        client.fetch_summary(app_id).await.unwrap_or_else(|e| {
-            kerr!("load_app_details: fetch_summary failed: {}", e);
-            serde_json::json!({})
-        })
-    };
-    let dev_fut = async {
-        match dev_name {
-            Some(ref dev) => client.fetch_developer_apps(dev).await.unwrap_or_else(|e| {
-                kerr!("load_app_details: fetch_developer_apps failed: {}", e);
-                vec![]
-            }),
-            None => vec![],
-        }
-    };
-    let cat_fut = async {
-        match category {
-            Some(ref cat) => client.fetch_category(cat).await.unwrap_or_else(|e| {
-                kerr!("load_app_details: fetch_category failed: {}", e);
-                vec![]
-            }),
-            None => vec![],
-        }
-    };
-
-    let (permissions_val, mut developer_apps, mut similar_apps) =
-        tokio::join!(perm_fut, dev_fut, cat_fut);
-
-    similar_apps.retain(|app| app.app_id != app_id);
-    developer_apps.truncate(8);
-    similar_apps.truncate(8);
-
-    (permissions_val, developer_apps, similar_apps)
-}
-
-/// Pick the highest-resolution screenshot URL for each screenshot entry,
-/// falling back to the first available size.
-fn screenshot_urls(details: &AppDetails) -> Vec<String> {
-    details
-        .screenshots
-        .iter()
-        .filter_map(|s| {
-            s.sizes
-                .iter()
-                .max_by_key(|size| {
-                    size.width
-                        .as_ref()
-                        .and_then(|w| {
-                            w.as_str()
-                                .and_then(|s| s.parse::<i32>().ok())
-                                .or_else(|| w.as_i64().map(|i| i as i32))
-                        })
-                        .unwrap_or(0)
-                })
-                .map(|size| size.src.clone())
-                .or_else(|| s.sizes.first().map(|size| size.src.clone()))
-        })
-        .collect()
-}
-
-/// Collect the app's external URLs (homepage, bugtracker, donation, …) plus the
-/// build manifest into a JSON object keyed by link type.
-fn urls_object(details: &AppDetails) -> serde_json::Value {
-    let mut urls_map = serde_json::Map::new();
-    if let Some(ref u) = details.urls {
-        if let Some(ref h) = u.homepage {
-            urls_map.insert("homepage".to_string(), serde_json::Value::String(h.clone()));
-        }
-        if let Some(ref b) = u.bugtracker {
-            urls_map.insert(
-                "bugtracker".to_string(),
-                serde_json::Value::String(b.clone()),
-            );
-        }
-        if let Some(ref d) = u.donation {
-            urls_map.insert("donation".to_string(), serde_json::Value::String(d.clone()));
-        }
-        if let Some(ref hp) = u.help {
-            urls_map.insert("help".to_string(), serde_json::Value::String(hp.clone()));
-        }
-        if let Some(ref v) = u.vcs_browser {
-            urls_map.insert(
-                "vcs_browser".to_string(),
-                serde_json::Value::String(v.clone()),
-            );
-        }
-    }
-    if let Some(ref m) = details.metadata
-        && let Some(ref manifest) = m.manifest
-    {
-        urls_map.insert(
-            "manifest".to_string(),
-            serde_json::Value::String(manifest.clone()),
-        );
-    }
-    serde_json::Value::Object(urls_map)
-}
 
 /// Convert a list of apps into the compact `{app_id, name, summary, icon}` JSON
 /// shape consumed by the developer-apps and similar-apps QML rows.

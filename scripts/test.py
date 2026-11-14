@@ -133,6 +133,9 @@ def desktop_environment():
 def desktop(suite, backend):
     require('meson', 'ninja', 'dbus-run-session', 'xvfb-run')
     require_qmake()
+    if suite == 'qt':
+        features = ['--no-default-features'] if backend == 'cli' else []
+        cargo('test', '--locked', '-p', 'kiosque', *features, '--lib')
     directory = ROOT / 'build' / f'tests-{backend}'
     setup = ['meson', 'setup', directory]
     if (directory / 'meson-private/coredata.dat').exists():

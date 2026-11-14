@@ -9,6 +9,7 @@ pub mod disk_cache;
 pub mod flatpak;
 pub mod image_cache;
 pub mod services;
+pub mod view;
 
 /// Start the GUI's background services: the installed-state registry (and
 /// its installation monitor), the transaction client and the AppStream

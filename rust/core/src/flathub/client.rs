@@ -54,6 +54,34 @@ impl HttpClient {
         }
         Ok(response.bytes().await?.to_vec())
     }
+
+    /// Like [`fetch_bytes`](Self::fetch_bytes), but refuses bodies larger than
+    /// `max` bytes, whether announced by `Content-Length` or streamed.
+    pub async fn fetch_bytes_capped(&self, url: &str, max: usize) -> Result<Vec<u8>, FlathubError> {
+        let mut response = self.client.get(url).send().await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(FlathubError::Http {
+                status: status.as_u16(),
+                message: String::new(),
+            });
+        }
+        let too_large = || FlathubError::TooLarge { max };
+        if response
+            .content_length()
+            .is_some_and(|len| len > max as u64)
+        {
+            return Err(too_large());
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            if body.len() + chunk.len() > max {
+                return Err(too_large());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
+    }
 }
 
 pub(crate) fn preview(body: &str, max: usize) -> String {
@@ -73,10 +101,6 @@ pub(crate) async fn checked_text(response: reqwest::Response) -> Result<String, 
         });
     }
     Ok(body)
-}
-
-pub(crate) async fn fetch_bytes(url: &str) -> Result<Vec<u8>, FlathubError> {
-    HttpClient::default().fetch_bytes(url).await
 }
 
 /// Parse a JSON string into `FlathubResponse`, logging exact error on failure.

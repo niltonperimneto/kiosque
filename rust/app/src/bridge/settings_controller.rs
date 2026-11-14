@@ -107,6 +107,7 @@ impl qobject::SettingsController {
         time: cxx_qt_lib::QString,
     ) {
         let mut settings = crate::services::services().settings.load();
+        let autostart_changed = settings.auto_update != auto_update;
         settings.auto_update = auto_update;
         settings.update_frequency = frequency.to_string();
         settings.update_time = time.to_string();
@@ -114,6 +115,14 @@ impl qobject::SettingsController {
         if let Err(e) = crate::services::services().settings.save(&settings) {
             eprintln!("[kiosque] Failed to save settings: {}", e);
         } else {
+            // The only place autostart is changed: an explicit settings save.
+            if autostart_changed {
+                crate::runtime::runtime().spawn(async move {
+                    if let Err(e) = kiosque_core::autostart::apply(auto_update).await {
+                        kerr!("autostart: {}", e);
+                    }
+                });
+            }
             self.as_mut().set_auto_update(settings.auto_update);
             self.as_mut()
                 .set_update_frequency(cxx_qt_lib::QString::from(&settings.update_frequency));

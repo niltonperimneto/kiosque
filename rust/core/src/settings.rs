@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -85,64 +84,4 @@ pub fn load_settings() -> AppSettings {
 }
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
     SettingsStore::new(settings_path()).save(settings)
-}
-
-/// Apply the auto-update preference: the daemon (`kiosque-update`) runs the
-/// schedule itself, so all that is needed is asking the Background portal to
-/// autostart it (or not). This is the only scheduling mechanism; files
-/// written by older Kiosque versions (systemd user timer, manual autostart
-/// entry) are removed.
-pub fn apply_autostart(settings: &AppSettings) {
-    remove_legacy_schedulers();
-    let enable = settings.auto_update;
-    crate::runtime::runtime().spawn(async move {
-        if let Err(e) = request_background(enable).await {
-            kerr!("Background portal request failed: {}", e);
-        }
-    });
-}
-
-async fn request_background(autostart: bool) -> zbus::Result<()> {
-    use std::collections::HashMap;
-    use zbus::Variant;
-
-    let conn = zbus::Connection::session().await?;
-    let mut options: HashMap<&str, Variant<'_>> = HashMap::new();
-    options.insert("handle_token", Variant::from("kiosque_background"));
-    options.insert(
-        "reason",
-        Variant::from("Install Flatpak updates automatically in the background"),
-    );
-    options.insert("autostart", Variant::from(autostart));
-    options.insert(
-        "commandline",
-        Variant::from(vec!["kiosque-update", "--background"]),
-    );
-    options.insert("dbus-activatable", Variant::from(false));
-    conn.call_method(
-        Some("org.freedesktop.portal.Desktop"),
-        "/org/freedesktop/portal/desktop",
-        Some("org.freedesktop.portal.Background"),
-        "RequestBackground",
-        &("", options),
-    )
-    .await?;
-    klog!("Background portal: autostart={}", autostart);
-    Ok(())
-}
-
-fn remove_legacy_schedulers() {
-    let config = dirs::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
-    let timer = config.join("systemd/user/kiosque-update.timer");
-    if timer.exists() {
-        let _ = Command::new("systemctl")
-            .args(["--user", "disable", "--now", "kiosque-update.timer"])
-            .status();
-        let _ = fs::remove_file(&timer);
-        let _ = fs::remove_file(config.join("systemd/user/kiosque-update.service"));
-        let _ = Command::new("systemctl")
-            .args(["--user", "daemon-reload"])
-            .status();
-    }
-    let _ = fs::remove_file(config.join("autostart/com.kiosque.app.update.desktop"));
 }

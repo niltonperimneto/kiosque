@@ -205,3 +205,18 @@ async fn concurrent_disk_writers_leave_a_complete_record() {
     assert_eq!(record, if timestamp == 1 { first } else { second });
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
 }
+
+#[tokio::test]
+async fn capped_downloads_refuse_oversized_bodies() {
+    let server = Server::new(200, "x".repeat(4096), Duration::ZERO).await;
+    let http = HttpClient::new(reqwest::Client::builder().no_proxy().build().unwrap());
+    let url = format!("{}/image.png", server.url);
+    match http.fetch_bytes_capped(&url, 1024).await {
+        Err(FlathubError::TooLarge { max: 1024 }) => {}
+        other => panic!("expected TooLarge, got {:?}", other.map(|b| b.len())),
+    }
+    assert_eq!(
+        http.fetch_bytes_capped(&url, 4096).await.unwrap().len(),
+        4096
+    );
+}

@@ -435,11 +435,14 @@ impl FlatpakBackend for LibflatpakBackend {
         // .flatpakrepo URLs are downloaded here so the blocking part stays offline.
         let data = match source {
             RemoteSource::FlatpakRepo(d) => Some(d),
-            RemoteSource::Url(u) if u.ends_with(".flatpakrepo") => {
-                Some(crate::flathub::client::fetch_bytes(&u).await.map_err(|e| {
-                    FlatpakError::Failed(format!("failed to download {}: {}", u, e))
-                })?)
-            }
+            RemoteSource::Url(u) if u.ends_with(".flatpakrepo") => Some(
+                crate::flathub::client::HttpClient::default()
+                    .fetch_bytes_capped(&u, 1024 * 1024)
+                    .await
+                    .map_err(|e| {
+                        FlatpakError::Failed(format!("failed to download {}: {}", u, e))
+                    })?,
+            ),
             RemoteSource::Url(u) => {
                 let name = name.to_string();
                 return blocking(move || {
