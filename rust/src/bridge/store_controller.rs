@@ -1,10 +1,9 @@
 use cxx_qt::{CxxQtType, Threading};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::bridge::util;
-use crate::flathub::client::FlathubClient;
-use crate::flathub::types::{AppDetails, FlathubApp};
+use crate::bridge::detail_data::{self, DetailData, ReviewAction};
+use crate::bridge::util::{self, JobControl, JobOutcome};
+use crate::flatpak::{Operation, Scope};
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -51,6 +50,13 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "cancelOperation"]
         fn cancel_operation(self: Pin<&mut StoreController>);
+
+        /// Install from a `.flatpakref`: a local path, a `file://` URL or an
+        /// `http(s)://` URL. Progress and completion are reported through
+        /// `install_progress` / `installFinished`, errors via `error_message`.
+        #[qinvokable]
+        #[cxx_name = "installRefFile"]
+        fn install_ref_file(self: Pin<&mut StoreController>, path: QString);
 
         #[qsignal]
         #[cxx_name = "detailsLoaded"]
@@ -117,6 +123,8 @@ pub struct StoreControllerRust {
     pub detail_developer: cxx_qt_lib::QString,
     pub detail_license: cxx_qt_lib::QString,
     pub detail_is_installed: bool,
+    /// Real registry progress of the most recent install/uninstall: `0` idle,
+    /// negative while indeterminate, `0..=1` while running, `1` when done.
     pub install_progress: f64,
     pub detail_screenshots_json: cxx_qt_lib::QString,
     pub detail_permissions_json: cxx_qt_lib::QString,
@@ -125,10 +133,12 @@ pub struct StoreControllerRust {
     pub detail_similar_apps_json: cxx_qt_lib::QString,
     pub detail_ratings_json: cxx_qt_lib::QString,
     pub detail_reviews_json: cxx_qt_lib::QString,
-    /// Cancellation token for the in-flight install/uninstall operation. A fresh
-    /// token is created per operation, so `cancelOperation` only affects the most
-    /// recently started one rather than a process-wide flag.
-    pub cancel_flag: Arc<AtomicBool>,
+    /// Handle of the in-flight install/uninstall job; `cancelOperation`
+    /// cancels it through `Transactions::cancel(job_id)`.
+    job: Option<Arc<JobControl>>,
+    /// Detail-load request generation; completions of superseded loads are
+    /// dropped.
+    generation: u64,
     watch: Option<tokio_util::sync::CancellationToken>,
     watched_app_id: String,
 }
@@ -145,20 +155,15 @@ impl qobject::StoreController {
     /// Reset every detail-view property to its empty state before a fresh load,
     /// so the UI never shows leftovers from the previously viewed app.
     fn clear_detail_state(mut self: std::pin::Pin<&mut Self>) {
-        self.as_mut().set_detail_name(cxx_qt_lib::QString::from(""));
-        self.as_mut()
-            .set_detail_summary(cxx_qt_lib::QString::from(""));
-        self.as_mut()
-            .set_detail_description(cxx_qt_lib::QString::from(""));
-        self.as_mut()
-            .set_detail_icon_url(cxx_qt_lib::QString::from(""));
-        self.as_mut()
-            .set_detail_developer(cxx_qt_lib::QString::from(""));
-        self.as_mut()
-            .set_detail_license(cxx_qt_lib::QString::from(""));
+        let empty = cxx_qt_lib::QString::default;
+        self.as_mut().set_detail_name(empty());
+        self.as_mut().set_detail_summary(empty());
+        self.as_mut().set_detail_description(empty());
+        self.as_mut().set_detail_icon_url(empty());
+        self.as_mut().set_detail_developer(empty());
+        self.as_mut().set_detail_license(empty());
         self.as_mut().set_detail_is_installed(false);
-        self.as_mut()
-            .set_error_message(cxx_qt_lib::QString::from(""));
+        self.as_mut().set_error_message(empty());
         self.as_mut()
             .set_detail_screenshots_json(cxx_qt_lib::QString::from("[]"));
         self.as_mut()
@@ -175,31 +180,42 @@ impl qobject::StoreController {
             .set_detail_reviews_json(cxx_qt_lib::QString::from("[]"));
     }
 
+    /// Follow registry changes so `detail_is_installed` tracks the watched app.
+    fn ensure_watch(mut self: std::pin::Pin<&mut Self>) {
+        if self.watch.is_some() {
+            return;
+        }
+        let cancel = tokio_util::sync::CancellationToken::new();
+        self.as_mut().rust_mut().watch = Some(cancel.clone());
+        let mut events = crate::services::services().registry.subscribe();
+        let thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    event = events.recv() => {
+                        if matches!(event, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
+                            break;
+                        }
+                        if thread.queue(|mut object| {
+                            let installed = crate::services::services()
+                                .registry
+                                .is_installed(&object.watched_app_id);
+                            object.as_mut().set_detail_is_installed(installed);
+                        }).is_err() { break; }
+                    }
+                }
+            }
+        });
+    }
+
     pub fn load_app_details(mut self: std::pin::Pin<&mut Self>, app_id: cxx_qt_lib::QString) {
         self.as_mut().set_loading(true);
         self.as_mut().clear_detail_state();
-
         self.as_mut().rust_mut().watched_app_id = app_id.to_string();
-        if self.watch.is_none() {
-            let cancel = tokio_util::sync::CancellationToken::new();
-            self.as_mut().rust_mut().watch = Some(cancel.clone());
-            let mut events = crate::services::services().registry.subscribe();
-            let thread = self.qt_thread();
-            crate::runtime::runtime().spawn(async move {
-                loop {
-                    tokio::select! {
-                        _ = cancel.cancelled() => break,
-                        event = events.recv() => {
-                            if event.is_err() { continue; }
-                            if thread.queue(|mut object| {
-                                let installed = crate::services::services().registry.is_installed(&object.watched_app_id);
-                                object.as_mut().set_detail_is_installed(installed);
-                            }).is_err() { break; }
-                        }
-                    }
-                }
-            });
-        }
+        self.as_mut().ensure_watch();
+        self.as_mut().rust_mut().generation += 1;
+        let generation = self.generation;
         let qt_thread = self.qt_thread();
         let app_id_str = app_id.to_string();
 
@@ -208,20 +224,10 @@ impl qobject::StoreController {
             app_id_str
         );
         crate::runtime::runtime().spawn(async move {
-            let client = crate::services::services().flathub.clone();
-
-            // Fetch details and installation status concurrently
             let (details_res, installed) = tokio::join!(
-                client.fetch_details(&app_id_str),
+                detail_data::load(&app_id_str),
                 crate::flatpak::cli::is_installed_cached(&app_id_str),
             );
-
-            // Fetch the supplementary lists (permissions, developer & similar apps)
-            // only when the core details came back; otherwise leave them empty.
-            let (permissions_val, developer_apps, similar_apps) = match details_res {
-                Ok(ref details) => fetch_supplementary(&client, details, &app_id_str).await,
-                Err(_) => (serde_json::json!({}), vec![], vec![]),
-            };
 
             // ODRS ratings & reviews run in a separate task so slow ODRS responses
             // never hold up the main detail view.
@@ -229,47 +235,33 @@ impl qobject::StoreController {
                 let odrs_app_id = app_id_str.clone();
                 let odrs_qt_thread = qt_thread.clone();
                 crate::runtime::runtime().spawn(async move {
-                    let odrs_client = crate::services::services().odrs.clone();
-                    let (ratings_res, reviews_res) = tokio::join!(
-                        odrs_client.fetch_ratings(&odrs_app_id),
-                        odrs_client.fetch_reviews(&odrs_app_id),
-                    );
-
+                    let (ratings, reviews) = detail_data::load_reviews(&odrs_app_id).await;
                     let _ = odrs_qt_thread.queue(move |mut qobject| {
-                        let ratings_qs = match ratings_res {
-                            Ok(r) => util::json_qstring(&r, "{}"),
-                            Err(_) => cxx_qt_lib::QString::from("{}"),
-                        };
-                        qobject.as_mut().set_detail_ratings_json(ratings_qs);
-
-                        let reviews_qs = match reviews_res {
-                            Ok(r) => util::json_qstring(&r, "[]"),
-                            Err(_) => cxx_qt_lib::QString::from("[]"),
-                        };
-                        qobject.as_mut().set_detail_reviews_json(reviews_qs);
-
+                        if qobject.generation != generation {
+                            return;
+                        }
+                        qobject
+                            .as_mut()
+                            .set_detail_ratings_json(util::json_qstring(&ratings, "{}"));
+                        qobject
+                            .as_mut()
+                            .set_detail_reviews_json(util::json_qstring(&reviews, "[]"));
                         qobject.as_mut().reviews_loaded();
                     });
                 });
             }
 
             let _ = qt_thread.queue(move |mut qobject| {
+                if qobject.generation != generation {
+                    return;
+                }
                 match details_res {
-                    Ok(details) => {
-                        apply_details(
-                            qobject.as_mut(),
-                            details,
-                            installed,
-                            permissions_val,
-                            developer_apps,
-                            similar_apps,
-                        );
-                    }
+                    Ok(details) => apply_details(qobject.as_mut(), details, installed),
                     Err(e) => {
                         kerr!("StoreController::load_app_details: {}", e);
                         qobject
                             .as_mut()
-                            .set_error_message(cxx_qt_lib::QString::from(&e.to_string()));
+                            .set_error_message(cxx_qt_lib::QString::from(&e));
                         qobject.as_mut().reviews_loaded();
                     }
                 }
@@ -280,43 +272,51 @@ impl qobject::StoreController {
     }
 
     pub fn cancel_operation(mut self: std::pin::Pin<&mut Self>) {
-        self.as_mut()
-            .rust()
-            .cancel_flag
-            .store(true, Ordering::SeqCst);
-        self.as_mut().set_install_progress(0.0);
+        if let Some(job) = self.as_mut().rust_mut().job.take() {
+            job.cancel();
+        }
     }
 
-    pub fn install_app(mut self: std::pin::Pin<&mut Self>, app_id: cxx_qt_lib::QString) {
-        self.as_mut().set_install_progress(0.01);
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.as_mut().rust_mut().cancel_flag = cancel.clone();
+    /// Start `op` as the controller's current job, reporting real progress
+    /// through `install_progress` and completion through `installFinished`.
+    fn start_job(
+        mut self: std::pin::Pin<&mut Self>,
+        op: Operation,
+        title: String,
+        on_success: impl FnOnce(std::pin::Pin<&mut Self>) + Send + 'static,
+    ) {
+        self.as_mut().set_install_progress(-1.0);
+        self.as_mut()
+            .set_error_message(cxx_qt_lib::QString::default());
+        let control = JobControl::new();
+        self.as_mut().rust_mut().job = Some(control.clone());
         let qt_thread = self.qt_thread();
-        let app_id_str = app_id.to_string();
-
-        klog!(
-            "StoreController::install_app: installing \"{}\"",
-            app_id_str
-        );
-        util::run_with_progress(
+        util::run_job(
             qt_thread,
-            async move { crate::flatpak::cli::install_app(&app_id_str).await },
-            Some(cancel),
-            |q, p| q.set_install_progress(p),
-            |mut q| {
-                q.as_mut().set_install_progress(0.0);
-                q.as_mut().install_finished(false);
-            },
-            |mut q, res| {
-                q.as_mut().set_install_progress(1.0);
-                match res {
-                    Ok(()) => {
-                        klog!("StoreController::install_app: successfully installed");
-                        q.as_mut().set_detail_is_installed(true);
+            op,
+            title,
+            control.clone(),
+            |q, p, _| q.set_install_progress(p),
+            move |mut q, outcome| {
+                let current = q.job.as_ref().is_some_and(|job| Arc::ptr_eq(job, &control));
+                if current {
+                    q.as_mut().rust_mut().job = None;
+                }
+                match outcome {
+                    JobOutcome::Done => {
+                        klog!("StoreController: job finished");
+                        q.as_mut().set_install_progress(1.0);
+                        on_success(q.as_mut());
                         q.as_mut().install_finished(true);
                     }
-                    Err(e) => {
-                        kerr!("StoreController::install_app: {}", e);
+                    JobOutcome::Cancelled => {
+                        klog!("StoreController: job cancelled");
+                        q.as_mut().set_install_progress(0.0);
+                        q.as_mut().install_finished(false);
+                    }
+                    JobOutcome::Failed(e) => {
+                        kerr!("StoreController: job failed: {}", e);
+                        q.as_mut().set_install_progress(0.0);
                         q.as_mut().set_error_message(cxx_qt_lib::QString::from(&e));
                         q.as_mut().install_finished(false);
                     }
@@ -325,44 +325,81 @@ impl qobject::StoreController {
         );
     }
 
-    pub fn uninstall_app(mut self: std::pin::Pin<&mut Self>, app_id: cxx_qt_lib::QString) {
-        self.as_mut().set_install_progress(0.01);
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.as_mut().rust_mut().cancel_flag = cancel.clone();
-        let qt_thread = self.qt_thread();
-        let app_id_str = app_id.to_string();
+    pub fn install_app(self: std::pin::Pin<&mut Self>, app_id: cxx_qt_lib::QString) {
+        let app_id = app_id.to_string();
+        klog!("StoreController::install_app: installing \"{}\"", app_id);
+        let (remote, scope) = crate::services::services().install_target(&app_id);
+        let watched = app_id.clone();
+        self.start_job(
+            Operation::Install {
+                remote,
+                id: app_id,
+                scope,
+            },
+            String::new(),
+            move |q| {
+                if q.watched_app_id == watched {
+                    q.set_detail_is_installed(true);
+                }
+            },
+        );
+    }
 
+    pub fn uninstall_app(self: std::pin::Pin<&mut Self>, app_id: cxx_qt_lib::QString) {
+        let app_id = app_id.to_string();
         klog!(
             "StoreController::uninstall_app: uninstalling \"{}\"",
-            app_id_str
+            app_id
         );
-        util::run_with_progress(
-            qt_thread,
-            async move { crate::flatpak::cli::uninstall_app(&app_id_str).await },
-            Some(cancel),
-            |q, p| q.set_install_progress(p),
-            |mut q| {
-                q.as_mut().set_install_progress(0.0);
-                q.as_mut().install_finished(false);
+        let watched = app_id.clone();
+        self.start_job(
+            Operation::Uninstall {
+                id: app_id,
+                scope: None,
             },
-            |mut q, res| {
-                q.as_mut().set_install_progress(1.0);
-                match res {
-                    Ok(()) => {
-                        klog!("StoreController::uninstall_app: successfully uninstalled");
-                        q.as_mut().set_detail_is_installed(false);
-                        q.as_mut().install_finished(true);
-                    }
-                    Err(e) => {
-                        kerr!("StoreController::uninstall_app: {}", e);
-                        q.as_mut().set_error_message(cxx_qt_lib::QString::from(&e));
-                        q.as_mut().install_finished(false);
-                    }
+            String::new(),
+            move |q| {
+                if q.watched_app_id == watched {
+                    q.set_detail_is_installed(false);
                 }
             },
         );
     }
 
+    pub fn install_ref_file(mut self: std::pin::Pin<&mut Self>, path: cxx_qt_lib::QString) {
+        let source = path.to_string();
+        klog!("StoreController::install_ref_file: \"{}\"", source);
+        self.as_mut().set_install_progress(-1.0);
+        self.as_mut()
+            .set_error_message(cxx_qt_lib::QString::default());
+        let qt_thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            let result = read_ref_file(&source).await;
+            let _ = qt_thread.queue(move |mut q| match result {
+                Ok(data) => {
+                    let title = crate::flatpak::keyfile_value(&data, "Title")
+                        .or_else(|| crate::flatpak::keyfile_value(&data, "Name"))
+                        .unwrap_or_default();
+                    q.start_job(
+                        Operation::InstallRefFile {
+                            data,
+                            scope: Scope::User,
+                        },
+                        title,
+                        |_| {},
+                    );
+                }
+                Err(e) => {
+                    kerr!("StoreController::install_ref_file: {}", e);
+                    q.as_mut().set_install_progress(0.0);
+                    q.as_mut().set_error_message(cxx_qt_lib::QString::from(&e));
+                    q.as_mut().install_finished(false);
+                }
+            });
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn submit_review(
         self: std::pin::Pin<&mut Self>,
         app_id: cxx_qt_lib::QString,
@@ -375,379 +412,187 @@ impl qobject::StoreController {
         is_anonymous: bool,
     ) {
         let qt_thread = self.qt_thread();
-        let app_id_str = app_id.to_string();
-        let summary_str = summary.to_string();
-        let description_str = description.to_string();
-        let mut version_str = version.to_string();
-        let mut distro_str = distro.to_string();
-        let mut locale_str = locale.to_string();
-
+        let future = detail_data::submit_review(
+            app_id.to_string(),
+            rating,
+            summary.to_string(),
+            description.to_string(),
+            version.to_string(),
+            distro.to_string(),
+            locale.to_string(),
+            is_anonymous,
+        );
         crate::runtime::runtime().spawn(async move {
-            // Distro auto-detection if empty
-            // Inside the sandbox /etc/os-release describes the KDE runtime;
-            // `distro_id` reads the host's /run/host/os-release first.
-            if distro_str.is_empty() {
-                distro_str = match kiosque_core::config::distro_id() {
-                    id if id == "generic" => "Linux".to_string(),
-                    id => id,
-                };
-            }
+            let (ok, error) = match future.await {
+                Ok(()) => (true, String::new()),
+                Err(e) => (false, e),
+            };
+            let _ = qt_thread.queue(move |mut qobject| {
+                qobject
+                    .as_mut()
+                    .review_submitted(ok, cxx_qt_lib::QString::from(&error));
+            });
+        });
+    }
 
-            // Locale auto-detection if empty
-            if locale_str.is_empty() {
-                locale_str = std::env::var("LANG")
-                    .unwrap_or_else(|_| "en_US".to_string())
-                    .split('.')
-                    .next()
-                    .unwrap_or("en_US")
-                    .to_string();
-            }
-
-            // Version auto-detection if empty
-            if version_str.is_empty() {
-                if let Ok(installed_apps) = crate::flatpak::cli::list_installed_cached().await {
-                    if let Some(app) = installed_apps
-                        .iter()
-                        .find(|a| a.application_id == app_id_str)
-                    {
-                        if let Some(ref v) = app.version {
-                            version_str = v.clone();
-                        }
-                    }
-                }
-            }
-            if version_str.is_empty() {
-                version_str = "1.0".to_string();
-            }
-
-            let client = crate::services::services().odrs.clone();
-            match client
-                .submit_review(
-                    &app_id_str,
-                    rating,
-                    &summary_str,
-                    &description_str,
-                    &version_str,
-                    &distro_str,
-                    &locale_str,
-                    is_anonymous,
-                )
-                .await
-            {
-                Ok(()) => {
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_submitted(true, cxx_qt_lib::QString::from(""));
-                    });
-                }
-                Err(e) => {
-                    let err_msg = e.to_string();
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_submitted(false, cxx_qt_lib::QString::from(&err_msg));
-                    });
-                }
-            }
+    fn run_review_action(self: std::pin::Pin<&mut Self>, action: ReviewAction, review_id: i64) {
+        let qt_thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            let (ok, error) = match detail_data::review_action(action, review_id).await {
+                Ok(()) => (true, String::new()),
+                Err(e) => (false, e),
+            };
+            let _ = qt_thread.queue(move |mut qobject| {
+                qobject
+                    .as_mut()
+                    .review_action_finished(ok, cxx_qt_lib::QString::from(&error));
+            });
         });
     }
 
     pub fn upvote_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
-        let qt_thread = self.qt_thread();
-        crate::runtime::runtime().spawn(async move {
-            let client = crate::services::services().odrs.clone();
-            match client.upvote_review(review_id).await {
-                Ok(()) => {
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_action_finished(true, cxx_qt_lib::QString::from(""));
-                    });
-                }
-                Err(e) => {
-                    let err_msg = e.to_string();
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
-                    });
-                }
-            }
-        });
+        self.run_review_action(ReviewAction::Upvote, review_id);
     }
 
     pub fn downvote_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
-        let qt_thread = self.qt_thread();
-        crate::runtime::runtime().spawn(async move {
-            let client = crate::services::services().odrs.clone();
-            match client.downvote_review(review_id).await {
-                Ok(()) => {
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_action_finished(true, cxx_qt_lib::QString::from(""));
-                    });
-                }
-                Err(e) => {
-                    let err_msg = e.to_string();
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
-                    });
-                }
-            }
-        });
+        self.run_review_action(ReviewAction::Downvote, review_id);
     }
 
     pub fn dismiss_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
-        let qt_thread = self.qt_thread();
-        crate::runtime::runtime().spawn(async move {
-            let client = crate::services::services().odrs.clone();
-            match client.dismiss_review(review_id).await {
-                Ok(()) => {
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_action_finished(true, cxx_qt_lib::QString::from(""));
-                    });
-                }
-                Err(e) => {
-                    let err_msg = e.to_string();
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
-                    });
-                }
-            }
-        });
+        self.run_review_action(ReviewAction::Dismiss, review_id);
     }
 
     pub fn remove_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
-        let qt_thread = self.qt_thread();
-        crate::runtime::runtime().spawn(async move {
-            let client = crate::services::services().odrs.clone();
-            match client.remove_review(review_id).await {
-                Ok(()) => {
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_action_finished(true, cxx_qt_lib::QString::from(""));
-                    });
-                }
-                Err(e) => {
-                    let err_msg = e.to_string();
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
-                    });
-                }
-            }
-        });
+        self.run_review_action(ReviewAction::Remove, review_id);
     }
 }
 
-// ── Detail-loading helpers ────────────────────────────────────────────────────
-
-/// Concurrently fetch the supplementary detail lists for an app: its sandbox
-/// permissions (from the summary endpoint), other apps by the same developer,
-/// and similar apps from its primary category. Failures degrade to empty values
-/// rather than aborting the whole detail load. The current app is removed from
-/// the similar list and both app lists are capped at 8 entries.
-async fn fetch_supplementary(
-    client: &FlathubClient,
-    details: &AppDetails,
-    app_id: &str,
-) -> (serde_json::Value, Vec<FlathubApp>, Vec<FlathubApp>) {
-    let dev_name = details.developer_name.clone();
-    let category = details.categories.first().cloned();
-
-    let perm_fut = async {
-        client.fetch_summary(app_id).await.unwrap_or_else(|e| {
-            kerr!("load_app_details: fetch_summary failed: {}", e);
-            serde_json::json!({})
-        })
-    };
-    let dev_fut = async {
-        match dev_name {
-            Some(ref dev) => client.fetch_developer_apps(dev).await.unwrap_or_else(|e| {
-                kerr!("load_app_details: fetch_developer_apps failed: {}", e);
-                vec![]
-            }),
-            None => vec![],
-        }
-    };
-    let cat_fut = async {
-        match category {
-            Some(ref cat) => client.fetch_category(cat).await.unwrap_or_else(|e| {
-                kerr!("load_app_details: fetch_category failed: {}", e);
-                vec![]
-            }),
-            None => vec![],
-        }
-    };
-
-    let (permissions_val, mut developer_apps, mut similar_apps) =
-        tokio::join!(perm_fut, dev_fut, cat_fut);
-
-    similar_apps.retain(|app| app.app_id != app_id);
-    developer_apps.truncate(8);
-    similar_apps.truncate(8);
-
-    (permissions_val, developer_apps, similar_apps)
-}
-
-/// Pick the highest-resolution screenshot URL for each screenshot entry,
-/// falling back to the first available size.
-fn screenshot_urls(details: &AppDetails) -> Vec<String> {
-    details
-        .screenshots
-        .iter()
-        .filter_map(|s| {
-            s.sizes
-                .iter()
-                .max_by_key(|size| {
-                    size.width
-                        .as_ref()
-                        .and_then(|w| {
-                            w.as_str()
-                                .and_then(|s| s.parse::<i32>().ok())
-                                .or_else(|| w.as_i64().map(|i| i as i32))
-                        })
-                        .unwrap_or(0)
-                })
-                .map(|size| size.src.clone())
-                .or_else(|| s.sizes.first().map(|size| size.src.clone()))
-        })
-        .collect()
-}
-
-/// Collect the app's external URLs (homepage, bugtracker, donation, …) plus the
-/// build manifest into a JSON object keyed by link type.
-fn urls_object(details: &AppDetails) -> serde_json::Value {
-    let mut urls_map = serde_json::Map::new();
-    if let Some(ref u) = details.urls {
-        if let Some(ref h) = u.homepage {
-            urls_map.insert("homepage".to_string(), serde_json::Value::String(h.clone()));
-        }
-        if let Some(ref b) = u.bugtracker {
-            urls_map.insert(
-                "bugtracker".to_string(),
-                serde_json::Value::String(b.clone()),
-            );
-        }
-        if let Some(ref d) = u.donation {
-            urls_map.insert("donation".to_string(), serde_json::Value::String(d.clone()));
-        }
-        if let Some(ref hp) = u.help {
-            urls_map.insert("help".to_string(), serde_json::Value::String(hp.clone()));
-        }
-        if let Some(ref v) = u.vcs_browser {
-            urls_map.insert(
-                "vcs_browser".to_string(),
-                serde_json::Value::String(v.clone()),
-            );
-        }
-    }
-    if let Some(ref m) = details.metadata
-        && let Some(ref manifest) = m.manifest
-    {
-        urls_map.insert(
-            "manifest".to_string(),
-            serde_json::Value::String(manifest.clone()),
-        );
-    }
-    serde_json::Value::Object(urls_map)
-}
-
-/// Convert a list of apps into the compact `{app_id, name, summary, icon}` JSON
-/// shape consumed by the developer-apps and similar-apps QML rows.
-fn apps_to_json(apps: Vec<FlathubApp>) -> Vec<serde_json::Value> {
-    apps.into_iter()
-        .map(|app| {
-            serde_json::json!({
-                "app_id": app.app_id,
-                "name": app.name,
-                "summary": app.summary.unwrap_or_default(),
-                "icon": app.icon.unwrap_or_default()
-            })
-        })
-        .collect()
-}
-
-/// Marshal a fully-loaded [`AppDetails`] into the StoreController's detail
-/// properties on the Qt thread.
+/// Marshal loaded details into the StoreController's legacy detail properties
+/// on the Qt thread.
 fn apply_details(
     mut qobject: std::pin::Pin<&mut qobject::StoreController>,
-    details: AppDetails,
+    details: DetailData,
     installed: bool,
-    permissions_val: serde_json::Value,
-    developer_apps: Vec<FlathubApp>,
-    similar_apps: Vec<FlathubApp>,
 ) {
     klog!(
         "StoreController::load_app_details: OK — \"{}\" (installed={})",
         details.name,
         installed
     );
+    let q = |s: &str| cxx_qt_lib::QString::from(s);
+    qobject.as_mut().set_detail_name(q(&details.name));
+    qobject.as_mut().set_detail_summary(q(&details.summary));
     qobject
         .as_mut()
-        .set_detail_name(cxx_qt_lib::QString::from(&details.name));
+        .set_detail_description(q(&details.description));
     qobject
         .as_mut()
-        .set_detail_summary(cxx_qt_lib::QString::from(&details.summary));
-    qobject
-        .as_mut()
-        .set_detail_description(cxx_qt_lib::QString::from(
-            &details.description.clone().unwrap_or_default(),
-        ));
-    let raw_icon_url = details.icon.clone().unwrap_or_default();
-    qobject
-        .as_mut()
-        .set_detail_icon_url(cxx_qt_lib::QString::from(&crate::image_cache::image_url(
-            &raw_icon_url,
-        )));
-    qobject
-        .as_mut()
-        .set_detail_developer(cxx_qt_lib::QString::from(
-            &details.developer_name.clone().unwrap_or_default(),
-        ));
-    qobject
-        .as_mut()
-        .set_detail_license(cxx_qt_lib::QString::from(
-            &details.project_license.clone().unwrap_or_default(),
-        ));
+        .set_detail_icon_url(q(&crate::image_cache::image_url(&details.icon)));
+    qobject.as_mut().set_detail_developer(q(&details.developer));
+    qobject.as_mut().set_detail_license(q(&details.license));
     qobject.as_mut().set_detail_is_installed(installed);
-    qobject
-        .as_mut()
-        .set_error_message(cxx_qt_lib::QString::from(""));
+    qobject.as_mut().set_error_message(q(""));
 
-    let qml_screenshot_urls: Vec<_> = screenshot_urls(&details)
+    let screenshots: Vec<_> = details
+        .screenshots
         .iter()
         .map(|url| crate::image_cache::image_url(url))
         .collect();
     qobject
         .as_mut()
-        .set_detail_screenshots_json(util::json_qstring(&qml_screenshot_urls, "[]"));
+        .set_detail_screenshots_json(util::json_qstring(&screenshots, "[]"));
+    qobject
+        .as_mut()
+        .set_detail_permissions_json(util::json_qstring(&details.permissions, "{}"));
+    qobject
+        .as_mut()
+        .set_detail_urls_json(util::json_qstring(&details.urls, "{}"));
+    qobject
+        .as_mut()
+        .set_detail_developer_apps_json(util::json_qstring(
+            &detail_data::apps_to_json(&details.developer_apps),
+            "[]",
+        ));
+    qobject
+        .as_mut()
+        .set_detail_similar_apps_json(util::json_qstring(
+            &detail_data::apps_to_json(&details.similar_apps),
+            "[]",
+        ));
+}
 
-    let permissions = permissions_val
-        .get("metadata")
-        .and_then(|m| m.get("permissions"))
-        .unwrap_or(&permissions_val);
-    qobject
-        .as_mut()
-        .set_detail_permissions_json(util::json_qstring(permissions, "{}"));
+/// Largest `.flatpakref` accepted; real ones are a few KiB (mostly the GPG key).
+const MAX_REF_FILE_SIZE: usize = 1024 * 1024;
 
-    qobject
-        .as_mut()
-        .set_detail_urls_json(util::json_qstring(&urls_object(&details), "{}"));
-    qobject
-        .as_mut()
-        .set_detail_developer_apps_json(util::json_qstring(&apps_to_json(developer_apps), "[]"));
-    qobject
-        .as_mut()
-        .set_detail_similar_apps_json(util::json_qstring(&apps_to_json(similar_apps), "[]"));
+/// Read a `.flatpakref` from a local path, `file://` URL or `http(s)://` URL
+/// and check that it looks like one.
+pub async fn read_ref_file(source: &str) -> Result<Vec<u8>, String> {
+    let source = source.trim();
+    if source.is_empty() {
+        return Err("no .flatpakref file given".into());
+    }
+    let lower = source.to_ascii_lowercase();
+    let data = if lower.starts_with("http://") || lower.starts_with("https://") {
+        crate::flathub::client::HttpClient::default()
+            .fetch_bytes(source)
+            .await
+            .map_err(|e| format!("could not download {source}: {e}"))?
+    } else {
+        let path = if lower.starts_with("file://") {
+            let rest = &source["file://".len()..];
+            // file://host/path: only the local host is meaningful.
+            let rest = rest.strip_prefix("localhost").unwrap_or(rest);
+            if !rest.starts_with('/') {
+                return Err(format!("unsupported file URL: {source}"));
+            }
+            percent_decode(rest)?
+        } else if lower.contains("://") {
+            return Err(format!("unsupported .flatpakref location: {source}"));
+        } else {
+            source.to_string()
+        };
+        let path = std::path::PathBuf::from(path);
+        tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+            let metadata = std::fs::metadata(&path)
+                .map_err(|e| format!("could not read {}: {e}", path.display()))?;
+            if !metadata.is_file() {
+                return Err(format!("{} is not a file", path.display()));
+            }
+            if metadata.len() > MAX_REF_FILE_SIZE as u64 {
+                return Err(format!("{} is too large", path.display()));
+            }
+            std::fs::read(&path).map_err(|e| format!("could not read {}: {e}", path.display()))
+        })
+        .await
+        .map_err(|e| e.to_string())??
+    };
+    if data.len() > MAX_REF_FILE_SIZE {
+        return Err(format!("{source} is too large"));
+    }
+    let text = std::str::from_utf8(&data).map_err(|_| format!("{source} is not a text file"))?;
+    if !text.lines().any(|l| l.trim() == "[Flatpak Ref]") {
+        return Err(format!("{source} is not a .flatpakref file"));
+    }
+    Ok(data)
+}
+
+/// Decode `%XX` escapes of a `file://` URL path.
+fn percent_decode(input: &str) -> Result<String, String> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = input
+                .get(i + 1..i + 3)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+                .ok_or_else(|| format!("invalid escape in file URL: {input}"))?;
+            out.push(hex);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).map_err(|_| format!("file URL is not UTF-8: {input}"))
 }

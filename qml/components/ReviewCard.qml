@@ -22,6 +22,10 @@ Kirigami.ShadowedRectangle {
     property int karmaUp: 0
     property int karmaDown: 0
 
+    // The owning page's AppDetails; review actions are routed through it so
+    // results are reported back to that page only.
+    property var controller: null
+
     radius: 8
     color: Kirigami.Theme.backgroundColor
     border.width: 1
@@ -142,7 +146,7 @@ Kirigami.ShadowedRectangle {
                 text: root.karmaUp > 0 ? root.karmaUp : ""
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
-                onClicked: StoreController.upvoteReview(root.reviewId)
+                onClicked: if (root.controller) root.controller.upvoteReview(root.reviewId)
                 Controls.ToolTip.text: i18n("Helpful")
                 Controls.ToolTip.visible: hovered
             }
@@ -154,7 +158,7 @@ Kirigami.ShadowedRectangle {
                 text: root.karmaDown > 0 ? root.karmaDown : ""
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
-                onClicked: StoreController.downvoteReview(root.reviewId)
+                onClicked: if (root.controller) root.controller.downvoteReview(root.reviewId)
                 Controls.ToolTip.text: i18n("Unhelpful")
                 Controls.ToolTip.visible: hovered
             }
@@ -165,7 +169,7 @@ Kirigami.ShadowedRectangle {
                 icon.name: "flag"
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
-                onClicked: StoreController.dismissReview(root.reviewId)
+                onClicked: if (root.controller) root.controller.dismissReview(root.reviewId)
                 Controls.ToolTip.text: i18n("Report Review")
                 Controls.ToolTip.visible: hovered
             }
@@ -191,7 +195,7 @@ Kirigami.ShadowedRectangle {
         id: deleteConfirmDialog
         title: i18n("Delete Review?")
         standardButtons: Kirigami.Dialog.Yes | Kirigami.Dialog.No
-        onAccepted: StoreController.removeReview(root.reviewId)
+        onAccepted: if (root.controller) root.controller.removeReview(root.reviewId)
         
         Controls.Label {
             text: i18n("Are you sure you want to permanently delete your review?")

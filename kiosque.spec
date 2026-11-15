@@ -41,10 +41,19 @@ Built with Rust and Kirigami.
 %meson_install
 %find_lang %{name}
 
+%check
+desktop-file-validate %{buildroot}%{_datadir}/applications/org.kiosque.Kiosque.desktop
+test -f %{buildroot}%{_datadir}/dbus-1/services/org.kiosque.Kiosque.Daemon.service
+test -f %{buildroot}%{_datadir}/krunner/dbusplugins/org.kiosque.Kiosque.desktop
+
 %files -f %{name}.lang
 %{_bindir}/kiosque
 %{_bindir}/kiosque-update
 %{_datadir}/applications/org.kiosque.Kiosque.desktop
+%{_datadir}/dbus-1/services/org.kiosque.Kiosque.Daemon.service
+%dir %{_datadir}/krunner
+%dir %{_datadir}/krunner/dbusplugins
+%{_datadir}/krunner/dbusplugins/org.kiosque.Kiosque.desktop
 %{_datadir}/icons/hicolor/scalable/apps/org.kiosque.Kiosque.svg
 
 %changelog

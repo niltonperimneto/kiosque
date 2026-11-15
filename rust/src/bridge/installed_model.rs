@@ -1,6 +1,8 @@
 use cxx_qt::{CxxQtType, Threading};
 
-use crate::bridge::util;
+use crate::bridge::util::{self, JobControl, JobOutcome};
+use crate::flatpak::Operation;
+use std::sync::Arc;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -85,6 +87,16 @@ pub mod qobject {
         #[cxx_name = "updateSelectedApps"]
         fn update_selected_apps(self: Pin<&mut InstalledModel>);
 
+        /// Cancel the running uninstall via `Transactions::cancel(job_id)`.
+        #[qinvokable]
+        #[cxx_name = "cancelUninstall"]
+        fn cancel_uninstall(self: Pin<&mut InstalledModel>);
+
+        /// Cancel the running update via `Transactions::cancel(job_id)`.
+        #[qinvokable]
+        #[cxx_name = "cancelUpdate"]
+        fn cancel_update(self: Pin<&mut InstalledModel>);
+
         #[qinvokable]
         #[cxx_name = "setAllUpdatesChecked"]
         fn set_all_updates_checked(self: Pin<&mut InstalledModel>, checked: bool);
@@ -138,6 +150,8 @@ pub struct InstalledModelRust {
     pub show_runtimes: bool,
     pub filtered_indices_cache: std::cell::RefCell<Option<Vec<usize>>>,
     watch: Option<tokio_util::sync::CancellationToken>,
+    uninstall_job: Option<Arc<JobControl>>,
+    update_job: Option<Arc<JobControl>>,
 }
 
 impl Default for InstalledModelRust {
@@ -160,6 +174,8 @@ impl Default for InstalledModelRust {
             show_updates_only: false,
             show_runtimes: false,
             filtered_indices_cache: std::cell::RefCell::new(None),
+            uninstall_job: None,
+            update_job: None,
         }
     }
 }
@@ -446,36 +462,61 @@ impl qobject::InstalledModel {
 
         self.as_mut()
             .set_uninstalling_app_id(cxx_qt_lib::QString::from(&app_id));
-        self.as_mut().set_uninstall_progress(0.01);
+        self.as_mut().set_uninstall_progress(-1.0);
 
         let qt_thread = self.qt_thread();
         klog!("InstalledModel::uninstall_app: uninstalling \"{}\"", app_id);
 
-        let op_app_id = app_id.clone();
-        util::run_with_progress(
+        let control = JobControl::new();
+        self.as_mut().rust_mut().uninstall_job = Some(control.clone());
+        util::run_job(
             qt_thread,
-            async move { crate::flatpak::cli::uninstall_app(&op_app_id).await },
-            None,
-            |q, p| q.set_uninstall_progress(p),
-            |_| {},
-            move |mut q, res| {
-                q.as_mut()
-                    .set_uninstalling_app_id(cxx_qt_lib::QString::from(""));
-                q.as_mut().set_uninstall_progress(0.0);
-                match res {
-                    Ok(()) => {
+            Operation::Uninstall {
+                id: app_id.clone(),
+                scope: None,
+            },
+            String::new(),
+            control.clone(),
+            |q, p, _| q.set_uninstall_progress(p),
+            move |mut q, outcome| {
+                if q.uninstall_job
+                    .as_ref()
+                    .is_some_and(|job| Arc::ptr_eq(job, &control))
+                {
+                    q.as_mut().rust_mut().uninstall_job = None;
+                    q.as_mut()
+                        .set_uninstalling_app_id(cxx_qt_lib::QString::from(""));
+                    q.as_mut().set_uninstall_progress(0.0);
+                }
+                match outcome {
+                    JobOutcome::Done => {
                         klog!(
                             "InstalledModel::uninstall_app: successfully uninstalled \"{}\"",
                             app_id
                         );
                         q.as_mut().refresh();
                     }
-                    Err(e) => {
+                    JobOutcome::Cancelled => {
+                        klog!("InstalledModel::uninstall_app: cancelled \"{}\"", app_id);
+                    }
+                    JobOutcome::Failed(e) => {
                         kerr!("InstalledModel::uninstall_app: {}", e);
                     }
                 }
             },
         );
+    }
+
+    pub fn cancel_uninstall(mut self: std::pin::Pin<&mut Self>) {
+        if let Some(job) = self.as_mut().rust_mut().uninstall_job.as_ref() {
+            job.cancel();
+        }
+    }
+
+    pub fn cancel_update(mut self: std::pin::Pin<&mut Self>) {
+        if let Some(job) = self.as_mut().rust_mut().update_job.as_ref() {
+            job.cancel();
+        }
     }
 
     pub fn launch_app(self: std::pin::Pin<&mut Self>, index: i32) {
@@ -614,38 +655,43 @@ impl qobject::InstalledModel {
         }
 
         self.as_mut().set_updating(true);
-        self.as_mut().set_update_progress(0.01);
+        self.as_mut().set_update_progress(-1.0);
         self.as_mut()
             .set_update_status_text(cxx_qt_lib::QString::from("Initializing update…"));
         let qt_thread = self.qt_thread();
-        let qt_thread_status = qt_thread.clone();
+        let control = JobControl::new();
+        self.as_mut().rust_mut().update_job = Some(control.clone());
 
-        let operation = async move {
-            crate::flatpak::cli::update_apps(&app_ids, move |line| {
-                let line_qs = cxx_qt_lib::QString::from(&line);
-                let _ = qt_thread_status.queue(move |mut qobject| {
-                    qobject.as_mut().set_update_status_text(line_qs);
-                });
-            })
-            .await
-        };
-
-        util::run_with_progress(
+        util::run_job(
             qt_thread,
-            operation,
-            None,
-            |q, p| q.set_update_progress(p),
-            |_| {},
-            |mut q, res| {
+            Operation::Update { ids: app_ids },
+            String::new(),
+            control.clone(),
+            |mut q, p, status| {
+                q.as_mut().set_update_progress(p);
+                if !status.is_empty() {
+                    q.as_mut().set_update_status_text(status);
+                }
+            },
+            move |mut q, outcome| {
+                if q.update_job
+                    .as_ref()
+                    .is_some_and(|job| Arc::ptr_eq(job, &control))
+                {
+                    q.as_mut().rust_mut().update_job = None;
+                }
                 q.as_mut().set_updating(false);
                 q.as_mut().set_update_progress(0.0);
                 q.as_mut()
                     .set_update_status_text(cxx_qt_lib::QString::from(""));
-                match res {
-                    Ok(()) => {
+                match outcome {
+                    JobOutcome::Done => {
                         klog!("InstalledModel::update_selected_apps: successfully updated");
                     }
-                    Err(e) => {
+                    JobOutcome::Cancelled => {
+                        klog!("InstalledModel::update_selected_apps: cancelled");
+                    }
+                    JobOutcome::Failed(e) => {
                         kerr!("InstalledModel::update_selected_apps: {}", e);
                     }
                 }

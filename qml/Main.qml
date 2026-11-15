@@ -35,6 +35,8 @@ Kirigami.ApplicationWindow {
     property string currentCategory: ""
 
     // ── Detail page component (created fresh each time) ─────────────────
+    // Pushed as a Component so the page stack owns each page and destroys it
+    // (and its AppDetails subscription) when it is popped.
     Component {
         id: appDetailComponent
         Pages.AppDetailPage {}
@@ -51,48 +53,38 @@ Kirigami.ApplicationWindow {
     }
 
     function pushAppDetail(appId) {
-        // Find if there is already an AppDetailPage in the pageStack
-        let existingPage = null;
+        // At most one detail page lives in the stack. Reopening the same app
+        // returns to it; another app replaces it (and anything above it).
         for (let i = 0; i < pageStack.depth; i++) {
             let page = pageStack.get(i);
-            if (page && page.appId !== undefined) {
-                existingPage = page;
+            if (page && page.details !== undefined) {
+                if (page.appId === appId) {
+                    pageStack.pop(page);
+                    return;
+                }
+                if (i > 0) {
+                    pageStack.pop(pageStack.get(i - 1));
+                } else {
+                    while (pageStack.depth > 1) {
+                        pageStack.pop();
+                    }
+                }
                 break;
             }
         }
+        pageStack.push(appDetailComponent, { appId: appId });
+    }
 
-        if (existingPage !== null) {
-            // If the existing page has the same appId, we just pop back to it and we're done
-            if (existingPage.appId === appId) {
-                pageStack.pop(existingPage);
-                return;
-            }
-            
-            // Otherwise, we pop back to the page preceding the existing AppDetailPage,
-            // and then push the new AppDetailPage
-            let precedingPage = null;
-            let index = -1;
-            for (let i = 0; i < pageStack.depth; i++) {
-                if (pageStack.get(i) === existingPage) {
-                    index = i;
-                    break;
-                }
-            }
-            if (index > 0) {
-                precedingPage = pageStack.get(index - 1);
-            }
-            
-            if (precedingPage !== null) {
-                pageStack.pop(precedingPage);
-            } else {
-                while (pageStack.depth > 1) {
-                    pageStack.pop();
-                }
-            }
+    // Open the target requested on the command line (appstream:// URI,
+    // --app <id> or a .flatpakref). The context properties are always set by
+    // main.cpp, but are guarded so test harnesses without them still load.
+    function openLaunchTarget() {
+        if (typeof initialAppId !== "undefined" && initialAppId !== "") {
+            root.pushAppDetail(initialAppId);
         }
-
-        let newPage = appDetailComponent.createObject(null, { appId: appId });
-        pageStack.push(newPage);
+        if (typeof initialRefFile !== "undefined" && initialRefFile !== "") {
+            StoreController.installRefFile(initialRefFile);
+        }
     }
 
     // ── Navigation button grouping ──────────────────────────────────────
@@ -484,6 +476,8 @@ Kirigami.ApplicationWindow {
         featuredModel.refresh();
         appListModel.refresh();
         installedModel.refresh();
+        // Defer until the page stack has created its initial page.
+        Qt.callLater(root.openLaunchTarget);
     }
 
 }

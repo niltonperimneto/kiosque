@@ -12,10 +12,19 @@ import "../components" as Components
 Kirigami.ScrollablePage {
     id: page
     property string appId
-    property bool odrsLoading: false
+    property string actionError: ""
+    onAppIdChanged: actionError = ""
     readonly property bool isNarrow: width < Kirigami.Units.gridUnit * 32
 
-    title: StoreController.detail_name !== "" ? StoreController.detail_name : appId
+    // Per-page detail state. Every view on this page binds to `details`, so two
+    // detail pages never share (or clobber) each other's data.
+    readonly property alias details: details
+
+    // ODRS reviews are revealed in batches of `reviewsBatchSize`.
+    readonly property int reviewsBatchSize: 10
+    property int reviewsShown: reviewsBatchSize
+
+    title: details.name !== "" ? details.name : appId
 
     actions: [
         Kirigami.Action {
@@ -26,141 +35,63 @@ Kirigami.ScrollablePage {
         }
     ]
 
-    Component.onCompleted: {
-        if (appId !== "") {
-            odrsLoading = true;
-            StoreController.loadAppDetails(appId)
-        }
+    AppDetails {
+        id: details
+        appId: page.appId
     }
 
     Connections {
-        target: StoreController
-        function onDetailsLoaded() {
-            populateModel(developerAppsModel, StoreController.detail_developerAppsJson);
-            populateModel(similarAppsModel, StoreController.detail_similar_apps_json);
-        }
+        target: details
 
         function onReviewsLoaded() {
-            populateReviewsModel(reviewsModel, StoreController.detail_reviews_json);
-            try {
-                ratingData = JSON.parse(StoreController.detail_ratings_json);
-            } catch(e) {
-                ratingData = {};
-            }
-            page.odrsLoading = false;
+            page.reviewsShown = page.reviewsBatchSize;
         }
 
-        function onReviewSubmitted(success, errorMsg) {
+        function onOperationFinished(success, error) {
+            page.actionError = success ? "" : i18n("Could not complete the operation: %1", error)
+        }
+
+        function onReviewActionFinished(success, error) {
             if (success) {
-                page.odrsLoading = true;
-                StoreController.loadAppDetails(page.appId)
+                page.actionError = ""
+                details.reload()
             } else {
-                console.error("Review submission failed:", errorMsg)
-            }
-        }
-
-        function onReviewActionFinished(success, errorMsg) {
-            if (success) {
-                page.odrsLoading = true;
-                StoreController.loadAppDetails(page.appId)
-            } else {
-                console.error("Review action failed:", errorMsg)
+                page.actionError = i18n("Could not update the review: %1", error)
             }
         }
     }
 
-    // ── Local models for related apps ──────────────────────────────────
-    ListModel {
-        id: developerAppsModel
-    }
+    readonly property var ratingData: details.ratings || ({})
+    readonly property var allReviewsList: details.reviews || []
+    readonly property var visibleReviews: allReviewsList.slice(0, reviewsShown)
+    readonly property var screenshotUrls: details.screenshots || []
+    readonly property var urlsData: details.urls || ({})
+    readonly property var permissionItems: getPermissionItems(details.permissions)
+    readonly property string windowingSystem: getWindowingSystem(details.permissions)
 
-    ListModel {
-        id: similarAppsModel
-    }
-
-    ListModel {
-        id: reviewsModel
-    }
-
-    property var ratingData: ({})
-    property var allReviewsList: []
-    property var screenshotUrls: {
-        try {
-            return JSON.parse(StoreController.detail_screenshots_json || "[]");
-        } catch(e) {
-            return [];
-        }
-    }
-    property var permissionItems: getPermissionItems(StoreController.detail_permissions_json)
-    property var urlsData: {
-        try {
-            return JSON.parse(StoreController.detail_urls_json || "{}");
-        } catch(e) {
-            return {};
-        }
-    }
-    property string windowingSystem: getWindowingSystem(StoreController.detail_permissions_json)
-
-    // Helper to populate ListModel from JSON string
-    function populateModel(listModel, jsonStr) {
-        listModel.clear();
-        if (!jsonStr || jsonStr === "" || jsonStr === "[]") return;
-        try {
-            let list = JSON.parse(jsonStr);
-            for (let i = 0; i < list.length; i++) {
-                let item = list[i];
-                listModel.append({
-                    appId: item.app_id || "",
-                    name: item.name || "",
-                    summary: item.summary || "",
-                    iconUrl: item.icon || ""
-                });
-            }
-        } catch (e) {
-            console.error("Error parsing related apps:", e);
-        }
-    }
-
-    // Helper to populate reviews model
-    function populateReviewsModel(listModel, jsonStr) {
-        listModel.clear();
-        page.allReviewsList = [];
-        if (!jsonStr || jsonStr === "" || jsonStr === "[]") return;
-        try {
-            page.allReviewsList = JSON.parse(jsonStr);
-            loadMoreReviews();
-        } catch (e) {
-            console.error("Error parsing reviews:", e);
-        }
-    }
-
-    // Load next batch of reviews
+    // Reveal the next batch of reviews
     function loadMoreReviews() {
-        let currentCount = reviewsModel.count;
-        let totalCount = page.allReviewsList.length;
-        let batchSize = 10;
-        let limit = Math.min(totalCount, currentCount + batchSize);
-        for (let i = currentCount; i < limit; i++) {
-            let item = page.allReviewsList[i];
-            let dateObj = new Date(item.date_created * 1000); // ODRS date is unix timestamp in seconds
-            reviewsModel.append({
-                userName: item.user_display || i18n("Anonymous"),
-                dateStr: dateObj.toLocaleDateString(Qt.locale(), Locale.ShortFormat),
-                rating: item.rating || 0,
-                summary: item.summary || "",
-                description: item.description || "",
-                version: item.version || "",
-                reviewId: item.review_id || 0,
-                userHash: item.user_hash || "",
-                karmaUp: item.karma_up || 0,
-                karmaDown: item.karma_down || 0
-            });
-        }
+        reviewsShown = Math.min(allReviewsList.length, reviewsShown + reviewsBatchSize);
     }
 
+    // Review date: prefer the bridge's preformatted string, fall back to an
+    // ODRS unix timestamp (seconds) when only that is provided.
+    function reviewDate(review) {
+        if (review.dateStr !== undefined && review.dateStr !== "")
+            return review.dateStr;
+        let ts = review.dateCreated !== undefined ? review.dateCreated : review.date_created;
+        if (!ts)
+            return "";
+        return new Date(ts * 1000).toLocaleDateString(Qt.locale(), Locale.ShortFormat);
+    }
+
+    // Permissions map is empty when the app requests nothing.
+    function isEmptyPermissions(perms) {
+        return !perms || Object.keys(perms).length === 0;
+    }
     // Helper to get structured list of permissions for the HIG display
-    function getPermissionItems(jsonStr) {
-        if (!jsonStr || jsonStr === "{}" || jsonStr === "[]") {
+    function getPermissionItems(perms) {
+        if (isEmptyPermissions(perms)) {
             return [{
                 icon: "security-high-symbolic",
                 title: i18n("No special permissions required (Fully Sandboxed)"),
@@ -168,7 +99,6 @@ Kirigami.ScrollablePage {
             }];
         }
         try {
-            let perms = JSON.parse(jsonStr);
             let items = [];
             
             let shared = perms.shared || [];
@@ -353,10 +283,9 @@ Kirigami.ScrollablePage {
     }
 
     // Helper to identify wayland/x11/cli support from permissions sockets
-    function getWindowingSystem(jsonStr) {
-        if (!jsonStr || jsonStr === "{}" || jsonStr === "[]") return "";
+    function getWindowingSystem(perms) {
+        if (isEmptyPermissions(perms)) return "";
         try {
-            let perms = JSON.parse(jsonStr);
             let sockets = perms.sockets || [];
             
             let hasWayland = sockets.indexOf("wayland") !== -1;
@@ -386,11 +315,29 @@ Kirigami.ScrollablePage {
         spacing: Kirigami.Units.largeSpacing * 1.5
         width: parent.width
 
+        Kirigami.InlineMessage {
+            objectName: "detailErrorMessage"
+            Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            type: Kirigami.MessageType.Error
+            visible: !details.loading && text !== ""
+            text: details.errorMessage !== ""
+                ? i18n("Could not load application details: %1", details.errorMessage)
+                : page.actionError
+            actions: Kirigami.Action {
+                objectName: "retryDetailsAction"
+                text: i18n("Retry")
+                visible: details.errorMessage !== ""
+                onTriggered: details.reload()
+            }
+        }
+
         // ── Loading indicator ───────────────────────────────────────────
         Controls.BusyIndicator {
             Layout.alignment: Qt.AlignHCenter
-            running: StoreController.loading
-            visible: StoreController.loading
+            running: details.loading
+            visible: details.loading
             Layout.preferredWidth: Kirigami.Units.gridUnit * 4
             Layout.preferredHeight: Kirigami.Units.gridUnit * 4
             Layout.topMargin: Kirigami.Units.gridUnit * 5
@@ -406,7 +353,7 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
-            visible: !StoreController.loading
+            visible: !details.loading
 
             // App Icon
             Image {
@@ -414,7 +361,7 @@ Kirigami.ScrollablePage {
                 Layout.alignment: page.isNarrow ? Qt.AlignHCenter : Qt.AlignVCenter
                 Layout.preferredWidth: Kirigami.Units.iconSizes.enormous
                 Layout.preferredHeight: Kirigami.Units.iconSizes.enormous
-                source: StoreController.detail_icon_url
+                source: details.iconUrl
                 asynchronous: true
                 fillMode: Image.PreserveAspectFit
 
@@ -436,21 +383,21 @@ Kirigami.ScrollablePage {
 
                 Kirigami.Heading {
                     level: 1
-                    text: StoreController.detail_name
+                    text: details.name
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
                 }
 
                 Controls.Label {
-                    text: StoreController.detail_developer !== "" ? StoreController.detail_developer : i18n("Unknown Developer")
+                    text: details.developer !== "" ? details.developer : i18n("Unknown Developer")
                     color: Kirigami.Theme.disabledTextColor
                     Layout.fillWidth: true
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
                 }
 
                 Controls.Label {
-                    text: StoreController.detail_summary
+                    text: details.summary
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
@@ -463,8 +410,8 @@ Kirigami.ScrollablePage {
                     spacing: Kirigami.Units.smallSpacing
 
                     Kirigami.Chip {
-                        visible: StoreController.detail_license !== ""
-                        text: StoreController.detail_license
+                        visible: details.license !== ""
+                        text: details.license
                         icon.name: "license"
                         checkable: false
                         closable: false
@@ -491,31 +438,33 @@ Kirigami.ScrollablePage {
             columnSpacing: Kirigami.Units.largeSpacing
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
-            visible: !StoreController.loading
+            visible: !details.loading
 
             StackLayout {
-                currentIndex: StoreController.install_progress > 0.0 && StoreController.install_progress < 1.0 ? 1 : 0
+                currentIndex: details.busy ? 1 : 0
                 Layout.fillWidth: page.isNarrow
                 Layout.preferredWidth: page.isNarrow ? -1 : Kirigami.Units.gridUnit * 13
                 Layout.preferredHeight: Kirigami.Units.gridUnit * 2
 
                 // 0: Normal Button
                 Controls.Button {
+                    objectName: "installRemoveButton"
                     text: {
-                        if (StoreController.loading) return i18n("Loading…");
-                        return StoreController.detail_is_installed ? i18n("Remove") : i18n("Install");
+                        if (details.loading) return i18n("Loading…");
+                        return details.installed ? i18n("Remove") : i18n("Install");
                     }
-                    icon.name: StoreController.detail_is_installed ? "edit-delete-symbolic" : "download-symbolic"
-                    enabled: !StoreController.loading
-                    highlighted: !StoreController.detail_is_installed
+                    icon.name: details.installed ? "edit-delete-symbolic" : "download-symbolic"
+                    enabled: !details.loading && !details.busy
+                        && (details.installed || details.errorMessage === "")
+                    highlighted: !details.installed
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
                     onClicked: {
-                        if (StoreController.detail_is_installed) {
-                            StoreController.uninstallApp(page.appId)
+                        if (details.installed) {
+                            details.uninstall()
                         } else {
-                            StoreController.installApp(page.appId)
+                            details.install()
                         }
                     }
                 }
@@ -532,8 +481,9 @@ Kirigami.ScrollablePage {
                         Layout.alignment: Qt.AlignVCenter
                         from: 0.0
                         to: 1.0
-                        value: StoreController.install_progress
-                        indeterminate: StoreController.install_progress < 0.02
+                        // -1 means the backend cannot report a fraction yet.
+                        value: details.progress < 0 ? 0 : details.progress
+                        indeterminate: details.progress < 0
 
                         Behavior on value { NumberAnimation { duration: 300 } }
                     }
@@ -546,7 +496,7 @@ Kirigami.ScrollablePage {
                         Controls.ToolTip.visible: hovered
                         Layout.alignment: Qt.AlignVCenter
                         onClicked: {
-                            StoreController.cancelOperation()
+                            details.cancel()
                         }
                     }
                 }
@@ -556,6 +506,7 @@ Kirigami.ScrollablePage {
             Controls.Button {
                 id: permissionsBtn
                 text: i18n("Sandbox Permissions")
+                enabled: details.errorMessage === ""
                 icon.name: "security-high-symbolic"
                 Layout.fillWidth: page.isNarrow
                 Layout.preferredHeight: Kirigami.Units.gridUnit * 2
@@ -568,15 +519,15 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
-            visible: !StoreController.loading
+            visible: !details.loading
         }
 
         // ── Screenshots Carousel ─────────────────────────────────────────
         Item {
             id: screenshotsContainer
             Layout.fillWidth: true
-            Layout.preferredHeight: !StoreController.loading && screenshotsListView.count > 0 ? Kirigami.Units.gridUnit * 13 : 0
-            visible: !StoreController.loading && screenshotsListView.count > 0
+            Layout.preferredHeight: !details.loading && screenshotsListView.count > 0 ? Kirigami.Units.gridUnit * 13 : 0
+            visible: !details.loading && screenshotsListView.count > 0
 
             ListView {
                 id: screenshotsListView
@@ -715,7 +666,7 @@ Kirigami.ScrollablePage {
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
             spacing: Kirigami.Units.smallSpacing
-            visible: !StoreController.loading && StoreController.detail_description !== ""
+            visible: !details.loading && details.description !== ""
 
             Kirigami.Heading {
                 level: 3
@@ -725,7 +676,7 @@ Kirigami.ScrollablePage {
             Controls.Label {
                 id: descText
                 Layout.fillWidth: true
-                text: StoreController.detail_description
+                text: details.description
                 textFormat: Text.RichText
                 wrapMode: Text.WordWrap
                 onLinkActivated: (link) => Qt.openUrlExternally(link)
@@ -736,7 +687,7 @@ Kirigami.ScrollablePage {
         ColumnLayout {
             Layout.fillWidth: true
             spacing: Kirigami.Units.mediumSpacing
-            visible: !StoreController.loading && hasLinks()
+            visible: !details.loading && hasLinks()
 
             Kirigami.Heading {
                 level: 3
@@ -815,9 +766,9 @@ Kirigami.ScrollablePage {
         // ── Developer's other apps ──────────────────────────────────────
         Components.HorizontalAppList {
             id: developerAppsList
-            title: i18n("More by %1", StoreController.detail_developer !== "" ? StoreController.detail_developer : i18n("Developer"))
-            appModel: developerAppsModel
-            visible: !StoreController.loading && developerAppsModel.count > 0
+            title: i18n("More by %1", details.developer !== "" ? details.developer : i18n("Developer"))
+            appModel: details.developerApps
+            visible: !details.loading && details.developerApps.length > 0
             Layout.fillWidth: true
         }
 
@@ -825,8 +776,8 @@ Kirigami.ScrollablePage {
         Components.HorizontalAppList {
             id: similarAppsList
             title: i18n("Similar Applications")
-            appModel: similarAppsModel
-            visible: !StoreController.loading && similarAppsModel.count > 0
+            appModel: details.similarApps
+            visible: !details.loading && details.similarApps.length > 0
             Layout.fillWidth: true
         }
 
@@ -836,7 +787,7 @@ Kirigami.ScrollablePage {
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
             Layout.topMargin: Kirigami.Units.largeSpacing
-            visible: !StoreController.loading
+            visible: !details.loading
         }
 
         // ── Reviews & Ratings ───────────────────────────────────────────
@@ -846,7 +797,7 @@ Kirigami.ScrollablePage {
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
             Layout.topMargin: Kirigami.Units.largeSpacing
-            visible: !StoreController.loading
+            visible: !details.loading
 
             RowLayout {
                 Layout.fillWidth: true
@@ -859,7 +810,7 @@ Kirigami.ScrollablePage {
                 Controls.Button {
                     text: i18n("Write a Review")
                     icon.name: "document-edit"
-                    enabled: !page.odrsLoading
+                    enabled: !details.reviewsLoading && details.errorMessage === ""
                     onClicked: reviewDialog.open()
                 }
             }
@@ -869,8 +820,8 @@ Kirigami.ScrollablePage {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.topMargin: Kirigami.Units.largeSpacing
                 Layout.bottomMargin: Kirigami.Units.largeSpacing
-                running: page.odrsLoading
-                visible: page.odrsLoading
+                running: details.reviewsLoading
+                visible: details.reviewsLoading
             }
 
             // No Reviews Placeholder
@@ -881,13 +832,13 @@ Kirigami.ScrollablePage {
                 text: i18n("No Reviews Yet")
                 explanation: i18n("Be the first to write a review for this application!")
                 icon.name: "document-edit"
-                visible: !page.odrsLoading && ratingData.total === 0 && reviewsModel.count === 0
+                visible: !details.reviewsLoading && ratingData.total === 0 && page.allReviewsList.length === 0
             }
 
             // Rating Summary Card
             Components.RatingSummary {
                 Layout.fillWidth: true
-                visible: !page.odrsLoading && ratingData.total > 0
+                visible: !details.reviewsLoading && ratingData.total > 0
                 star0: ratingData.star0 || 0
                 star1: ratingData.star1 || 0
                 star2: ratingData.star2 || 0
@@ -899,20 +850,21 @@ Kirigami.ScrollablePage {
 
             // Reviews List
             Repeater {
-                model: reviewsModel
-                visible: !page.odrsLoading && reviewsModel.count > 0
+                model: details.reviewsLoading ? [] : page.visibleReviews
                 delegate: Components.ReviewCard {
+                    required property var modelData
                     Layout.fillWidth: true
-                    userName: model.userName
-                    dateStr: model.dateStr
-                    rating: model.rating
-                    summary: model.summary
-                    description: model.description
-                    version: model.version
-                    reviewId: model.reviewId
-                    userHash: model.userHash
-                    karmaUp: model.karmaUp
-                    karmaDown: model.karmaDown
+                    controller: details
+                    userName: modelData.userName || ""
+                    dateStr: page.reviewDate(modelData)
+                    rating: modelData.rating || 0
+                    summary: modelData.summary || ""
+                    description: modelData.description || ""
+                    version: modelData.version || ""
+                    reviewId: modelData.reviewId || 0
+                    userHash: modelData.userHash || ""
+                    karmaUp: modelData.karmaUp || 0
+                    karmaDown: modelData.karmaDown || 0
                 }
             }
 
@@ -922,8 +874,8 @@ Kirigami.ScrollablePage {
                 Layout.bottomMargin: Kirigami.Units.largeSpacing
                 text: i18n("Show More Reviews")
                 icon.name: "arrow-down"
-                visible: !page.odrsLoading && reviewsModel.count < page.allReviewsList.length
-                onClicked: loadMoreReviews()
+                visible: !details.reviewsLoading && page.reviewsShown < page.allReviewsList.length
+                onClicked: page.loadMoreReviews()
             }
         }
     }
@@ -938,14 +890,11 @@ Kirigami.ScrollablePage {
 
         onAccepted: {
             if (summaryInput.text !== "" && descriptionInput.text !== "") {
-                StoreController.submitReview(
-                    page.appId,
+                // Version, distro and locale are auto-detected by the backend.
+                details.submitReview(
                     ratingRow.selectedRating,
                     summaryInput.text,
                     descriptionInput.text,
-                    "", // auto-detect version on backend
-                    "", // auto-detect distro on backend
-                    "", // auto-detect locale on backend
                     anonymousToggle.checked
                 )
                 summaryInput.text = ""

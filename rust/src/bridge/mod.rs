@@ -1,4 +1,6 @@
+pub mod app_details;
 pub mod app_list_model;
+pub mod detail_data;
 pub mod featured_model;
 pub mod installed_model;
 pub mod repo_model;

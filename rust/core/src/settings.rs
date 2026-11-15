@@ -92,23 +92,46 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
 /// autostart it (or not). This is the only scheduling mechanism; files
 /// written by older Kiosque versions (systemd user timer, manual autostart
 /// entry) are removed.
-pub fn apply_autostart(settings: &AppSettings) {
-    remove_legacy_schedulers();
-    let enable = settings.auto_update;
-    crate::runtime::runtime().spawn(async move {
-        if let Err(e) = request_background(enable).await {
-            kerr!("Background portal request failed: {}", e);
-        }
-    });
+pub async fn apply_autostart(settings: &AppSettings) -> Result<(), String> {
+    request_background(settings.auto_update).await?;
+    // Preserve the existing scheduler if the portal rejects the replacement.
+    tokio::task::spawn_blocking(remove_legacy_schedulers)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
-async fn request_background(autostart: bool) -> zbus::Result<()> {
-    use std::collections::HashMap;
-    use zbus::Variant;
+async fn request_background(autostart: bool) -> Result<(), String> {
+    use futures_util::StreamExt;
+    use std::{collections::HashMap, time::Duration};
+    use zbus::{OwnedObjectPath, OwnedVariant, zvariant::Variant};
 
-    let conn = zbus::Connection::session().await?;
+    let conn = zbus::Connection::session()
+        .await
+        .map_err(|e| e.to_string())?;
+    let sender = conn
+        .unique_name()
+        .ok_or("session bus has no unique name")?
+        .as_str()
+        .trim_start_matches(':')
+        .replace('.', "_");
+    let token = format!("kiosque_background_{:016x}", rand::random::<u64>());
+    let path = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
+    let mut request = zbus::Proxy::new(
+        &conn,
+        "org.freedesktop.portal.Desktop",
+        path.as_str(),
+        "org.freedesktop.portal.Request",
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    // Subscribe before calling the portal: a granted request can finish immediately.
+    let mut responses = request
+        .receive_signal("Response")
+        .await
+        .map_err(|e| e.to_string())?;
     let mut options: HashMap<&str, Variant<'_>> = HashMap::new();
-    options.insert("handle_token", Variant::from("kiosque_background"));
+    options.insert("handle_token", Variant::from(token.as_str()));
     options.insert(
         "reason",
         Variant::from("Install Flatpak updates automatically in the background"),
@@ -119,14 +142,49 @@ async fn request_background(autostart: bool) -> zbus::Result<()> {
         Variant::from(vec!["kiosque-update", "--background"]),
     );
     options.insert("dbus-activatable", Variant::from(false));
-    conn.call_method(
-        Some("org.freedesktop.portal.Desktop"),
-        "/org/freedesktop/portal/desktop",
-        Some("org.freedesktop.portal.Background"),
-        "RequestBackground",
-        &("", options),
-    )
-    .await?;
+    let reply = conn
+        .call_method(
+            Some("org.freedesktop.portal.Desktop"),
+            "/org/freedesktop/portal/desktop",
+            Some("org.freedesktop.portal.Background"),
+            "RequestBackground",
+            &("", options),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let handle: OwnedObjectPath = reply.body().deserialize().map_err(|e| e.to_string())?;
+    if handle.as_str() != path {
+        request = zbus::Proxy::new(
+            &conn,
+            "org.freedesktop.portal.Desktop",
+            handle.as_str(),
+            "org.freedesktop.portal.Request",
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        responses = request
+            .receive_signal("Response")
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    let message = match tokio::time::timeout(Duration::from_secs(120), responses.next()).await {
+        Ok(Some(message)) => message,
+        _ => {
+            let _: zbus::Result<()> = request.call("Close", &()).await;
+            return Err("Background permission request timed out or closed".into());
+        }
+    };
+    let (response, results): (u32, HashMap<String, OwnedVariant>) =
+        message.body().deserialize().map_err(|e| e.to_string())?;
+    if response != 0 {
+        return Err("Background permission was cancelled or denied".into());
+    }
+    let enabled = results
+        .get("autostart")
+        .and_then(|value| bool::try_from(value).ok());
+    if enabled != Some(autostart) {
+        return Err("The desktop did not apply the requested autostart setting".into());
+    }
     klog!("Background portal: autostart={}", autostart);
     Ok(())
 }

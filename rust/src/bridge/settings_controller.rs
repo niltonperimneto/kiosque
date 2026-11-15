@@ -15,6 +15,7 @@ pub mod qobject {
         #[qproperty(bool, auto_update)]
         #[qproperty(QString, update_frequency)]
         #[qproperty(QString, update_time)]
+        #[qproperty(bool, saving_settings)]
         #[qproperty(bool, is_authenticated)]
         #[qproperty(QString, oauth_provider)]
         #[qproperty(QString, oauth_username)]
@@ -54,6 +55,10 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "loginFailed"]
         fn login_failed(self: Pin<&mut SettingsController>, error: QString);
+
+        #[qsignal]
+        #[cxx_name = "settingsSaved"]
+        fn settings_saved(self: Pin<&mut SettingsController>, success: bool, error: QString);
     }
 
     impl cxx_qt::Threading for SettingsController {}
@@ -64,6 +69,7 @@ pub struct SettingsControllerRust {
     pub auto_update: bool,
     pub update_frequency: cxx_qt_lib::QString,
     pub update_time: cxx_qt_lib::QString,
+    pub saving_settings: bool,
     pub is_authenticated: bool,
     pub oauth_provider: cxx_qt_lib::QString,
     pub oauth_username: cxx_qt_lib::QString,
@@ -106,19 +112,65 @@ impl qobject::SettingsController {
         frequency: cxx_qt_lib::QString,
         time: cxx_qt_lib::QString,
     ) {
+        if self.saving_settings {
+            return;
+        }
+        let frequency = frequency.to_string();
+        let frequency = if frequency.eq_ignore_ascii_case("weekly") {
+            "Weekly"
+        } else if frequency.eq_ignore_ascii_case("daily") {
+            "Daily"
+        } else {
+            self.settings_saved(false, "Choose a daily or weekly update schedule".into());
+            return;
+        };
+        let time = time.to_string();
+        if chrono::NaiveTime::parse_from_str(&time, "%H:%M").is_err() {
+            self.settings_saved(false, "Enter a valid update time (HH:MM)".into());
+            return;
+        }
         let mut settings = crate::services::services().settings.load();
+        let previous_auto_update = settings.auto_update;
         settings.auto_update = auto_update;
-        settings.update_frequency = frequency.to_string();
-        settings.update_time = time.to_string();
+        settings.update_frequency = frequency.into();
+        settings.update_time = time;
 
         if let Err(e) = crate::services::services().settings.save(&settings) {
-            eprintln!("[kiosque] Failed to save settings: {}", e);
+            self.settings_saved(false, cxx_qt_lib::QString::from(&e));
         } else {
             self.as_mut().set_auto_update(settings.auto_update);
             self.as_mut()
                 .set_update_frequency(cxx_qt_lib::QString::from(&settings.update_frequency));
             self.as_mut()
                 .set_update_time(cxx_qt_lib::QString::from(&settings.update_time));
+            if previous_auto_update == auto_update {
+                self.settings_saved(true, cxx_qt_lib::QString::default());
+                return;
+            }
+            self.as_mut().set_saving_settings(true);
+            let thread = self.qt_thread();
+            crate::runtime::runtime().spawn(async move {
+                let result = crate::settings::apply_autostart(&settings).await;
+                let error = match result {
+                    Ok(()) => String::new(),
+                    Err(error) => {
+                        let store = &crate::services::services().settings;
+                        let mut current = store.load();
+                        current.auto_update = previous_auto_update;
+                        match store.save(&current) {
+                            Ok(()) => error,
+                            Err(save_error) => {
+                                format!("{error}; could not restore the setting: {save_error}")
+                            }
+                        }
+                    }
+                };
+                let _ = thread.queue(move |mut object| {
+                    object.as_mut().load_settings();
+                    object.as_mut().set_saving_settings(false);
+                    object.settings_saved(error.is_empty(), cxx_qt_lib::QString::from(&error));
+                });
+            });
         }
     }
 
