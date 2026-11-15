@@ -159,6 +159,7 @@ jobs:
           rm -f linuxdeploy-plugin-qt
 
       - name: Build AppImage Bundle
+        timeout-minutes: 15
         env:
           NO_STRIP: "1"
         run: |
@@ -210,20 +211,8 @@ jobs:
           cp -r /usr/lib64/qt6/qml/org/kde/sonnet AppDir/usr/qml/org/kde/
           cp -r /usr/lib64/qt6/qml/org/kde/breeze AppDir/usr/qml/org/kde/
 
-          # Iteratively resolve and bundle all required KF6 and Kirigami library dependencies for the plugins.
-          # We look at all shared objects in the AppDir and copy any missing libKF6/libKirigami dependencies from /usr/lib64/
-          added=1
-          while [ $added -ne 0 ]; do
-            added=0
-            deps=$(find AppDir -type f \( -name "*.so" -o -perm /111 \) | xargs ldd 2>/dev/null | grep "=>" | grep -E "libKF6|libKirigami" | awk '{print $1}' | sort -u)
-            for dep in $deps; do
-              if [ ! -f "AppDir/usr/lib/$dep" ] && [ ! -f "AppDir/usr/lib64/$dep" ]; then
-                echo "Bundling missing dependency: $dep"
-                cp -d /usr/lib64/$dep* AppDir/usr/lib/
-                added=$((added + 1))
-              fi
-            done
-          done
+          # Bundle KDE dependencies as real files under their required SONAMEs.
+          bash scripts/bundle_kde_dependencies.sh AppDir
 
           # 4. Clean up base system libraries that shouldn't be bundled and cause SIGSEGV/dynamic loading conflicts.
           # We only keep Qt6 and KF6/Kirigami libraries, and let the loader resolve all other system libraries from the host.
