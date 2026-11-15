@@ -1,28 +1,21 @@
-//! Image loading for the `image://kiosque/` QML image provider.
-//!
-//! QML image ids carry the source URL itself (`u/<base64url(url)>`), so no
-//! process-wide id→URL registry is needed. Downloaded images are stored
-//! byte-for-byte (no lossy re-encoding) under `<cache>/images/<sha256(url)>`
-//! and decoded on demand. The directory is capped at [`MAX_CACHE_BYTES`];
-//! the least recently used files (by mtime, refreshed on every hit) are
-//! evicted first. `file://` URLs (icons from local AppStream data) are read
-//! directly and never copied into the cache.
-
-use std::fs;
-use std::io::Cursor;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::{Duration, Instant, SystemTime};
-
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+//! URL-keyed image loading, original-byte disk caching, and decoded-frame reuse.
+use crate::flathub::client::HttpClient;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use image::{DynamicImage, ImageReader};
+use moka::future::Cache;
 use sha2::{Digest, Sha256};
+use std::{
+    collections::HashMap,
+    fs,
+    io::Cursor,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, Weak},
+    time::{Duration, SystemTime},
+};
 
-/// Upper bound for the on-disk image cache.
 pub const MAX_CACHE_BYTES: u64 = 256 * 1024 * 1024;
-/// Eviction trims down to this fraction of the cap.
 const EVICT_TARGET: f64 = 0.8;
+type DownloadLocks = Arc<Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>>;
 
 pub fn image_url(raw: &str) -> String {
     if raw.is_empty() || raw.starts_with("image://") {
@@ -33,83 +26,165 @@ pub fn image_url(raw: &str) -> String {
         URL_SAFE_NO_PAD.encode(raw.as_bytes())
     )
 }
-
-/// Inverse of [`image_url`]'s id part.
 pub fn url_from_id(id: &str) -> Option<String> {
     let enc = id.strip_prefix("u/")?;
-    let bytes = URL_SAFE_NO_PAD.decode(enc.split(['?', '#']).next()?).ok()?;
-    String::from_utf8(bytes).ok()
+    String::from_utf8(URL_SAFE_NO_PAD.decode(enc.split(['?', '#']).next()?).ok()?).ok()
 }
-
-fn image_cache_dir() -> PathBuf {
-    let dir = crate::disk_cache::cache_dir().join("images");
-    fs::create_dir_all(&dir).ok();
-    dir
-}
-
 pub fn cache_path_for(dir: &Path, url: &str) -> PathBuf {
     let hash = Sha256::digest(url.as_bytes());
     let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
     dir.join(hex)
 }
 
-fn touch(path: &Path) {
-    if let Ok(f) = fs::File::options().append(true).open(path) {
-        let _ = f.set_modified(SystemTime::now());
+#[derive(Clone)]
+pub struct ImageLoader {
+    http: HttpClient,
+    dir: PathBuf,
+    decoded: Cache<String, Arc<image::RgbaImage>>,
+    downloads: DownloadLocks,
+}
+impl ImageLoader {
+    pub fn new(http: HttpClient, dir: impl Into<PathBuf>) -> Self {
+        Self::with_cache_policy(http, dir, 96 * 1024 * 1024, Duration::from_secs(600))
+    }
+    pub fn with_cache_policy(
+        http: HttpClient,
+        dir: impl Into<PathBuf>,
+        capacity: u64,
+        ttl: Duration,
+    ) -> Self {
+        Self {
+            http,
+            dir: dir.into(),
+            downloads: Arc::new(Mutex::new(HashMap::new())),
+            decoded: Cache::builder()
+                .max_capacity(capacity)
+                .time_to_live(ttl)
+                .weigher(|_: &String, frame: &Arc<image::RgbaImage>| {
+                    frame.as_raw().len().min(u32::MAX as usize) as u32
+                })
+                .build(),
+        }
+    }
+    fn download_lock(&self, url: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self.downloads.lock().unwrap();
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = locks.get(url).and_then(Weak::upgrade) {
+            return lock;
+        }
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        locks.insert(url.into(), Arc::downgrade(&lock));
+        lock
+    }
+    async fn source_for(&self, url: &str) -> Result<DynamicImage, String> {
+        if let Some(path) = local_path(url) {
+            let bytes = tokio::fs::read(path)
+                .await
+                .map_err(|e| format!("cannot read image: {e}"))?;
+            return decode_async(bytes).await;
+        }
+        let lock = self.download_lock(url);
+        let _guard = lock.lock().await;
+        let path = cache_path_for(&self.dir, url);
+        if let Ok(bytes) = tokio::fs::read(&path).await {
+            if let Ok(image) = decode_async(bytes).await {
+                if let Ok(file) = fs::File::options().append(true).open(&path) {
+                    let _ = file.set_modified(SystemTime::now());
+                }
+                return Ok(image);
+            }
+            let _ = tokio::fs::remove_file(&path).await;
+        }
+        let bytes = self
+            .http
+            .fetch_bytes(url)
+            .await
+            .map_err(|e| e.to_string())?;
+        let decoded = decode_async(bytes.clone()).await?;
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = path.with_extension(format!("{}.{}.part", std::process::id(), serial));
+        if tokio::fs::create_dir_all(&self.dir).await.is_ok()
+            && tokio::fs::write(&tmp, &bytes).await.is_ok()
+        {
+            let _ = tokio::fs::rename(&tmp, &path).await;
+        }
+        let _ = tokio::fs::remove_file(tmp).await;
+        let dir = self.dir.clone();
+        let _ = tokio::task::spawn_blocking(move || evict(&dir, MAX_CACHE_BYTES)).await;
+        Ok(decoded)
+    }
+    pub async fn load(
+        &self,
+        id: &str,
+        width: i32,
+        height: i32,
+    ) -> Result<Arc<image::RgbaImage>, String> {
+        let url = url_from_id(id).ok_or_else(|| "invalid image id".to_string())?;
+        let local_version = local_path(&url)
+            .and_then(|path| fs::metadata(path).ok())
+            .map(|m| (m.len(), m.modified().ok()));
+        let key = format!("{}:{url}:{width}:{height}:{local_version:?}", url.len());
+        self.decoded
+            .try_get_with(key, async {
+                let source = self.source_for(&url).await?;
+                tokio::task::spawn_blocking(move || resize(source, width, height).map(Arc::new))
+                    .await
+                    .map_err(|e| e.to_string())?
+            })
+            .await
+            .map_err(|error: Arc<String>| error.to_string())
     }
 }
-
-async fn download(url: &str) -> Result<Vec<u8>, String> {
-    crate::flathub::client::fetch_bytes(url)
+fn local_path(url: &str) -> Option<PathBuf> {
+    if url.starts_with("file://") {
+        return reqwest::Url::parse(url).ok()?.to_file_path().ok();
+    }
+    url.starts_with('/').then(|| PathBuf::from(url))
+}
+async fn decode_async(bytes: Vec<u8>) -> Result<DynamicImage, String> {
+    tokio::task::spawn_blocking(move || decode(bytes))
         .await
-        .map_err(|e| format!("download failed: {}", e))
+        .map_err(|e| e.to_string())?
 }
 
-/// Return the original bytes of `url`, from the cache when possible.
-async fn bytes_for(url: &str) -> Result<Vec<u8>, String> {
-    if let Some(path) = url.strip_prefix("file://") {
-        return fs::read(path).map_err(|e| format!("cannot read {}: {}", path, e));
-    }
-    if url.starts_with('/') {
-        return fs::read(url).map_err(|e| format!("cannot read {}: {}", url, e));
-    }
-    let dir = image_cache_dir();
-    let path = cache_path_for(&dir, url);
-    if let Ok(bytes) = fs::read(&path) {
-        touch(&path);
-        return Ok(bytes);
-    }
-    let bytes = download(url).await?;
-    let tmp = path.with_extension("part");
-    if fs::write(&tmp, &bytes)
-        .and_then(|_| fs::rename(&tmp, &path))
-        .is_err()
-    {
-        let _ = fs::remove_file(&tmp);
-    }
-    maybe_evict(&dir);
-    Ok(bytes)
+fn decode(bytes: Vec<u8>) -> Result<DynamicImage, String> {
+    ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())
 }
-
-/// Run eviction at most once a minute, off the calling thread.
-fn maybe_evict(dir: &Path) {
-    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
-    {
-        let mut last = LAST.lock().unwrap();
-        if last.is_some_and(|t| t.elapsed() < Duration::from_secs(60)) {
-            return;
-        }
-        *last = Some(Instant::now());
-    }
-    let dir = dir.to_path_buf();
-    std::thread::spawn(move || {
-        let removed = evict(&dir, MAX_CACHE_BYTES);
-        if removed > 0 {
-            klog!("image cache: evicted {} files", removed);
-        }
+fn resize(img: DynamicImage, width: i32, height: i32) -> Result<image::RgbaImage, String> {
+    let rgba = img.into_rgba8();
+    let (w, h) = rgba.dimensions();
+    let ratio = (if width > 0 {
+        width as f64 / w as f64
+    } else {
+        f64::INFINITY
+    })
+    .min(if height > 0 {
+        height as f64 / h as f64
+    } else {
+        f64::INFINITY
     });
+    if ratio >= 1.0 {
+        return Ok(rgba);
+    }
+    let target_w = (w as f64 * ratio).round().max(1.0) as u32;
+    let target_h = (h as f64 * ratio).round().max(1.0) as u32;
+    use fast_image_resize as fir;
+    let source = fir::images::Image::from_vec_u8(w, h, rgba.into_raw(), fir::PixelType::U8x4)
+        .map_err(|e| e.to_string())?;
+    let mut target = fir::images::Image::new(target_w, target_h, fir::PixelType::U8x4);
+    let options = fir::ResizeOptions::new()
+        .resize_alg(fir::ResizeAlg::Convolution(fir::FilterType::CatmullRom));
+    fir::Resizer::new()
+        .resize(&source, &mut target, &options)
+        .map_err(|e| e.to_string())?;
+    image::RgbaImage::from_raw(target_w, target_h, target.into_vec())
+        .ok_or_else(|| "invalid resized image".into())
 }
-
 /// Delete least-recently-used files until the directory is below
 /// `EVICT_TARGET * cap`. Also removes leftovers of the old JPEG-XL cache.
 /// Returns the number of files removed.
@@ -154,49 +229,6 @@ pub fn evict(dir: &Path, cap: u64) -> usize {
         }
     }
     removed
-}
-
-fn decode(bytes: Vec<u8>) -> Result<DynamicImage, String> {
-    ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()
-        .map_err(|e| format!("unknown image format: {}", e))?
-        .decode()
-        .map_err(|e| format!("decode failed: {}", e))
-}
-
-pub async fn fetch_and_process(
-    id: &str,
-    req_width: i32,
-    req_height: i32,
-) -> Result<image::RgbaImage, String> {
-    let url = url_from_id(id).ok_or_else(|| format!("bad image id {}", id))?;
-    let bytes = bytes_for(&url).await?;
-    let img = tokio::task::spawn_blocking(move || -> Result<image::RgbaImage, String> {
-        let img = decode(bytes)?;
-        let fits = |w: i32, h: i32| {
-            (w <= 0 || img.width() as i32 <= w) && (h <= 0 || img.height() as i32 <= h)
-        };
-        let img = if (req_width > 0 || req_height > 0) && !fits(req_width, req_height) {
-            let w = if req_width > 0 {
-                req_width as u32
-            } else {
-                u32::MAX
-            };
-            let h = if req_height > 0 {
-                req_height as u32
-            } else {
-                u32::MAX
-            };
-            img.resize(w, h, image::imageops::FilterType::Lanczos3)
-        } else {
-            img
-        };
-        Ok(img.to_rgba8())
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-
-    Ok(img)
 }
 
 #[cfg(test)]

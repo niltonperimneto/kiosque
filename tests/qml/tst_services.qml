@@ -44,6 +44,28 @@ TestCase {
         tryCompare(view, "count", 0)
     }
 
+    function test_storefront_collections_and_newest_order() {
+        let model = createTemporaryObject(appFactory, this)
+        let view = createTemporaryObject(viewFactory, this, { model: model })
+        model.loadCategorySorted("Game", "newest")
+        tryCompare(model, "loading", false, 10000)
+        tryCompare(view, "count", 3)
+        tryVerify(function() { return view.itemAtIndex(0) !== null })
+        compare(view.itemAtIndex(0).appId, "org.kiosque.New")
+        model.loadCategorySorted("Slow", "trending")
+        model.loadMobile()
+        tryCompare(model, "loading", false, 10000)
+        tryCompare(view, "count", 1)
+        tryVerify(function() { return view.itemAtIndex(0) !== null })
+        compare(view.itemAtIndex(0).appId, "org.kiosque.Mobile")
+        wait(500) // Deliver the deliberately delayed fixture response.
+        compare(view.count, 1)
+        compare(view.itemAtIndex(0).appId, "org.kiosque.Mobile")
+        model.loadCategorySorted("Game", "invalid")
+        tryCompare(model, "loading", false, 10000)
+        tryCompare(view, "count", 0)
+    }
+
     function test_details_and_object_destruction() {
         let detail = StoreController
         detail.loadAppDetails("org.kiosque.Fixture")

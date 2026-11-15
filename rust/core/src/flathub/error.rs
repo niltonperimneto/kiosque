@@ -2,6 +2,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum FlathubError {
+    #[error("Invalid API request: {0}")]
+    InvalidRequest(String),
     #[error("HTTP request failed: {0}")]
     Request(#[from] reqwest::Error),
 

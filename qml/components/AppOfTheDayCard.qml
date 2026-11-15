@@ -7,87 +7,121 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ki18n
 
-// The "App of the Day" spotlight — a full-width feature surface built on the
-// shared FeatureCard so it shares the exact same flair as the hero carousel.
-FeatureCard {
+// Flathub's daily pick as a prominent vertical card: top-cropped hero
+// screenshot as the header (title bar of the app always visible), then a
+// clear vertical flow of logo, title and brief description. The stock
+// Kirigami.Card banner center-crops, so the header is a custom TopCropImage;
+// Card re-anchors any custom header edge-to-edge on its own.
+Kirigami.Card {
     id: root
 
-    property string cardAppId: ""
-    property string cardName: ""
-    property string cardSummary: ""
-    property string cardIconUrl: ""
+    property string appName
+    property string appSummary
+    property string developer
+    property url    iconUrl
+    property url    screenshotUrl
 
-    readonly property bool isNarrow: width < Kirigami.Units.gridUnit * 32
-    readonly property real iconDim: isNarrow ? Kirigami.Units.gridUnit * 4 : Kirigami.Units.gridUnit * 6
+    showClickFeedback: true
+    activeFocusOnTab: true
+    Keys.onReturnPressed: root.clicked()
+    Keys.onEnterPressed: root.clicked()
+    Keys.onSpacePressed: root.clicked()
 
-    implicitHeight: contentLayout.implicitHeight + Kirigami.Units.largeSpacing * 4
+    Accessible.role: Accessible.Button
+    Accessible.name: root.appName
+    Accessible.onPressAction: root.clicked()
 
-    RowLayout {
-        id: contentLayout
-        anchors.fill: parent
-        anchors.margins: Kirigami.Units.largeSpacing * 2
-        spacing: Kirigami.Units.largeSpacing * 2
+    header: TopCropImage {
+        source: root.screenshotUrl
+        sourceSizeWidth: Kirigami.Units.gridUnit * 40
+        visible: String(root.screenshotUrl).length > 0 && status !== Image.Error
+        // 2:1 hero band derived from the card's width — no fixed pixels; the
+        // band collapses entirely when there is no screenshot to show.
+        implicitHeight: visible ? Math.round(root.width / 2) : 0
+        color: Kirigami.Theme.alternateBackgroundColor
 
-        Image {
-            source: root.cardIconUrl
-            Layout.preferredWidth: root.iconDim
-            Layout.preferredHeight: root.iconDim
-            Layout.alignment: Qt.AlignVCenter
-            fillMode: Image.PreserveAspectFit
-            asynchronous: true
-            sourceSize.width: root.iconDim
-            sourceSize.height: root.iconDim
+        corners.topLeftRadius: root.background.radius - root.background.border.width
+        corners.topRightRadius: root.background.radius - root.background.border.width
 
-            Kirigami.Icon {
-                anchors.fill: parent
-                source: "applications-other"
-                visible: parent.status !== Image.Ready
-                opacity: 0.4
+        // "App of the Day" badge overlaid on the hero so the content column
+        // below stays an uncluttered logo → title → description flow.
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.margins: Kirigami.Units.largeSpacing
+            radius: height / 2
+            color: Qt.alpha("black", 0.6)
+            implicitWidth: badgeRow.implicitWidth + Kirigami.Units.largeSpacing * 2
+            implicitHeight: badgeRow.implicitHeight + Kirigami.Units.smallSpacing * 2
+
+            Row {
+                id: badgeRow
+                anchors.centerIn: parent
+                spacing: Kirigami.Units.smallSpacing
+
+                Kirigami.Icon {
+                    source: "favorite-symbolic"
+                    color: "white"
+                    width: Kirigami.Units.iconSizes.small
+                    height: width
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Controls.Label {
+                    text: i18nc("@info:label badge on the daily pick card", "App of the Day")
+                    color: "white"
+                    font: Kirigami.Theme.smallFont
+                    anchors.verticalCenter: parent.verticalCenter
+                }
             }
         }
+    }
 
-        ColumnLayout {
+    contentItem: ColumnLayout {
+        spacing: Kirigami.Units.largeSpacing
+
+        RowLayout {
             Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            spacing: Kirigami.Units.smallSpacing
+            spacing: Kirigami.Units.largeSpacing
 
-            // Eyebrow label — accent coloured so the spotlight reads instantly.
-            Controls.Label {
-                text: i18n("App of the Day")
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                font.bold: true
-                font.capitalization: Font.AllUppercase
-                color: root.accent
-                Layout.fillWidth: true
+            Image {
+                Layout.preferredWidth: Kirigami.Units.iconSizes.huge
+                Layout.preferredHeight: Kirigami.Units.iconSizes.huge
+                source: root.iconUrl
+                sourceSize: Qt.size(width, height)
+                fillMode: Image.PreserveAspectFit
+                mipmap: true
+                asynchronous: true
             }
 
-            Kirigami.Heading {
-                level: 1
-                text: root.cardName
-                color: Kirigami.Theme.textColor
-                elide: Text.ElideRight
-                maximumLineCount: 1
+            ColumnLayout {
                 Layout.fillWidth: true
-            }
+                spacing: 0
 
-            Controls.Label {
-                text: root.cardSummary
-                color: Kirigami.Theme.textColor
-                opacity: 0.85
-                elide: Text.ElideRight
-                wrapMode: Text.WordWrap
-                maximumLineCount: 2
-                Layout.fillWidth: true
+                Kirigami.Heading {
+                    Layout.fillWidth: true
+                    level: 2
+                    text: root.appName
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                }
+
+                Controls.Label {
+                    Layout.fillWidth: true
+                    visible: root.developer.length > 0
+                    text: root.developer
+                    color: Kirigami.Theme.disabledTextColor
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                }
             }
         }
 
-        Controls.Button {
-            text: i18n("View Details")
-            icon.name: "go-next-symbolic"
-            highlighted: true
-            visible: !root.isNarrow
-            Layout.alignment: Qt.AlignVCenter
-            onClicked: root.clicked()
+        Controls.Label {
+            Layout.fillWidth: true
+            text: root.appSummary
+            wrapMode: Text.WordWrap
+            maximumLineCount: 3
+            elide: Text.ElideRight
         }
     }
 }

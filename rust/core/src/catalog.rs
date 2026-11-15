@@ -59,6 +59,7 @@ impl CatalogApp {
             developer_name: Some(self.developer.clone()).filter(|d| !d.is_empty()),
             description: Some(self.description.clone()),
             sub_categories: self.categories.clone(),
+            added_at: None,
         }
     }
 

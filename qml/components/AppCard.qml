@@ -68,6 +68,11 @@ Kirigami.AbstractCard {
             sourceSize.height: Kirigami.Units.iconSizes.huge
             asynchronous: true
             fillMode: Image.PreserveAspectFit
+            onStatusChanged: {
+                if (status === Image.Error) {
+                    console.warn("[qml-image] Error loading " + source + ": " + errorString)
+                }
+            }
 
             Kirigami.Icon {
                 anchors.centerIn: parent

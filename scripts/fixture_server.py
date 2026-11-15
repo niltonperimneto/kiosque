@@ -44,8 +44,37 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(200, {'hits': [] if query == 'empty' else [{'app_id': f'org.kiosque.{query or "Fixture"}', 'name': query or 'Fixture'}]})
 
     def do_GET(self):
+        if self.path == '/fixture-image.png':
+            import struct
+            import zlib
+            def chunk(kind, data):
+                return struct.pack('!I', len(data)) + kind + data + struct.pack('!I', zlib.crc32(kind + data))
+            data = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('!2I5B', 8, 8, 8, 6, 0, 0, 0))
+            data += chunk(b'IDAT', zlib.compress((b'\0' + b'\xff\0\0\xff' * 8) * 8)) + chunk(b'IEND', b'')
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/png')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+        if self.path.startswith('/app-picks/app-of-the-day/'):
+            return self.respond(200, {'app_id': 'org.kiosque.Daily'})
         if self.path.startswith('/collection/'):
-            return self.respond(200, json.loads((FIXTURES / 'collection.json').read_text()))
+            if '/Slow' in self.path:
+                time.sleep(0.3)
+            fixture = json.loads((FIXTURES / 'collection.json').read_text())
+            if self.path.startswith('/collection/mobile'):
+                fixture = {'hits': [{'app_id': 'org.kiosque.Mobile', 'name': 'Mobile'}]}
+            elif '/collection/category/' in self.path:
+                fixture = {'hits': [
+                    {'app_id': 'org.kiosque.Old', 'name': 'Old', 'added_at': 10},
+                    {'app_id': 'org.kiosque.New', 'name': 'New', 'added_at': 20},
+                    {'app_id': 'org.kiosque.NoDate', 'name': 'NoDate'},
+                ]}
+            return self.respond(200, fixture)
         if self.path.startswith('/appstream/'):
             app_id = self.path.rsplit('/', 1)[1]
             with self.server.state_lock:
@@ -57,6 +86,10 @@ class Handler(BaseHTTPRequestHandler):
                 time.sleep(0.3)
             details = json.loads((FIXTURES / 'details.json').read_text())
             details.update(id=app_id, name=app_id.rsplit('.', 1)[1])
+            if app_id in ('org.kiosque.Daily', 'org.kiosque.Screenshots'):
+                details['screenshots'] = [{'sizes': [{'src': f'http://127.0.0.1:{self.server.server_port}/fixture-image.png', 'width': 8, 'height': 8}]}]
+            if app_id == 'org.kiosque.Daily':
+                details.update(branding=[{'scheme_preference': 'light', 'type': 'primary', 'value': '#8040ff'}])
             return self.respond(200, details)
         if self.path.startswith('/ratings/'):
             app_id = self.path.rsplit('/', 1)[1]

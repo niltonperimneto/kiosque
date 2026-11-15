@@ -15,6 +15,7 @@ pub struct Services {
     pub flathub: FlathubClient,
     pub odrs: OdrsClient,
     pub disk: DiskCache,
+    pub images: kiosque_core::image_cache::ImageLoader,
     pub settings: SettingsStore,
     local_transactions: Option<Arc<Transactions>>,
 }
@@ -44,6 +45,10 @@ pub fn services() -> &'static Services {
         flathub: FlathubClient::new(),
         odrs: OdrsClient::new(),
         disk: DiskCache::new(kiosque_core::disk_cache::cache_dir()),
+        images: kiosque_core::image_cache::ImageLoader::new(
+            kiosque_core::flathub::client::HttpClient::default(),
+            kiosque_core::disk_cache::cache_dir().join("images"),
+        ),
         settings: SettingsStore::new(kiosque_core::settings::settings_path()),
         local_transactions: None,
     })
@@ -87,6 +92,10 @@ pub unsafe extern "C" fn kiosque_test_setup(
             ),
             odrs: OdrsClient::with_dependencies(HttpClient::default(), &endpoint, AppCache::new()),
             disk: DiskCache::new(root.join("cache")),
+            images: kiosque_core::image_cache::ImageLoader::new(
+                HttpClient::default(),
+                root.join("images"),
+            ),
             settings: SettingsStore::new(root.join("settings.json")),
             local_transactions: Some(Arc::new(Transactions::Local(manager))),
         })

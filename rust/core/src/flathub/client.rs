@@ -75,6 +75,7 @@ pub(crate) async fn checked_text(response: reqwest::Response) -> Result<String, 
     Ok(body)
 }
 
+#[cfg(feature = "libflatpak")]
 pub(crate) async fn fetch_bytes(url: &str) -> Result<Vec<u8>, FlathubError> {
     HttpClient::default().fetch_bytes(url).await
 }
@@ -199,6 +200,12 @@ impl FlathubClient {
         .await
     }
 
+    /// Apps adapted for phones and tablets ("On the Go" on flathub.org).
+    pub async fn fetch_mobile(&self) -> Result<Vec<FlathubApp>, FlathubError> {
+        self.fetch_collection_cached("mobile", &self.url("collection/mobile"), "fetch_mobile")
+            .await
+    }
+
     pub async fn fetch_category(&self, category_id: &str) -> Result<Vec<FlathubApp>, FlathubError> {
         let cache_key = format!("category/{}", category_id);
         let url = self.url(&format!("collection/category/{}", category_id));
@@ -206,6 +213,38 @@ impl FlathubClient {
             &cache_key,
             &url,
             &format!("fetch_category({})", category_id),
+        )
+        .await
+    }
+
+    /// Category collection sorted server-side. Flathub only accepts
+    /// "trending" or "installs_last_month" here; `page` is mandatory once
+    /// query parameters are present.
+    pub async fn fetch_category_sorted(
+        &self,
+        category_id: &str,
+        sort_by: &str,
+    ) -> Result<Vec<FlathubApp>, FlathubError> {
+        if !matches!(sort_by, "trending" | "installs_last_month") {
+            return Err(FlathubError::InvalidRequest(
+                "unsupported category sort".into(),
+            ));
+        }
+        let cache_key = format!("category/{}/sorted/{}", category_id, sort_by);
+        let mut url = reqwest::Url::parse(&self.url("collection/category/"))
+            .map_err(|e| FlathubError::InvalidRequest(e.to_string()))?;
+        url.path_segments_mut()
+            .map_err(|_| FlathubError::InvalidRequest("invalid API base".into()))?
+            .pop_if_empty()
+            .push(category_id);
+        url.query_pairs_mut()
+            .append_pair("sort_by", sort_by)
+            .append_pair("page", "1")
+            .append_pair("per_page", "30");
+        self.fetch_collection_cached(
+            &cache_key,
+            url.as_str(),
+            &format!("fetch_category_sorted({}, {})", category_id, sort_by),
         )
         .await
     }

@@ -113,6 +113,24 @@ TestCase {
         page.details.operationFinished(true, "")
         compare(banner.visible, false)
     }
+    function test_screenshot_popup_releases_scene_on_close() {
+        let root = window()
+        root.pushAppDetail("org.kiosque.Screenshots")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        compare(page.screenshotUrls.length, 1)
+        let popup = findChild(page, "largeScreenshotPopup")
+        verify(popup !== null)
+        popup.openWithIndex(0)
+        tryCompare(popup, "visible", true)
+        popup.close()
+        tryCompare(popup, "visible", false)
+        popup.openWithIndex(0)
+        tryCompare(popup, "visible", true)
+        popup.close()
+        tryCompare(popup, "visible", false)
+    }
+
     function test_review_mutations_refresh_the_actual_page() {
         let root = window()
         root.pushAppDetail("org.kiosque.Reviews")

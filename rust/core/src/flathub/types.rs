@@ -45,6 +45,10 @@ pub struct FlathubApp {
     /// Subcategories of the app (e.g. Emulator, Utility).
     #[serde(default)]
     pub sub_categories: Vec<String>,
+
+    /// Unix timestamp when the app was added to Flathub (collection endpoints).
+    #[serde(default)]
+    pub added_at: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -61,6 +65,40 @@ pub struct ScreenshotSize {
 pub struct Screenshot {
     #[serde(default)]
     pub sizes: Vec<ScreenshotSize>,
+}
+
+impl Screenshot {
+    /// Pick the highest-resolution size URL, falling back to the first
+    /// available size. `width` arrives from the API as either a JSON string
+    /// or a number, so both forms are parsed.
+    pub fn best_url(&self) -> Option<String> {
+        self.sizes
+            .iter()
+            .max_by_key(|size| {
+                size.width
+                    .as_ref()
+                    .and_then(|w| {
+                        w.as_str()
+                            .and_then(|s| s.parse::<i32>().ok())
+                            .or_else(|| w.as_i64().map(|i| i as i32))
+                    })
+                    .unwrap_or(0)
+            })
+            .map(|size| size.src.clone())
+            .or_else(|| self.sizes.first().map(|size| size.src.clone()))
+    }
+}
+
+/// One entry of the appstream `branding` array, e.g.
+/// `{"scheme_preference": "light", "type": "primary", "value": "#d2b0ff"}`.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BrandingColor {
+    #[serde(default, rename = "type")]
+    pub color_type: Option<String>,
+    #[serde(default)]
+    pub scheme_preference: Option<String>,
+    #[serde(default)]
+    pub value: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -115,6 +153,30 @@ pub struct AppDetails {
 
     #[serde(default)]
     pub metadata: Option<AppMetadata>,
+
+    #[serde(default)]
+    pub branding: Vec<BrandingColor>,
+}
+
+impl AppDetails {
+    /// Primary branding colors as (light, dark) hex values.
+    pub fn brand_colors(&self) -> (Option<String>, Option<String>) {
+        let pick = |scheme: &str| {
+            self.branding
+                .iter()
+                .find(|b| {
+                    b.color_type.as_deref().unwrap_or("primary") == "primary"
+                        && b.scheme_preference.as_deref() == Some(scheme)
+                })
+                .and_then(|b| b.value.clone())
+        };
+        (pick("light"), pick("dark"))
+    }
+
+    /// Highest-resolution URL of the first screenshot, if any.
+    pub fn best_screenshot_url(&self) -> Option<String> {
+        self.screenshots.first().and_then(|s| s.best_url())
+    }
 }
 
 // ── Flathub API v2 Stats and Exceptions responses ───────────────────────────

@@ -12,12 +12,12 @@ pub async fn save_popular_cache(items: &[AppEntry]) -> Result<(), String> {
         .await
 }
 pub async fn load_featured_cache() -> Option<(u64, Vec<FeaturedEntry>)> {
-    crate::services::services().disk.load("featured", 1).await
+    crate::services::services().disk.load("featured", 2).await
 }
 pub async fn save_featured_cache(items: &[FeaturedEntry]) -> Result<(), String> {
     crate::services::services()
         .disk
-        .save_at("featured", 1, now_secs(), &items)
+        .save_at("featured", 2, now_secs(), &items)
         .await
 }
 pub async fn load_installed_cache() -> Option<(u64, Vec<InstalledEntry>)> {

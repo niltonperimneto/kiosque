@@ -57,6 +57,29 @@ private slots:
         QCOMPARE(size, QSize(2, 2));
         QCOMPARE(decoded.pixelColor(0, 0), QColor(Qt::red));
     }
+    void featuredSeparatesDailyAndAvoidsUnchangedResets() {
+        QQmlEngine engine; setup.qmlEngineAvailable(&engine);
+        QQmlComponent component(&engine);
+        component.setData("import com.kiosque\nFeaturedModel {}", QUrl());
+        QScopedPointer<QObject> object(component.create());
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto *model = qobject_cast<QAbstractItemModel *>(object.data());
+        QVERIFY(model);
+        QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+        QVERIFY(QMetaObject::invokeMethod(model, "refresh"));
+        QTRY_VERIFY_WITH_TIMEOUT(!model->property("loading").toBool(), 10000);
+        const auto daily = QJsonDocument::fromJson(model->property("aotd_json").toString().toUtf8()).object();
+        QCOMPARE(daily.value("appId").toString(), QStringLiteral("org.kiosque.Daily"));
+        QVERIFY(model->roleNames().values().contains("screenshotUrl"));
+        QVERIFY(model->roleNames().values().contains("brandColorLight"));
+        const auto idRole = model->roleNames().key("appId");
+        for (int row = 0; row < model->rowCount(); ++row)
+            QVERIFY(model->data(model->index(row, 0), idRole).toString() != daily.value("appId").toString());
+        const int before = resets.count();
+        QVERIFY(QMetaObject::invokeMethod(model, "refresh"));
+        QTRY_VERIFY_WITH_TIMEOUT(!model->property("loading").toBool(), 10000);
+        QCOMPARE(resets.count(), before);
+    }
     void cleanupTestCase() { setup.cleanupTestCase(); }
 };
 QTEST_MAIN(Models)

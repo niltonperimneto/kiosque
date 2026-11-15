@@ -23,7 +23,8 @@ flowchart LR
 - Each HTTP client owns its transport, API base and cache handle. Production constructors share the production cache; explicit constructors allow independent caches/endpoints. Settings persistence and disk caches accept explicit paths; saving settings does not invoke a portal or systemctl. Background/autostart integration remains an explicit operation.
 - The settings controller invokes background integration when the user changes automatic updates. It awaits the portal's permission response, reports failures to QML and restores the saved automatic-update preference on rejection. Schedule-only edits do not repeat the permission request. Settings controls save on user interaction rather than initialization, and persist canonical schedule identifiers.
 - Successful review submission invalidates that app's review/rating cache. Review-ID-only voting and moderation invalidate review/rating caches across apps, retaining catalog and detail caches. The detail page displays load/action errors and reloads review data after successful mutations.
-- Image decoding returns owned pixels from core. Only the adapter exposes raw C buffers, and the shared C++ image provider frees each allocation. Provider URLs encode the underlying URL, so changing metadata cannot reuse an old app-ID image mapping.
+- The core image loader owns its transport, disk directory, download locks and decoded-frame cache (96 MiB, ten-minute TTL). Cache identities include the source URL and requested dimensions, plus file metadata for local images. Downloads retain original bytes; SIMD resizing runs on blocking workers.
+- Image decoding returns owned pixels from core. Only the adapter exposes raw C buffers, and the shared C++ image provider transfers each allocation to a QImage cleanup callback that frees it exactly once. Provider URLs encode the underlying URL, so changing metadata cannot reuse an old app-ID image mapping.
 
 ## Execution and compatibility
 
@@ -48,3 +49,7 @@ Every other permission is read-only and scoped to what the code reads:
 | `org.freedesktop.Notifications`, `org.kde.StatusNotifierWatcher` | Update notifier notifications and tray icon |
 
 The app writes only to its own `~/.var/app` directories. Temporary `.flatpakref`/`.flatpakrepo` files go to its cache directory, which has the same path on the host. Do not reintroduce `--filesystem=host`. Never include OAuth response bodies in errors or logs, since they can contain tokens.
+
+## Storefront projections
+
+Mobile and sorted Games collections use the injected Flathub client. App-list and featured request generations reject stale completions. The featured model separates App of the Day by app ID and exposes branding colors and screenshots; unchanged projections avoid model resets. Featured disk entries use schema 2, while other cache schemas remain unchanged. The roadmap's per-page AppDetails and daemon-backed updater remain the integration baseline.

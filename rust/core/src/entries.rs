@@ -17,6 +17,14 @@ pub struct FeaturedEntry {
     pub app_id: String,
     pub description: String,
     pub developer: String,
+    #[serde(default)]
+    pub screenshot_url: String,
+    #[serde(default)]
+    pub brand_color_light: String,
+    #[serde(default)]
+    pub brand_color_dark: String,
+    #[serde(default)]
+    pub is_app_of_the_day: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

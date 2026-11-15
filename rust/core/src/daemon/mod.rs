@@ -321,40 +321,42 @@ pub extern "C" fn kiosque_daemon_busy() -> bool {
 /// process, returning a process exit code.
 #[unsafe(no_mangle)]
 pub extern "C" fn kiosque_run_update_once() -> i32 {
-    crate::runtime::runtime().block_on(async {
-        let backend = crate::flatpak::backend();
-        let updates = match backend.list_updates().await {
-            Ok(u) => u,
-            Err(e) => {
-                kerr!("update check failed: {}", e);
-                return 1;
-            }
-        };
-        if updates.is_empty() {
-            klog!("no updates available");
-            return 0;
+    crate::runtime::runtime().block_on(run_update_once(&*crate::flatpak::backend()))
+}
+
+/// Check and apply updates using the selected backend. Does not start Qt or D-Bus.
+pub async fn run_update_once(backend: &dyn crate::flatpak::FlatpakBackend) -> i32 {
+    let updates = match backend.list_updates().await {
+        Ok(u) => u,
+        Err(e) => {
+            kerr!("update check failed: {}", e);
+            return 1;
         }
-        klog!("updating {} refs", updates.len());
-        let sink: crate::flatpak::ProgressSink = std::sync::Arc::new(|p| {
-            if !p.status.is_empty() {
-                klog!("{:>3.0}% {}", p.fraction.max(0.0) * 100.0, p.status);
-            }
-        });
-        match backend
-            .run(
-                crate::flatpak::Operation::Update { ids: vec![] },
-                sink,
-                tokio_util::sync::CancellationToken::new(),
-            )
-            .await
-        {
-            Ok(()) => 0,
-            Err(e) => {
-                kerr!("update failed: {}", e);
-                1
-            }
+    };
+    if updates.is_empty() {
+        klog!("no updates available");
+        return 0;
+    }
+    klog!("updating {} refs", updates.len());
+    let sink: crate::flatpak::ProgressSink = std::sync::Arc::new(|p| {
+        if !p.status.is_empty() {
+            klog!("{:>3.0}% {}", p.fraction.max(0.0) * 100.0, p.status);
         }
-    })
+    });
+    match backend
+        .run(
+            crate::flatpak::Operation::Update { ids: vec![] },
+            sink,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+    {
+        Ok(()) => 0,
+        Err(e) => {
+            kerr!("update failed: {}", e);
+            1
+        }
+    }
 }
 
 #[cfg(test)]
@@ -415,5 +417,25 @@ mod tests {
         let (decoded,): (JobWire,) = message.body().deserialize().unwrap();
         let back: Job = decoded.into();
         assert_eq!(back, job);
+    }
+    #[tokio::test]
+    async fn one_shot_reports_no_updates_success_and_backend_failures() {
+        use crate::flatpak::{Operation, UpdateInfo, mock::MockBackend};
+        let backend = MockBackend::default();
+        assert_eq!(run_update_once(&backend).await, 0);
+        assert!(backend.ran.lock().unwrap().is_empty());
+        backend.updates.lock().unwrap().push(UpdateInfo::default());
+        assert_eq!(run_update_once(&backend).await, 0);
+        assert_eq!(
+            *backend.ran.lock().unwrap(),
+            vec![Operation::Update { ids: vec![] }]
+        );
+        backend.updates.lock().unwrap().push(UpdateInfo::default());
+        *backend.fail_with.lock().unwrap() = Some("fixture failed".into());
+        assert_eq!(run_update_once(&backend).await, 1);
+        *backend.list_updates_error.lock().unwrap() = Some("fixture unavailable".into());
+        let before = backend.ran.lock().unwrap().len();
+        assert_eq!(run_update_once(&backend).await, 1);
+        assert_eq!(backend.ran.lock().unwrap().len(), before);
     }
 }
