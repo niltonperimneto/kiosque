@@ -89,6 +89,24 @@ install_data('org.kiosque.Kiosque.desktop',
   install_dir: get_option('datadir') / 'applications'
 )
 
+# D-Bus activation of the daemon. Started without arguments it serves
+# on-demand clients (the GUI, KRunner) and exits when idle; autostart via the
+# Background portal passes --background instead (rust/core/src/settings.rs).
+daemon_service_conf = configuration_data()
+daemon_service_conf.set('bindir', get_option('prefix') / get_option('bindir'))
+configure_file(
+  input: 'data/org.kiosque.Kiosque.Daemon.service.in',
+  output: 'org.kiosque.Kiosque.Daemon.service',
+  configuration: daemon_service_conf,
+  install: true,
+  install_dir: get_option('datadir') / 'dbus-1/services'
+)
+
+# KRunner D-Bus runner served by the daemon at /runner.
+install_data('data/krunner/org.kiosque.Kiosque.desktop',
+  install_dir: get_option('datadir') / 'krunner/dbusplugins'
+)
+
 install_data('qml/images/logo.svg',
   rename: 'org.kiosque.Kiosque.svg',
   install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps'

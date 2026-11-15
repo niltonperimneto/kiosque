@@ -1,334 +1,66 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
+//
+// kiosque-update: the Kiosque daemon shell. The transaction queue, update
+// checks, automatic updates and the D-Bus services (org.kiosque.Kiosque.Daemon
+// and the KRunner runner) live in Rust (rust/core/src/daemon). This file only
+// provides the tray icon and desktop notifications.
 
 #include <cstring>
+#include <mutex>
+
+#include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
-#include <QSystemTrayIcon>
-#include <QMenu>
-#include <QAction>
-#include <QTimer>
-#include <QProcess>
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusMessage>
-#include <QJsonDocument>
-#include <QJsonArray>
-#include <QJsonObject>
 #include <QDir>
-#include <QFile>
-#include <QTextStream>
 #include <QFileInfo>
-#include <QCommandLineParser>
+#include <QMenu>
+#include <QMetaObject>
+#include <QProcess>
+#include <QSystemTrayIcon>
+#include <QTextStream>
 #include <KLocalizedString>
-#include <QDebug>
 
-class UpdateDaemon : public QObject {
-    Q_OBJECT
-public:
-    UpdateDaemon(QObject* parent = nullptr) : QObject(parent) {
-        m_trayIcon = new QSystemTrayIcon(QIcon::fromTheme("system-software-update"), this);
-        
-        m_menu = new QMenu();
-        m_actionOpen = m_menu->addAction(QIcon::fromTheme("kiosque"), i18n("Open Store"));
-        m_actionCheck = m_menu->addAction(QIcon::fromTheme("view-refresh"), i18n("Check for Updates"));
-        m_actionUpdateAll = m_menu->addAction(QIcon::fromTheme("system-software-update"), i18n("Update All"));
-        m_menu->addSeparator();
-        m_actionQuit = m_menu->addAction(QIcon::fromTheme("application-exit"), i18n("Quit"));
-        
-        m_trayIcon->setContextMenu(m_menu);
-        
-        connect(m_actionOpen, &QAction::triggered, this, &UpdateDaemon::openStore);
-        connect(m_actionCheck, &QAction::triggered, this, &UpdateDaemon::checkUpdatesAsync);
-        connect(m_actionUpdateAll, &QAction::triggered, this, &UpdateDaemon::updateAllAsync);
-        connect(m_actionQuit, &QAction::triggered, qApp, &QCoreApplication::quit);
-        
-        connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
-            if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
-                openStore();
-            }
-        });
-        
-        // Connect DBus Notification signals
-        QDBusConnection::sessionBus().connect(
-            "org.freedesktop.Notifications",
-            "/org/freedesktop/Notifications",
-            "org.freedesktop.Notifications",
-            "ActionInvoked",
-            this,
-            SLOT(onNotificationActionInvoked(uint,QString))
-        );
-        
-        // Timer for periodic checking (every 4 hours)
-        m_checkTimer = new QTimer(this);
-        connect(m_checkTimer, &QTimer::timeout, this, &UpdateDaemon::checkUpdatesAsync);
-    }
-    
-    void start() {
-        if (!QFile::exists(QStringLiteral("/.flatpak-info"))) {
-            createAutostartFile();
-        }
-        requestBackgroundPortal();
-        
-        // Check immediately
-        checkUpdatesAsync();
-        
-        // Start periodic check
-        m_checkTimer->start(4 * 60 * 60 * 1000); // 4 hours in ms
-    }
-
-public Q_SLOTS:
-    void openStore() {
-        QProcess::startDetached("kiosque", QStringList());
-    }
-    
-    void checkUpdatesAsync() {
-        if (m_checking) return;
-        m_checking = true;
-        m_actionCheck->setEnabled(false);
-        m_actionUpdateAll->setEnabled(false);
-        
-        QProcess* proc = new QProcess(this);
-        connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, [this, proc](int exitCode, QProcess::ExitStatus exitStatus) {
-            m_checking = false;
-            m_actionCheck->setEnabled(true);
-            
-            if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-                QByteArray out = proc->readAllStandardOutput().trimmed();
-                parseCheckOutput(out);
-            } else {
-                qDebug() << "Update check process failed:" << proc->readAllStandardError();
-            }
-            proc->deleteLater();
-        });
-        
-        proc->start("flatpak", QStringList() << "remote-ls" << "--updates" << "-j");
-    }
-    
-    void updateAllAsync() {
-        if (m_updating || m_updatesList.isEmpty()) return;
-        m_updating = true;
-        m_actionCheck->setEnabled(false);
-        m_actionUpdateAll->setEnabled(false);
-        
-        sendNotification(i18n("Updating Applications"), i18n("Kiosque is installing flatpak updates in the background..."), false);
-        
-        QProcess* proc = new QProcess(this);
-        connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, [this, proc](int exitCode, QProcess::ExitStatus exitStatus) {
-            m_updating = false;
-            m_actionCheck->setEnabled(true);
-            
-            if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-                sendNotification(i18n("Updates Completed"), i18n("All applications have been successfully updated."), false);
-                m_updatesList.clear();
-                m_trayIcon->hide();
-            } else {
-                sendNotification(i18n("Updates Failed"), i18n("An error occurred while installing updates."), false);
-                m_actionUpdateAll->setEnabled(true);
-            }
-            proc->deleteLater();
-        });
-        
-        proc->start("flatpak", QStringList() << "update" << "-y");
-    }
-    
-    void onNotificationActionInvoked(uint notificationId, const QString& actionKey) {
-        if (notificationId == m_lastNotificationId && actionKey == "open") {
-            openStore();
-        }
-    }
-
-private:
-    void parseCheckOutput(const QByteArray& data) {
-        m_updatesList.clear();
-        if (data.isEmpty() || data == "[]") {
-            m_trayIcon->hide();
-            return;
-        }
-        
-        QJsonDocument doc = QJsonDocument::fromJson(data);
-        if (doc.isArray()) {
-            QJsonArray arr = doc.array();
-            for (const auto& val : arr) {
-                QJsonObject obj = val.toObject();
-                QString appId = obj.value("application").toString();
-                if (!appId.isEmpty()) {
-                    m_updatesList.append(appId);
-                }
-            }
-        }
-        
-        int count = m_updatesList.size();
-        if (count > 0) {
-            m_actionUpdateAll->setEnabled(true);
-            m_trayIcon->setToolTip(i18n("Kiosque: %1 updates available", count));
-            m_trayIcon->show();
-            
-            sendNotification(
-                i18n("Software Updates Available"),
-                i18n("%1 application updates are available. Click to open Kiosque.", count),
-                true
-            );
-        } else {
-            m_trayIcon->hide();
-        }
-    }
-    
-    void sendNotification(const QString& title, const QString& body, bool hasAction) {
-        QDBusInterface notify(
-            "org.freedesktop.Notifications",
-            "/org/freedesktop/Notifications",
-            "org.freedesktop.Notifications",
-            QDBusConnection::sessionBus()
-        );
-        if (!notify.isValid()) {
-            qDebug() << "Notifications service not available.";
-            return;
-        }
-        
-        QStringList actions;
-        if (hasAction) {
-            actions << "open" << i18n("Open Kiosque");
-        }
-        
-        QVariantMap hints;
-        QDBusMessage reply = notify.call("Notify", "Kiosque", (quint32)m_lastNotificationId, "system-software-update", title, body, actions, hints, (qint32)10000);
-        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
-            m_lastNotificationId = reply.arguments().at(0).toUInt();
-        }
-    }
-    
-    void createAutostartFile() {
-        QString autostartDir = QDir::homePath() + "/.config/autostart";
-        QDir().mkpath(autostartDir);
-        
-        QFile file(autostartDir + "/com.kiosque.app.update.desktop");
-        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream out(&file);
-            out << "[Desktop Entry]\n"
-                << "Type=Application\n"
-                << "Name=Kiosque Update Notifier\n"
-                << "Comment=Checks for Flatpak updates in the background\n"
-                << "Exec=kiosque-update --daemon\n"
-                << "Icon=system-software-update\n"
-                << "Terminal=false\n"
-                << "X-GNOME-Autostart-enabled=true\n";
-            file.close();
-        }
-    }
-    
-    void requestBackgroundPortal() {
-        QDBusInterface portal(
-            "org.freedesktop.portal.Desktop",
-            "/org/freedesktop/portal/desktop",
-            "org.freedesktop.portal.Background",
-            QDBusConnection::sessionBus()
-        );
-        if (!portal.isValid()) {
-            qDebug() << "Background portal not available.";
-            return;
-        }
-        
-        QVariantMap options;
-        options.insert("handle_token", "kiosque_update_bg");
-        options.insert("reason", "Check and notify for application updates in the background");
-        options.insert("autostart", true);
-        options.insert("commandline", QStringList() << "kiosque-update" << "--daemon");
-        
-        portal.call("RequestBackground", "", options);
-    }
-    
-    QSystemTrayIcon* m_trayIcon;
-    QMenu* m_menu;
-    QAction* m_actionOpen;
-    QAction* m_actionCheck;
-    QAction* m_actionUpdateAll;
-    QAction* m_actionQuit;
-    QTimer* m_checkTimer;
-    QStringList m_updatesList;
-    uint m_lastNotificationId = 0;
-    bool m_checking = false;
-    bool m_updating = false;
-};
-
-void runOneShotCheck() {
-    qInfo() << "kiosque-update: Running one-shot update check...";
-    QProcess checkProc;
-    checkProc.start("flatpak", QStringList() << "remote-ls" << "--updates" << "-j");
-    if (!checkProc.waitForFinished(30000)) {
-        qCritical() << "Failed to check for updates: flatpak process timed out.";
-        QCoreApplication::exit(-1);
-        return;
-    }
-    
-    QByteArray out = checkProc.readAllStandardOutput().trimmed();
-    if (out.isEmpty() || out == "[]") {
-        qInfo() << "No updates available.";
-        QCoreApplication::exit(0);
-        return;
-    }
-    
-    qInfo() << "Updates are available. Running flatpak update...";
-    QProcess updateProc;
-    updateProc.setProcessChannelMode(QProcess::ForwardedChannels);
-    updateProc.start("flatpak", QStringList() << "update" << "-y");
-    if (!updateProc.waitForFinished(600000)) { // 10 minutes
-        qCritical() << "Flatpak update timed out or failed.";
-        QCoreApplication::exit(-1);
-        return;
-    }
-    
-    if (updateProc.exitCode() == 0) {
-        qInfo() << "Updates completed successfully.";
-        QCoreApplication::exit(0);
-    } else {
-        qCritical() << "Flatpak update failed with exit code" << updateProc.exitCode();
-        QCoreApplication::exit(updateProc.exitCode());
-    }
+// Exported by kiosque-core (rust/core/src/daemon/mod.rs), linked via libkiosque.a.
+extern "C" {
+typedef void (*KiosqueDaemonCallback)(int event, int count, const char *text, void *ctx);
+bool kiosque_daemon_start(bool background, KiosqueDaemonCallback cb, void *ctx);
+void kiosque_daemon_check_updates();
+void kiosque_daemon_update_all();
+bool kiosque_daemon_busy();
+int kiosque_run_update_once();
 }
 
-int main(int argc, char* argv[]) {
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-            QTextStream(stdout) << "Usage: kiosque-update [--check]\n";
-            return 0;
-        }
-    }
-    bool daemonMode = true;
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--check") == 0 || strcmp(argv[i], "-c") == 0) {
-            daemonMode = false;
-            break;
-        }
-    }
-    
-    if (!daemonMode) {
-        QCoreApplication app(argc, argv);
-        QCoreApplication::setApplicationName(QStringLiteral("KiosqueUpdate"));
-        QCoreApplication::setOrganizationName(QStringLiteral("Kiosque"));
-        QCoreApplication::setOrganizationDomain(QStringLiteral("kiosque.app"));
-        
-        QDir localeDir(QCoreApplication::applicationDirPath() + QStringLiteral("/../po"));
-        if (localeDir.exists()) {
-            KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), localeDir.absolutePath());
-        } else {
-#ifdef LOCALE_INSTALL_DIR
-            KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), QStringLiteral(LOCALE_INSTALL_DIR));
-#endif
-        }
-        KLocalizedString::setApplicationDomain("kiosque");
-        
-        QTimer::singleShot(0, &runOneShotCheck);
-        return app.exec();
-    }
-    
-    QApplication app(argc, argv);
-    QApplication::setDesktopFileName(QStringLiteral("org.kiosque.Kiosque"));
-    QApplication::setApplicationName(QStringLiteral("KiosqueUpdate"));
-    QApplication::setOrganizationName(QStringLiteral("Kiosque"));
-    QApplication::setOrganizationDomain(QStringLiteral("kiosque.app"));
-    QApplication::setApplicationDisplayName(QStringLiteral("Kiosque Update Notifier"));
-    
+namespace {
+
+// Keep in sync with EVENT_* in rust/core/src/daemon/mod.rs.
+constexpr int EventUpdates = 1;
+constexpr int EventJobFinished = 2;
+constexpr int EventIdleExit = 3;
+constexpr int EventAutoUpdate = 4;
+
+class UpdateDaemon;
+
+// The Rust side keeps the callback for the lifetime of the process and has
+// no unregister entry point, so the callback never dereferences its context
+// pointer. Instead it posts to the currently registered daemon object, which
+// detaches itself under this lock before it is destroyed. The mutex is
+// intentionally leaked so worker threads can still lock it during static
+// destruction at process exit.
+std::mutex &daemonLock()
+{
+    static auto *lock = new std::mutex;
+    return *lock;
+}
+UpdateDaemon *g_daemon = nullptr;
+
+void daemonEventCallback(int event, int count, const char *text, void *ctx);
+
+void setupLocalization()
+{
     QDir localeDir(QCoreApplication::applicationDirPath() + QStringLiteral("/../po"));
     if (localeDir.exists()) {
         KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), localeDir.absolutePath());
@@ -338,10 +70,269 @@ int main(int argc, char* argv[]) {
 #endif
     }
     KLocalizedString::setApplicationDomain("kiosque");
-    
-    UpdateDaemon daemon;
-    daemon.start();
-    
+}
+
+class UpdateDaemon : public QObject
+{
+    Q_OBJECT
+public:
+    explicit UpdateDaemon(bool background, QObject *parent = nullptr)
+        : QObject(parent)
+        , m_background(background)
+    {
+        m_trayIcon = new QSystemTrayIcon(QIcon::fromTheme(QStringLiteral("system-software-update")), this);
+
+        m_menu = new QMenu();
+        m_actionOpen = m_menu->addAction(QIcon::fromTheme(QStringLiteral("org.kiosque.Kiosque")), i18n("Open Store"));
+        m_actionCheck = m_menu->addAction(QIcon::fromTheme(QStringLiteral("view-refresh")), i18n("Check for Updates"));
+        m_actionUpdateAll = m_menu->addAction(QIcon::fromTheme(QStringLiteral("system-software-update")), i18n("Update All"));
+        m_menu->addSeparator();
+        m_actionQuit = m_menu->addAction(QIcon::fromTheme(QStringLiteral("application-exit")), i18n("Quit"));
+        m_actionUpdateAll->setEnabled(false);
+        m_trayIcon->setContextMenu(m_menu);
+
+        connect(m_actionOpen, &QAction::triggered, this, &UpdateDaemon::openStore);
+        connect(m_actionCheck, &QAction::triggered, this, &UpdateDaemon::checkUpdates);
+        connect(m_actionUpdateAll, &QAction::triggered, this, &UpdateDaemon::updateAll);
+        connect(m_actionQuit, &QAction::triggered, qApp, &QCoreApplication::quit);
+        connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
+            if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
+                openStore();
+            }
+        });
+
+        QDBusConnection::sessionBus().connect(QStringLiteral("org.freedesktop.Notifications"),
+                                              QStringLiteral("/org/freedesktop/Notifications"),
+                                              QStringLiteral("org.freedesktop.Notifications"),
+                                              QStringLiteral("ActionInvoked"),
+                                              this,
+                                              SLOT(onNotificationActionInvoked(uint, QString)));
+
+        std::lock_guard<std::mutex> guard(daemonLock());
+        g_daemon = this;
+    }
+
+    ~UpdateDaemon() override
+    {
+        {
+            std::lock_guard<std::mutex> guard(daemonLock());
+            if (g_daemon == this) {
+                g_daemon = nullptr;
+            }
+        }
+        // Queued events still pending for this object are discarded by ~QObject.
+        delete m_menu;
+    }
+
+    // Claims the bus name and starts the Rust services. False if another
+    // instance already owns org.kiosque.Kiosque.Daemon or the bus is unreachable.
+    bool start()
+    {
+        // The update check runs inside the daemon scheduler immediately.
+        return kiosque_daemon_start(m_background, &daemonEventCallback, this);
+    }
+
+    // Called on the GUI thread (queued from the Rust worker threads).
+    void handleEvent(int event, int count, const QString &text)
+    {
+        switch (event) {
+        case EventUpdates:
+            onUpdates(count);
+            break;
+        case EventJobFinished:
+            onJobFinished(count != 0, text);
+            break;
+        case EventAutoUpdate:
+            sendNotification(i18n("Updating Applications"),
+                             i18n("Kiosque is installing updates automatically in the background."),
+                             false);
+            refreshActions();
+            break;
+        case EventIdleExit:
+            if (!m_background && !kiosque_daemon_busy()) {
+                QCoreApplication::quit();
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+public Q_SLOTS:
+    void openStore()
+    {
+        // Launch the sibling GUI binary (same prefix / sandbox), falling back to PATH.
+        const QString sibling = QCoreApplication::applicationDirPath() + QStringLiteral("/kiosque");
+        const QString program = QFileInfo(sibling).isExecutable() ? sibling : QStringLiteral("kiosque");
+        if (!QProcess::startDetached(program, QStringList())) {
+            qWarning("kiosque-update: cannot launch the store");
+        }
+    }
+
+    void checkUpdates()
+    {
+        kiosque_daemon_check_updates();
+    }
+
+    void updateAll()
+    {
+        if (m_updateCount <= 0 || kiosque_daemon_busy()) {
+            return;
+        }
+        kiosque_daemon_update_all();
+        sendNotification(i18n("Updating Applications"),
+                         i18n("Kiosque is installing updates in the background..."),
+                         false);
+        refreshActions();
+    }
+
+    void onNotificationActionInvoked(uint notificationId, const QString &actionKey)
+    {
+        if (notificationId == m_lastNotificationId && actionKey == QLatin1String("open")) {
+            openStore();
+        }
+    }
+
+private:
+    void onUpdates(int count)
+    {
+        const int previous = m_updateCount;
+        m_updateCount = count;
+        refreshActions();
+        if (count <= 0) {
+            m_trayIcon->hide();
+            return;
+        }
+        m_trayIcon->setToolTip(i18np("Kiosque: %1 update available", "Kiosque: %1 updates available", count));
+        m_trayIcon->show();
+        // Only notify when the number of pending updates grows, not on every re-check.
+        if (count > previous) {
+            sendNotification(i18n("Software Updates Available"),
+                             i18np("%1 application update is available. Click to open Kiosque.",
+                                   "%1 application updates are available. Click to open Kiosque.",
+                                   count),
+                             true);
+        }
+    }
+
+    void onJobFinished(bool success, const QString &title)
+    {
+        refreshActions();
+        if (success) {
+            sendNotification(i18n("Operation Completed"), title, false);
+        } else {
+            sendNotification(i18n("Operation Failed"), title, true);
+        }
+    }
+
+    void refreshActions()
+    {
+        const bool busy = kiosque_daemon_busy();
+        m_actionUpdateAll->setEnabled(!busy && m_updateCount > 0);
+    }
+
+    void sendNotification(const QString &title, const QString &body, bool hasAction)
+    {
+        QDBusInterface notify(QStringLiteral("org.freedesktop.Notifications"),
+                              QStringLiteral("/org/freedesktop/Notifications"),
+                              QStringLiteral("org.freedesktop.Notifications"),
+                              QDBusConnection::sessionBus());
+        if (!notify.isValid()) {
+            qDebug("kiosque-update: notification service not available");
+            return;
+        }
+        QStringList actions;
+        if (hasAction) {
+            actions << QStringLiteral("open") << i18n("Open Kiosque");
+        }
+        QVariantMap hints;
+        hints.insert(QStringLiteral("desktop-entry"), QStringLiteral("org.kiosque.Kiosque"));
+        const QDBusMessage reply = notify.call(QStringLiteral("Notify"),
+                                               QStringLiteral("Kiosque"),
+                                               static_cast<quint32>(m_lastNotificationId),
+                                               QStringLiteral("system-software-update"),
+                                               title,
+                                               body,
+                                               actions,
+                                               hints,
+                                               static_cast<qint32>(10000));
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
+            m_lastNotificationId = reply.arguments().at(0).toUInt();
+        }
+    }
+
+    bool m_background;
+    QSystemTrayIcon *m_trayIcon;
+    QMenu *m_menu;
+    QAction *m_actionOpen;
+    QAction *m_actionCheck;
+    QAction *m_actionUpdateAll;
+    QAction *m_actionQuit;
+    int m_updateCount = 0;
+    uint m_lastNotificationId = 0;
+};
+
+// Invoked on Rust worker threads; `text` is only valid during the call.
+void daemonEventCallback(int event, int count, const char *text, void * /*ctx*/)
+{
+    const QString message = text ? QString::fromUtf8(text) : QString();
+    std::lock_guard<std::mutex> guard(daemonLock());
+    if (UpdateDaemon *daemon = g_daemon) {
+        QMetaObject::invokeMethod(
+            daemon,
+            [daemon, event, count, message]() { daemon->handleEvent(event, count, message); },
+            Qt::QueuedConnection);
+    }
+}
+
+void printUsage()
+{
+    QTextStream(stdout) << "Usage: kiosque-update [--background | --check | --help]\n"
+                           "\n"
+                           "Without options the daemon is started on demand (D-Bus activation)\n"
+                           "and exits after it has been idle for a while.\n"
+                           "\n"
+                           "  --background  Keep running while idle (autostart; alias: --daemon)\n"
+                           "  --check       Check for and install all updates once, then exit\n"
+                           "  --help        Show this help and exit\n";
+}
+
+} // namespace
+
+int main(int argc, char *argv[])
+{
+    bool background = false;
+    bool oneShot = false;
+    for (int i = 1; i < argc; ++i) {
+        const char *arg = argv[i];
+        if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
+            printUsage();
+            return 0;
+        } else if (strcmp(arg, "--check") == 0 || strcmp(arg, "-c") == 0) {
+            oneShot = true;
+        } else if (strcmp(arg, "--background") == 0 || strcmp(arg, "--daemon") == 0) {
+            background = true;
+        }
+    }
+
+    if (oneShot) {
+        return kiosque_run_update_once();
+    }
+
+    QApplication app(argc, argv);
+    QApplication::setDesktopFileName(QStringLiteral("org.kiosque.Kiosque"));
+    QApplication::setApplicationName(QStringLiteral("KiosqueUpdate"));
+    QApplication::setOrganizationName(QStringLiteral("Kiosque"));
+    QApplication::setOrganizationDomain(QStringLiteral("kiosque.app"));
+    QApplication::setApplicationDisplayName(QStringLiteral("Kiosque Update Notifier"));
+    QApplication::setQuitOnLastWindowClosed(false);
+    setupLocalization();
+
+    UpdateDaemon daemon(background);
+    if (!daemon.start()) {
+        // Another instance owns the daemon name (or no session bus): nothing to do.
+        return 0;
+    }
     return app.exec();
 }
 

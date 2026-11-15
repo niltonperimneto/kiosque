@@ -10,6 +10,8 @@ import QtCore
 Kirigami.ScrollablePage {
     id: page
     title: i18n("Settings")
+    property bool readyForSaving: false
+    property string settingsError: ""
 
     leftPadding: Kirigami.Units.largeSpacing * 2
     rightPadding: Kirigami.Units.largeSpacing * 2
@@ -34,11 +36,20 @@ Kirigami.ScrollablePage {
     Component.onCompleted: {
         SettingsController.loadSettings()
         RepoModel.refresh()
+        readyForSaving = true
     }
 
     ColumnLayout {
         spacing: Kirigami.Units.largeSpacing * 2
         width: parent.width
+
+        Kirigami.InlineMessage {
+            objectName: "settingsErrorMessage"
+            Layout.fillWidth: true
+            type: Kirigami.MessageType.Error
+            text: page.settingsError
+            visible: text !== ""
+        }
 
         // ── Settings Header ────────────────────────────────────────────────
         RowLayout {
@@ -113,32 +124,36 @@ Kirigami.ScrollablePage {
 
                     Controls.Switch {
                         id: autoUpdateSwitch
+                        objectName: "autoUpdateSwitch"
                         Kirigami.FormData.label: i18n("Enable Automatic Updates:")
                         checked: SettingsController.auto_update
-                        onCheckedChanged: saveSettings()
+                        enabled: !SettingsController.saving_settings
+                        onToggled: page.saveSettings()
                     }
 
                     Controls.ComboBox {
                         id: frequencyCombo
+                        objectName: "updateFrequencyCombo"
                         Kirigami.FormData.label: i18n("Frequency:")
                         model: [i18n("Daily"), i18n("Weekly")]
                         currentIndex: SettingsController.update_frequency.toLowerCase() === "weekly" ? 1 : 0
-                        enabled: autoUpdateSwitch.checked
+                        enabled: autoUpdateSwitch.checked && !SettingsController.saving_settings
                         visible: advancedToggle.checked
-                        onCurrentIndexChanged: saveSettings()
+                        onActivated: page.saveSettings()
                     }
 
                     Controls.TextField {
                         id: timeField
+                        objectName: "updateTimeField"
                         Kirigami.FormData.label: i18n("Time (HH:MM):")
                         text: SettingsController.update_time
                         placeholderText: "02:00"
-                        enabled: autoUpdateSwitch.checked
+                        enabled: autoUpdateSwitch.checked && !SettingsController.saving_settings
                         visible: advancedToggle.checked
                         validator: RegularExpressionValidator { regularExpression: /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/ }
-                        onTextChanged: {
+                        onEditingFinished: {
                             if (acceptableInput) {
-                                saveSettings()
+                                page.saveSettings()
                             }
                         }
                     }
@@ -583,10 +598,11 @@ Kirigami.ScrollablePage {
     }
 
     function saveSettings() {
-        if (!autoUpdateSwitch.checked || timeField.acceptableInput) {
+        if (readyForSaving && !SettingsController.saving_settings && timeField.acceptableInput) {
+            settingsError = ""
             SettingsController.saveSettings(
                 autoUpdateSwitch.checked,
-                frequencyCombo.currentText,
+                frequencyCombo.currentIndex === 1 ? "Weekly" : "Daily",
                 timeField.text
             )
         }
@@ -642,6 +658,13 @@ Kirigami.ScrollablePage {
 
     Connections {
         target: SettingsController
+        function onSettingsSaved(success, error) {
+            page.settingsError = success ? "" : i18n("Could not apply update settings: %1", error)
+            if (!success) {
+                // Restore the binding after a user toggle rejected by the portal.
+                autoUpdateSwitch.checked = Qt.binding(function() { return SettingsController.auto_update })
+            }
+        }
         function onLoginFailed(error) {
             loginErrorDialog.errorMessage = error;
             loginErrorDialog.open();

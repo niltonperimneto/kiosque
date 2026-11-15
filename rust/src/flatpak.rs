@@ -112,41 +112,73 @@ pub mod cli {
             }
         }
     }
-    async fn run(
+    /// Terminal state of a registry job driven by [`run`].
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum JobOutcome {
+        Done,
+        Failed(String),
+        Cancelled,
+    }
+
+    impl JobOutcome {
+        pub fn into_result(self) -> std::result::Result<(), String> {
+            match self {
+                JobOutcome::Done => Ok(()),
+                JobOutcome::Failed(error) => Err(error),
+                JobOutcome::Cancelled => Err("operation cancelled".into()),
+            }
+        }
+    }
+
+    /// Enqueue `op` on the shared transaction client and follow its registry
+    /// job until it reaches a terminal state.
+    ///
+    /// `progress` receives `(job.progress, job.status, job.id)` on every
+    /// change of the job (progress is negative while indeterminate). It is
+    /// called once with `(-1.0, "", id)` straight after enqueueing when the
+    /// registry does not know the job yet, so callers learn the id needed for
+    /// [`crate::transactions::Transactions::cancel`] immediately.
+    /// Dropping the returned future cancels the job.
+    pub async fn run(
         op: Operation,
-        progress: impl Fn(String) + Send,
-    ) -> std::result::Result<(), String> {
+        title: &str,
+        progress: impl Fn(f64, String, u64) + Send,
+    ) -> JobOutcome {
         use crate::registry::JobState;
         let mut events = services().registry.subscribe();
         let client = services().transactions().await;
-        let id = client.enqueue(op, "").await?;
+        let id = match client.enqueue(op, title).await {
+            Ok(id) => id,
+            Err(error) => return JobOutcome::Failed(error),
+        };
         let mut guard = CancelOnDrop {
             client,
             id,
             finished: false,
         };
+        if services().registry.job(id).is_none() {
+            progress(-1.0, String::new(), id);
+        }
         loop {
             if let Some(job) = services().registry.job(id) {
-                progress(job.status.clone());
-                match job.state {
-                    JobState::Done => {
-                        guard.finished = true;
-                        return Ok(());
-                    }
-                    JobState::Failed(error) => {
-                        guard.finished = true;
-                        return Err(error);
-                    }
-                    JobState::Cancelled => {
-                        guard.finished = true;
-                        return Err("operation cancelled".into());
-                    }
-                    _ => {}
+                let outcome = match job.state {
+                    JobState::Done => Some(JobOutcome::Done),
+                    JobState::Failed(ref error) => Some(JobOutcome::Failed(error.clone())),
+                    JobState::Cancelled => Some(JobOutcome::Cancelled),
+                    JobState::Queued | JobState::Running => None,
+                };
+                progress(job.progress, job.status.clone(), job.id);
+                if let Some(outcome) = outcome {
+                    guard.finished = true;
+                    return outcome;
                 }
             }
             match events.recv().await {
                 Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                Err(_) => return Err("transaction registry closed".into()),
+                Err(_) => {
+                    guard.finished = true;
+                    return JobOutcome::Failed("transaction registry closed".into());
+                }
             }
         }
     }
@@ -158,9 +190,11 @@ pub mod cli {
                 id: id.into(),
                 scope,
             },
-            |_| {},
+            "",
+            |_, _, _| {},
         )
         .await
+        .into_result()
     }
     pub async fn uninstall_app(id: &str) -> std::result::Result<(), String> {
         run(
@@ -168,14 +202,18 @@ pub mod cli {
                 id: id.into(),
                 scope: None,
             },
-            |_| {},
+            "",
+            |_, _, _| {},
         )
         .await
+        .into_result()
     }
     pub async fn update_apps(
         ids: &[String],
-        progress: impl Fn(String) + Send,
+        progress: impl Fn(f64, String, u64) + Send,
     ) -> std::result::Result<(), String> {
-        run(Operation::Update { ids: ids.to_vec() }, progress).await
+        run(Operation::Update { ids: ids.to_vec() }, "", progress)
+            .await
+            .into_result()
     }
 }

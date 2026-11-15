@@ -257,6 +257,7 @@ impl OdrsClient {
                 message: super::client::preview(&body, 200),
             });
         }
+        self.cache.invalidate_reviews(app_id).await;
         Ok(())
     }
 
@@ -280,6 +281,7 @@ impl OdrsClient {
                 message: super::client::preview(&body, 200),
             });
         }
+        self.cache.invalidate_all_reviews();
         Ok(())
     }
 
@@ -303,6 +305,7 @@ impl OdrsClient {
                 message: super::client::preview(&body, 200),
             });
         }
+        self.cache.invalidate_all_reviews();
         Ok(())
     }
 
@@ -326,6 +329,7 @@ impl OdrsClient {
                 message: super::client::preview(&body, 200),
             });
         }
+        self.cache.invalidate_all_reviews();
         Ok(())
     }
 
@@ -349,6 +353,7 @@ impl OdrsClient {
                 message: super::client::preview(&body, 200),
             });
         }
+        self.cache.invalidate_all_reviews();
         Ok(())
     }
 }

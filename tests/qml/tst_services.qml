@@ -75,6 +75,7 @@ TestCase {
     function test_settings_roundtrip() {
         SettingsController.loadSettings()
         SettingsController.saveSettings(true, "Weekly", "03:15")
+        tryCompare(SettingsController, "saving_settings", false, 10000)
         SettingsController.loadSettings()
         compare(SettingsController.auto_update, true)
         compare(SettingsController.update_frequency, "Weekly")

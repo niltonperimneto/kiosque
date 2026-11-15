@@ -201,6 +201,19 @@ impl AppCache {
         put_summary
     );
 
+    /// A successful submission changes the app's reviews and aggregate rating.
+    pub async fn invalidate_reviews(&self, app_id: &str) {
+        self.odrs_reviews.invalidate(app_id).await;
+        self.odrs_ratings.invalidate(app_id).await;
+    }
+
+    /// Voting/moderation identifies a review rather than an app. Invalidate
+    /// only review data, retaining unrelated catalog/details caches.
+    pub fn invalidate_all_reviews(&self) {
+        self.odrs_reviews.invalidate_all();
+        self.odrs_ratings.invalidate_all();
+    }
+
     pub async fn clear(&self) {
         klog!("CACHE CLEAR: Invalidate all moka cache entries");
         self.collections.invalidate_all();
