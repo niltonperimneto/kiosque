@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import "../style" as Styles
 import org.kde.kirigami as Kirigami
 
 // A clickable application tile: icon in a tinted frame, name and summary
@@ -41,14 +42,14 @@ Item {
         radius: Kirigami.Units.cornerRadius
         color: Kirigami.Theme.backgroundColor
         border.width: 1
-        border.color: Qt.alpha(Kirigami.Theme.textColor, 0.10)
+        border.color: root.activeFocus ? Kirigami.Theme.highlightColor : Qt.alpha(Kirigami.Theme.textColor, 0.10)
 
         shadow.size: root.hovered ? Kirigami.Units.largeSpacing * 2 : Kirigami.Units.largeSpacing
         shadow.yOffset: root.hovered ? Kirigami.Units.smallSpacing : 2
         shadow.color: Qt.alpha("black", root.hovered ? 0.25 : 0.15)
 
-        Behavior on shadow.size { NumberAnimation { duration: Kirigami.Units.longDuration } }
-        Behavior on shadow.yOffset { NumberAnimation { duration: Kirigami.Units.longDuration } }
+        Behavior on shadow.size { NumberAnimation { duration: Styles.Style.hoverDuration } }
+        Behavior on shadow.yOffset { NumberAnimation { duration: Styles.Style.hoverDuration } }
 
         Column {
             anchors.fill: parent
@@ -77,6 +78,7 @@ Item {
             }
 
             Kirigami.Heading {
+                font.family: Styles.Style.fontFamily
                 width: parent.width
                 level: 4
                 text: root.appName
@@ -108,6 +110,6 @@ Item {
 
     // Scale from the centre so the lift reads symmetrically.
     transformOrigin: Item.Center
-    scale: root.hovered ? 1.02 : 1.0
-    Behavior on scale { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic } }
+    scale: root.hovered ? Styles.Style.hoverScale : 1.0
+    Behavior on scale { NumberAnimation { duration: Styles.Style.hoverDuration; easing.type: Styles.Style.hoverEasing } }
 }

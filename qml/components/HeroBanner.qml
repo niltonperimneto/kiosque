@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import "../style" as Styles
 import org.kde.kirigami as Kirigami
 import org.kde.ki18n
 
@@ -138,6 +139,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Kirigami.Heading {
+                        font.family: Styles.Style.fontFamily
                         level: 5
                         text: i18nc("@info:label badge on the featured banner", "App of the Day")
                         color: root.fgColor
@@ -160,6 +162,7 @@ Item {
                 }
 
                 Kirigami.Heading {
+                    font.family: Styles.Style.fontFamily
                     width: parent.width
                     level: 1
                     text: root.appName
@@ -171,6 +174,7 @@ Item {
                 }
 
                 Kirigami.Heading {
+                    font.family: Styles.Style.fontFamily
                     width: parent.width
                     level: 5
                     visible: root.developer.length > 0

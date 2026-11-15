@@ -34,6 +34,24 @@ TestCase {
         keyClick(Qt.Key_Space)
         compare(clickSpy.count, 2)
     }
+    function test_storefront_contains_new_sections() {
+        let definition = Qt.createComponent("qrc:/qml/Main.qml")
+        compare(definition.status, Component.Ready, definition.errorString())
+        let root = createTemporaryObject(definition, null)
+        verify(root !== null)
+        let page = root.pageStack.currentItem
+        tryCompare(page.mobileModel, "loading", false, 10000)
+        tryCompare(page.featuredModel, "loading", false, 10000)
+        let games = findChild(page, "gamesSection")
+        verify(games !== null)
+        tryCompare(games.newReleasesModel, "loading", false, 10000)
+        tryCompare(games.trendingModel, "loading", false, 10000)
+        tryCompare(games.popularModel, "loading", false, 10000)
+        verify(waitForRendering(root.contentItem))
+        if (testArtifactDir !== "")
+            grabImage(root.contentItem).save(testArtifactDir + "/storefront.png")
+    }
+
     function test_branding_and_screenshot_fallbacks() {
         let hero = component("HeroBanner", {width: 800, height: 300, appName: "Fixture"})
         compare(hero.showScreenshot, false)

@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import "../style" as Styles
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
@@ -98,6 +99,7 @@ Kirigami.Card {
                 spacing: 0
 
                 Kirigami.Heading {
+                    font.family: Styles.Style.fontFamily
                     Layout.fillWidth: true
                     level: 2
                     text: root.appName

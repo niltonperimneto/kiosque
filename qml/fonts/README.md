@@ -23,8 +23,10 @@ default system font**, so the UI renders correctly either way.
    <file>qml/fonts/Inter-Variable.ttf</file>
    ```
 
-3. Rebuild. `Style._loader` will report `FontLoader.Ready` and
+3. Set `Style.fontSource` to `"qrc:/qml/fonts/Inter-Variable.ttf"` in
+   `qml/style/Style.qml`, then rebuild. `Style._loader` will report
+   `FontLoader.Ready` and
    `Style.fontFamily` will switch to the loaded family automatically.
 
-If you prefer a different face, update the `source:` path in
+If you prefer a different face, update `fontSource` in
 `qml/style/Style.qml` to match the filename you register here.

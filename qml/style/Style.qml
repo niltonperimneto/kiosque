@@ -11,11 +11,11 @@ import org.kde.kirigami as Kirigami
 QtObject {
     id: style
 
-    // Custom face loaded from the bundled resource. Falls back to the system
-    // default family until the .ttf is dropped into qml/fonts/ and registered
-    // in resources.qrc (see qml/fonts/README.md).
+    // Optional bundled font; an empty source uses the desktop's system font.
+    // Register a resource before configuring this (see qml/fonts/README.md).
+    readonly property url fontSource: ""
     readonly property FontLoader _loader: FontLoader {
-        source: "qrc:/qml/fonts/Inter-Variable.ttf"
+        source: style.fontSource
     }
     readonly property string fontFamily:
         _loader.status === FontLoader.Ready ? _loader.name

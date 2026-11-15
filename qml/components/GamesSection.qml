@@ -13,6 +13,7 @@ import com.kiosque
 // design — Flathub has no bulk ratings endpoint.
 ColumnLayout {
     id: root
+    objectName: "gamesSection"
 
     spacing: Kirigami.Units.largeSpacing * 2
 
