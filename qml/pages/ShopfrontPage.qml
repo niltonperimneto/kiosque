@@ -36,6 +36,17 @@ Kirigami.ScrollablePage {
     property AppListModel popularModel: AppListModel {}
     property AppListModel newModel: AppListModel {}
     property AppListModel updatedModel: AppListModel {}
+    property AppListModel mobileModel: AppListModel {}
+
+    // Flathub's App of the Day, published by the featured model separately
+    // from the carousel entries so the two never show the same app twice.
+    readonly property var aotd: {
+        try {
+            return JSON.parse(featuredModel.aotd_json || "{}");
+        } catch (e) {
+            return ({});
+        }
+    }
 
     property string activeSearchQuery: typeof searchField !== 'undefined' && searchField ? searchField.text : ""
 
@@ -46,6 +57,7 @@ Kirigami.ScrollablePage {
 
     Component.onCompleted: {
         popularModel.loadPopular();
+        mobileModel.loadMobile();
         newModel.loadNew();
         updatedModel.loadUpdated();
     }
@@ -54,6 +66,8 @@ Kirigami.ScrollablePage {
         if (refreshing) {
             featuredModel.refresh();
             popularModel.loadPopular();
+            gamesSection.reload();
+            mobileModel.loadMobile();
             newModel.loadNew();
             updatedModel.loadUpdated();
             appListModel.refresh();
@@ -65,7 +79,8 @@ Kirigami.ScrollablePage {
     ColumnLayout {
         id: pageContentLayout
         width: page.width
-        spacing: Kirigami.Units.largeSpacing * 2
+        // Dashboard-style air between content zones.
+        spacing: Kirigami.Units.gridUnit * 2
         // No animation to prevent blank screen issues
 
         // ── Hero carousel ───────────────────────────────────────────────
@@ -81,26 +96,28 @@ Kirigami.ScrollablePage {
         }
 
         // ── App of the Day spotlight ────────────────────────────────────
-        // Full-width feature surface; only the first featured entry (the
-        // Flathub App of the Day) is shown, others collapse to take no space.
-        Repeater {
-            model: page.featuredModel
-            delegate: Components.AppOfTheDayCard {
-                Layout.fillWidth: true
-                Layout.maximumWidth: index === 0 ? page.contentMaxWidth : 0
-                Layout.maximumHeight: index === 0 ? -1 : 0
-                Layout.alignment: Qt.AlignHCenter
-                Layout.leftMargin: Kirigami.Units.largeSpacing
-                Layout.rightMargin: Kirigami.Units.largeSpacing
+        // Flathub's daily pick as a standalone vertical card; the featured
+        // model keeps this entry out of the carousel so it only appears here.
+        // CardsLayout constrains the card to a prominent-but-not-edge-to-edge
+        // column width.
+        Kirigami.CardsLayout {
+            visible: page.isDefaultView && !!page.aotd.appId
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.contentMaxWidth
+            Layout.alignment: Qt.AlignHCenter
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            maximumColumns: 1
+            maximumColumnWidth: Kirigami.Units.gridUnit * 40
 
-                visible: index === 0 && page.isDefaultView
+            Components.AppOfTheDayCard {
+                appName: page.aotd.name || ""
+                appSummary: page.aotd.summary || ""
+                developer: page.aotd.developer || ""
+                iconUrl: page.aotd.iconUrl || ""
+                screenshotUrl: page.aotd.screenshotUrl || ""
 
-                cardAppId: typeof appId !== 'undefined' ? appId : ""
-                cardName: typeof name !== 'undefined' ? name : ""
-                cardSummary: typeof summary !== 'undefined' ? summary : ""
-                cardIconUrl: typeof iconUrl !== 'undefined' ? iconUrl : ""
-
-                onClicked: applicationWindow().pushAppDetail(this.cardAppId)
+                onClicked: applicationWindow().pushAppDetail(page.aotd.appId)
             }
         }
 
@@ -163,13 +180,26 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.maximumWidth: page.contentMaxWidth
             Layout.alignment: Qt.AlignHCenter
-            spacing: Kirigami.Units.largeSpacing * 2
+            spacing: Kirigami.Units.gridUnit * 2
             visible: page.isDefaultView
 
             Components.HorizontalAppList {
                 Layout.fillWidth: true
                 title: i18n("Popular Applications")
                 appModel: page.popularModel
+            }
+
+            Components.GamesSection {
+                id: gamesSection
+                Layout.fillWidth: true
+            }
+
+            Components.HorizontalAppList {
+                Layout.fillWidth: true
+                title: i18n("On the Go")
+                subtitle: i18n("Apps that work great on phones and tablets")
+                iconName: "phone-symbolic"
+                appModel: page.mobileModel
             }
 
             Components.HorizontalAppList {
@@ -252,12 +282,12 @@ Kirigami.ScrollablePage {
                         required property string summary
                         required property string iconUrl
 
-                        Components.AppCard {
+                        Components.StorefrontAppCard {
                             anchors.fill: parent
-                            appId: delegateWrapper.appId
-                            name: delegateWrapper.name
-                            summary: delegateWrapper.summary
+                            appName: delegateWrapper.name
+                            appSummary: delegateWrapper.summary
                             iconUrl: delegateWrapper.iconUrl
+                            onClicked: applicationWindow().pushAppDetail(delegateWrapper.appId)
 
                             opacity: 0
                             Component.onCompleted: opacity = 1.0

@@ -62,6 +62,14 @@ pub mod qobject {
         fn load_updated(self: Pin<&mut AppListModel>);
 
         #[qinvokable]
+        #[cxx_name = "loadMobile"]
+        fn load_mobile(self: Pin<&mut AppListModel>);
+
+        #[qinvokable]
+        #[cxx_name = "loadCategorySorted"]
+        fn load_category_sorted(self: Pin<&mut AppListModel>, category: QString, sort_by: QString);
+
+        #[qinvokable]
         fn search(self: Pin<&mut AppListModel>, query: QString);
 
         #[qinvokable]
@@ -167,9 +175,7 @@ impl qobject::AppListModel {
                         "AppListModel::refresh: Loading cached popular list ({} items)",
                         items.len()
                     );
-                    qobject.as_mut().begin_reset_model();
-                    qobject.as_mut().rust_mut().items = items;
-                    qobject.as_mut().end_reset_model();
+                    qobject.as_mut().apply_items(items);
                 });
             }
 
@@ -210,9 +216,7 @@ impl qobject::AppListModel {
                         "AppListModel::refresh: updating UI with fresh {} items",
                         items.len()
                     );
-                    qobject.as_mut().begin_reset_model();
-                    qobject.as_mut().rust_mut().items = items;
-                    qobject.as_mut().end_reset_model();
+                    qobject.as_mut().apply_items(items);
                     qobject.as_mut().set_loading(false);
                 });
             } else {
@@ -253,9 +257,7 @@ impl qobject::AppListModel {
                     "AppListModel::load_popular: updating UI with {} items",
                     items.len()
                 );
-                qobject.as_mut().begin_reset_model();
-                qobject.as_mut().rust_mut().items = items;
-                qobject.as_mut().end_reset_model();
+                qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
             });
         });
@@ -288,9 +290,7 @@ impl qobject::AppListModel {
                     "AppListModel::load_new: updating UI with {} items",
                     items.len()
                 );
-                qobject.as_mut().begin_reset_model();
-                qobject.as_mut().rust_mut().items = items;
-                qobject.as_mut().end_reset_model();
+                qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
             });
         });
@@ -323,9 +323,7 @@ impl qobject::AppListModel {
                     "AppListModel::load_updated: updating UI with {} items",
                     items.len()
                 );
-                qobject.as_mut().begin_reset_model();
-                qobject.as_mut().rust_mut().items = items;
-                qobject.as_mut().end_reset_model();
+                qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
             });
         });
@@ -369,9 +367,7 @@ impl qobject::AppListModel {
                     "AppListModel::search: updating UI with {} items",
                     items.len()
                 );
-                qobject.as_mut().begin_reset_model();
-                qobject.as_mut().rust_mut().items = items;
-                qobject.as_mut().end_reset_model();
+                qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
             });
         });
@@ -440,10 +436,73 @@ impl qobject::AppListModel {
                     "AppListModel::load_category: updating UI with {} items",
                     items.len()
                 );
-                qobject.as_mut().begin_reset_model();
-                qobject.as_mut().rust_mut().items = items;
-                qobject.as_mut().end_reset_model();
+                qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
+            });
+        });
+    }
+    fn apply_items(mut self: std::pin::Pin<&mut Self>, items: Vec<AppEntry>) {
+        if self.items != items {
+            self.as_mut().begin_reset_model();
+            self.as_mut().rust_mut().items = items;
+            self.as_mut().end_reset_model();
+        }
+    }
+
+    pub fn load_mobile(self: std::pin::Pin<&mut Self>) {
+        self.load_storefront_collection(None);
+    }
+
+    pub fn load_category_sorted(
+        self: std::pin::Pin<&mut Self>,
+        category: cxx_qt_lib::QString,
+        sort_by: cxx_qt_lib::QString,
+    ) {
+        self.load_storefront_collection(Some((category.to_string(), sort_by.to_string())));
+    }
+
+    fn load_storefront_collection(
+        mut self: std::pin::Pin<&mut Self>,
+        category: Option<(String, String)>,
+    ) {
+        self.as_mut().set_loading(true);
+        self.as_mut().rust_mut().generation += 1;
+        let generation = self.generation;
+        let thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            let client = &crate::services::services().flathub;
+            let result = match category {
+                None => client.fetch_mobile().await,
+                Some((category, sort)) if sort == "newest" => {
+                    client.fetch_category(&category).await.map(|mut apps| {
+                        apps.sort_by_key(|app| std::cmp::Reverse(app.added_at.unwrap_or(0)));
+                        apps.truncate(30);
+                        apps
+                    })
+                }
+                Some((category, sort)) => client.fetch_category_sorted(&category, &sort).await,
+            };
+            let items: Vec<AppEntry> = match result {
+                Ok(apps) => apps
+                    .into_iter()
+                    .map(|app| AppEntry {
+                        name: app.name,
+                        summary: app.summary.unwrap_or_default(),
+                        icon_url: app.icon.unwrap_or_default(),
+                        app_id: app.app_id,
+                    })
+                    .collect(),
+                Err(error) => {
+                    kerr!("storefront collection: {}", error);
+                    vec![]
+                }
+            };
+            let _ = thread.queue(move |mut model| {
+                if model.generation != generation {
+                    return;
+                }
+                model.as_mut().apply_items(items);
+                model.as_mut().set_loading(false);
             });
         });
     }

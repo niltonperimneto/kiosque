@@ -11,20 +11,51 @@ ColumnLayout {
     id: root
     property var appModel
     property string title
+    property string subtitle
+    property string iconName
+    property int headingLevel: 2
 
     spacing: Kirigami.Units.smallSpacing
 
-    Kirigami.Heading {
-        level: 2
-        text: root.title
+    RowLayout {
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.largeSpacing
         Layout.rightMargin: Kirigami.Units.largeSpacing
+        spacing: Kirigami.Units.largeSpacing
+
+        Kirigami.Icon {
+            visible: root.iconName.length > 0
+            source: root.iconName
+            Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+            Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 0
+
+            Kirigami.Heading {
+                level: root.headingLevel
+                text: root.title
+                Layout.fillWidth: true
+            }
+
+            Controls.Label {
+                visible: root.subtitle.length > 0
+                text: root.subtitle
+                color: Kirigami.Theme.disabledTextColor
+                font: Kirigami.Theme.smallFont
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+            }
+        }
     }
 
     Item {
         Layout.fillWidth: true
-        Layout.preferredHeight: Kirigami.Units.gridUnit * 14
+        // Card height plus the breathing room the delegates reserve for the
+        // hover lift and drop shadow.
+        Layout.preferredHeight: Kirigami.Units.gridUnit * 12 + Kirigami.Units.largeSpacing * 2
 
         ListView {
             id: listView
@@ -43,11 +74,11 @@ ColumnLayout {
             }
 
             add: Transition {
-                NumberAnimation { property: "opacity"; from: 0; to: 1.0; duration: 300; easing.type: Easing.OutCubic }
-                NumberAnimation { property: "scale"; from: 0.9; to: 1.0; duration: 300; easing.type: Easing.OutBack }
+                NumberAnimation { property: "opacity"; from: 0; to: 1.0; duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic }
+                NumberAnimation { property: "scale"; from: 0.9; to: 1.0; duration: Kirigami.Units.longDuration; easing.type: Easing.OutBack }
             }
             displaced: Transition {
-                NumberAnimation { properties: "x,y"; duration: 300; easing.type: Easing.OutCubic }
+                NumberAnimation { properties: "x,y"; duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic }
             }
 
             // Padding to align with the rest of the page
@@ -56,7 +87,7 @@ ColumnLayout {
 
             delegate: Item {
                 id: delegateWrapper
-                width: Kirigami.Units.gridUnit * 16
+                width: Kirigami.Units.gridUnit * 11
                 height: listView.height
 
                 required property string appId
@@ -64,20 +95,20 @@ ColumnLayout {
                 required property string summary
                 required property string iconUrl
 
-                AppCard {
+                StorefrontAppCard {
                     anchors.fill: parent
                     anchors.topMargin: Kirigami.Units.largeSpacing
                     anchors.bottomMargin: Kirigami.Units.largeSpacing
-                    appId: delegateWrapper.appId
-                    name: delegateWrapper.name
-                    summary: delegateWrapper.summary
+                    appName: delegateWrapper.name
+                    appSummary: delegateWrapper.summary
                     iconUrl: delegateWrapper.iconUrl
+                    onClicked: applicationWindow().pushAppDetail(delegateWrapper.appId)
                 }
             }
 
             Behavior on contentX {
                 enabled: !listView.moving && !listView.dragging
-                NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic }
             }
         }
 
@@ -106,7 +137,7 @@ ColumnLayout {
                 Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
             }
             onClicked: {
-                let step = Kirigami.Units.gridUnit * 18;
+                let step = Kirigami.Units.gridUnit * 12;
                 listView.contentX = Math.max(listView.contentX - step, 0);
             }
         }
@@ -136,7 +167,7 @@ ColumnLayout {
                 Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
             }
             onClicked: {
-                let step = Kirigami.Units.gridUnit * 18;
+                let step = Kirigami.Units.gridUnit * 12;
                 let maxContentX = listView.contentWidth - listView.width;
                 listView.contentX = Math.min(listView.contentX + step, maxContentX);
             }

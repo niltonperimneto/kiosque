@@ -39,10 +39,14 @@ pub unsafe extern "C" fn fetch_image_from_rust(
         return RustImageResult::default();
     }
     let id = unsafe { CStr::from_ptr(id) }.to_string_lossy().into_owned();
-    match crate::runtime::runtime().block_on(fetch_and_process(&id, req_width, req_height)) {
+    match crate::runtime::runtime().block_on(
+        crate::services::services()
+            .images
+            .load(&id, req_width, req_height),
+    ) {
         Ok(img) => {
             let (width, height) = img.dimensions();
-            let bytes = img.into_raw().into_boxed_slice();
+            let bytes = img.as_raw().clone().into_boxed_slice();
             let Ok(len) = i32::try_from(bytes.len()) else {
                 return RustImageResult::default();
             };

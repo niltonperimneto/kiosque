@@ -44,18 +44,21 @@ public:
             return QImage();
         }
 
-        QImage img(res.width, res.height, QImage::Format_RGBA8888);
-        if (img.sizeInBytes() == res.len) {
-            std::memcpy(img.bits(), res.data, res.len);
-        } else {
-            img = QImage();
+        const qint64 pixels = qint64(res.width) * res.height;
+        if (res.len % 4 != 0 || pixels != res.len / 4) {
+            free_rust_image(res);
+            return QImage();
         }
+        auto *owned = new RustImageResult(res);
+        QImage wrapped(res.data, res.width, res.height, QImage::Format_RGBA8888,
+            [](void *context) {
+                auto *pixels = static_cast<RustImageResult *>(context);
+                free_rust_image(*pixels);
+                delete pixels;
+            }, owned);
+        QImage img = wrapped.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        if (size) { *size = QSize(res.width, res.height); }
 
-        if (size) {
-            *size = QSize(res.width, res.height);
-        }
-
-        free_rust_image(res);
         return img;
     }
 };

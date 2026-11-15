@@ -14,7 +14,22 @@ ColumnLayout {
 
     readonly property bool isMobile: width < Kirigami.Units.gridUnit * 32
 
+    // The live SwipeView instance, recreated by swipeLoader on every model reset.
+    // May be null briefly while the Loader rebuilds, so all access is null-guarded.
+    readonly property Controls.SwipeView swipeView: swipeLoader.item as Controls.SwipeView
+
     spacing: Kirigami.Units.largeSpacing
+
+    // A full model reset on a long-lived SwipeView + Repeater leaves pages stacked
+    // at the same x-offset (Qt relayout bug). Rebuild the SwipeView from scratch
+    // whenever the model resets so every page is positioned correctly.
+    Connections {
+        target: root.model
+        function onModelReset() {
+            swipeLoader.active = false; // destroy stale SwipeView + delegates
+            swipeLoader.active = true;  // recreate fresh, correctly laid out
+        }
+    }
 
     // ── Carousel ────────────────────────────────────────────────────────
     Item {
@@ -22,10 +37,19 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: root.isMobile
                                ? Kirigami.Units.gridUnit * 18
-                               : Kirigami.Units.gridUnit * 14
+                               : Kirigami.Units.gridUnit * 16
 
-        Controls.SwipeView {
-            id: swipeView
+        Loader {
+            id: swipeLoader
+            anchors.fill: parent
+            sourceComponent: swipeComponent
+        }
+
+        Component {
+            id: swipeComponent
+
+            Controls.SwipeView {
+            id: view
             anchors.fill: parent
             clip: true
             hoverEnabled: true
@@ -41,169 +65,26 @@ ColumnLayout {
                     required property string summary
                     required property string iconUrl
                     required property string appId
+                    required property string developer
+                    required property string screenshotUrl
+                    required property string brandColorLight
+                    required property string brandColorDark
 
-                    // Shared flair via FeatureCard — same look as the spotlight.
-                    FeatureCard {
-                        id: card
+                    HeroBanner {
                         anchors.fill: parent
-                        // Small inset so the glow/shadow has room without clipping
-                        // in the SwipeView, while staying aligned with other bands.
-                        anchors.margins: Kirigami.Units.largeSpacing
 
-                        // A full-bleed slide must not scale (it would clip in the
-                        // SwipeView); the gradient/glow/hover-border still apply.
-                        hoverScale: false
-                        animateGlow: slideDelegate.Controls.SwipeView.isCurrentItem && root.visible
+                        appName: slideDelegate.name
+                        appSummary: slideDelegate.summary
+                        iconUrl: slideDelegate.iconUrl
+                        developer: slideDelegate.developer
+                        screenshotUrl: slideDelegate.screenshotUrl
+                        brandColorLight: slideDelegate.brandColorLight
+                        brandColorDark: slideDelegate.brandColorDark
 
                         onClicked: applicationWindow().pushAppDetail(slideDelegate.appId)
-
-                        // App Icon (anchored left, centered vertically, clearing left arrow)
-                        Image {
-                            id: appIcon
-                            z: 1
-                            source: slideDelegate.iconUrl
-                            sourceSize.width: 120
-                            sourceSize.height: 120
-                            width: 120
-                            height: 120
-                            anchors.left: parent.left
-                            anchors.leftMargin: Kirigami.Units.gridUnit * 4.5
-                            anchors.verticalCenter: parent.verticalCenter
-                            asynchronous: true
-                            fillMode: Image.PreserveAspectFit
-
-                            // Placeholder while loading
-                            Kirigami.Icon {
-                                anchors.centerIn: parent
-                                width: 80
-                                height: 80
-                                source: "application-x-executable"
-                                visible: parent.status !== Image.Ready
-                                opacity: 0.4
-                            }
-                        }
-
-                        // App Info Text (aligned next to icon, with bottom space reserved for button)
-                        ColumnLayout {
-                            id: textContainer
-                            anchors.left: appIcon.right
-                            anchors.leftMargin: Kirigami.Units.largeSpacing * 2.5
-                            anchors.right: parent.right
-                            anchors.rightMargin: Kirigami.Units.gridUnit * 4.5
-                            anchors.top: parent.top
-                            anchors.topMargin: Kirigami.Units.largeSpacing * 2
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: Kirigami.Units.largeSpacing * 2 + viewDetailsButton.implicitHeight + Kirigami.Units.smallSpacing
-                            spacing: Kirigami.Units.smallSpacing
-
-                            Kirigami.Heading {
-                                id: appNameHeading
-                                level: 2
-                                text: slideDelegate.name
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
-                                maximumLineCount: 1
-                            }
-
-                            Controls.Label {
-                                id: appSummaryLabel
-                                text: slideDelegate.summary
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                                maximumLineCount: 2
-                                elide: Text.ElideRight
-                                opacity: 0.75
-                            }
-                        }
-
-                        // View Details Button (anchored to bottom-right of the card, clearing right arrow)
-                        Controls.Button {
-                            id: viewDetailsButton
-                            text: i18n("View Details")
-                            icon.name: "go-next-symbolic"
-                            highlighted: hovered
-
-                            anchors.right: parent.right
-                            anchors.rightMargin: Kirigami.Units.gridUnit * 4
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: Kirigami.Units.largeSpacing * 2
-
-                            onClicked: applicationWindow().pushAppDetail(slideDelegate.appId)
-                        }
-
-                        states: [
-                            State {
-                                name: "mobile"
-                                when: root.isMobile
-                                PropertyChanges {
-                                    target: appIcon
-                                    width: 64
-                                    height: 64
-                                    sourceSize.width: 64
-                                    sourceSize.height: 64
-                                }
-                                AnchorChanges {
-                                    target: appIcon
-                                    anchors.left: undefined
-                                    anchors.verticalCenter: undefined
-                                    anchors.horizontalCenter: card.horizontalCenter
-                                    anchors.top: card.top
-                                }
-                                PropertyChanges {
-                                    target: appIcon
-                                    anchors.topMargin: Kirigami.Units.largeSpacing * 1.5
-                                    anchors.leftMargin: 0
-                                }
-                                AnchorChanges {
-                                    target: textContainer
-                                    anchors.left: card.left
-                                    anchors.right: card.right
-                                    anchors.top: appIcon.bottom
-                                    anchors.bottom: viewDetailsButton.top
-                                }
-                                PropertyChanges {
-                                    target: textContainer
-                                    anchors.leftMargin: Kirigami.Units.largeSpacing
-                                    anchors.rightMargin: Kirigami.Units.largeSpacing
-                                    anchors.topMargin: Kirigami.Units.mediumSpacing
-                                    anchors.bottomMargin: Kirigami.Units.mediumSpacing
-                                }
-                                PropertyChanges {
-                                    target: appNameHeading
-                                    horizontalAlignment: Text.AlignHCenter
-                                }
-                                PropertyChanges {
-                                    target: appSummaryLabel
-                                    horizontalAlignment: Text.AlignHCenter
-                                }
-                                AnchorChanges {
-                                    target: viewDetailsButton
-                                    anchors.right: undefined
-                                    anchors.horizontalCenter: card.horizontalCenter
-                                    anchors.bottom: card.bottom
-                                }
-                                PropertyChanges {
-                                    target: viewDetailsButton
-                                    anchors.bottomMargin: Kirigami.Units.largeSpacing
-                                    anchors.rightMargin: 0
-                                }
-                            }
-                        ]
-
-                        transitions: [
-                            Transition {
-                                from: "*"
-                                to: "*"
-                                AnchorAnimation { duration: 250; easing.type: Easing.OutCubic }
-                                NumberAnimation {
-                                    properties: "width,height,sourceSize.width,sourceSize.height,anchors.topMargin,anchors.leftMargin,anchors.rightMargin,anchors.bottomMargin"
-                                    duration: 250
-                                    easing.type: Easing.OutCubic
-                                }
-                            }
-                        ]
                     }
                 }
+            }
             }
         }
 
@@ -211,13 +92,16 @@ ColumnLayout {
         Controls.RoundButton {
             id: leftArrow
             anchors.left: parent.left
-            anchors.leftMargin: Kirigami.Units.largeSpacing * 2 + Kirigami.Units.smallSpacing
+            anchors.leftMargin: Kirigami.Units.largeSpacing
             anchors.verticalCenter: parent.verticalCenter
             z: 10
             focusPolicy: Qt.NoFocus
             hoverEnabled: true
             icon.name: "go-previous-symbolic"
-            visible: swipeView.count > 1 && !root.isMobile
+            visible: (root.swipeView ? root.swipeView.count : 0) > 1 && !root.isMobile
+            // Overlaid on the banner, so only surface while the carousel is in use.
+            opacity: (root.swipeView && root.swipeView.hovered) || leftArrow.hovered ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: Kirigami.Units.shortDuration } }
             background: Rectangle {
                 radius: height / 2
                 color: Qt.rgba(Kirigami.Theme.backgroundColor.r,
@@ -232,10 +116,11 @@ ColumnLayout {
                 Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
             }
             onClicked: {
-                if (swipeView.currentIndex > 0) {
-                    swipeView.currentIndex--;
+                if (!root.swipeView) return;
+                if (root.swipeView.currentIndex > 0) {
+                    root.swipeView.currentIndex--;
                 } else {
-                    swipeView.currentIndex = swipeView.count - 1;
+                    root.swipeView.currentIndex = root.swipeView.count - 1;
                 }
             }
         }
@@ -244,13 +129,16 @@ ColumnLayout {
         Controls.RoundButton {
             id: rightArrow
             anchors.right: parent.right
-            anchors.rightMargin: Kirigami.Units.largeSpacing * 2 + Kirigami.Units.smallSpacing
+            anchors.rightMargin: Kirigami.Units.largeSpacing
             anchors.verticalCenter: parent.verticalCenter
             z: 10
             focusPolicy: Qt.NoFocus
             hoverEnabled: true
             icon.name: "go-next-symbolic"
-            visible: swipeView.count > 1 && !root.isMobile
+            visible: (root.swipeView ? root.swipeView.count : 0) > 1 && !root.isMobile
+            // Overlaid on the banner, so only surface while the carousel is in use.
+            opacity: (root.swipeView && root.swipeView.hovered) || rightArrow.hovered ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: Kirigami.Units.shortDuration } }
             background: Rectangle {
                 radius: height / 2
                 color: Qt.rgba(Kirigami.Theme.backgroundColor.r,
@@ -265,10 +153,11 @@ ColumnLayout {
                 Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
             }
             onClicked: {
-                if (swipeView.currentIndex < swipeView.count - 1) {
-                    swipeView.currentIndex++;
+                if (!root.swipeView) return;
+                if (root.swipeView.currentIndex < root.swipeView.count - 1) {
+                    root.swipeView.currentIndex++;
                 } else {
-                    swipeView.currentIndex = 0;
+                    root.swipeView.currentIndex = 0;
                 }
             }
         }
@@ -279,8 +168,8 @@ ColumnLayout {
         id: indicator
 
         Layout.alignment: Qt.AlignHCenter
-        count: swipeView.count
-        currentIndex: swipeView.currentIndex
+        count: root.swipeView ? root.swipeView.count : 0
+        currentIndex: root.swipeView ? root.swipeView.currentIndex : 0
         interactive: false // Disabled internal interaction to avoid breaking the QML binding
 
         delegate: Item {
@@ -308,33 +197,36 @@ ColumnLayout {
 
                 Behavior on width {
                     NumberAnimation {
-                        duration: 250
+                        duration: Kirigami.Units.longDuration
                         easing.type: Easing.OutCubic
                     }
                 }
-                Behavior on color { ColorAnimation { duration: 150 } }
-                Behavior on opacity { NumberAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
+                Behavior on opacity { NumberAnimation { duration: Kirigami.Units.shortDuration } }
             }
 
             TapHandler {
                 cursorShape: Qt.PointingHandCursor
                 onTapped: {
-                    swipeView.currentIndex = index;
+                    if (root.swipeView) root.swipeView.currentIndex = index;
                 }
             }
         }
     }
 
-    // ── Auto-advance timer ──────────────────────────────────────────────
+    // ── Auto-advance timer (paused while the pointer is over the carousel) ──
     Timer {
+        objectName: "carouselAdvanceTimer"
         interval: 5000
-        running: swipeView.count > 1 && root.visible
+        running: (root.swipeView ? root.swipeView.count : 0) > 1 && root.visible
+                 && !(root.swipeView && root.swipeView.hovered)
         repeat: true
         onTriggered: {
-            if (swipeView.currentIndex < swipeView.count - 1) {
-                swipeView.currentIndex++;
+            if (!root.swipeView) return;
+            if (root.swipeView.currentIndex < root.swipeView.count - 1) {
+                root.swipeView.currentIndex++;
             } else {
-                swipeView.currentIndex = 0;
+                root.swipeView.currentIndex = 0;
             }
         }
     }

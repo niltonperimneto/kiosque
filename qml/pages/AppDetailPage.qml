@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 import org.kde.kirigami as Kirigami
 import org.kde.ki18n
 import com.kiosque
@@ -573,6 +574,7 @@ Kirigami.ScrollablePage {
                             anchors.fill: parent
                             anchors.margins: 1
                             source: modelData
+                            sourceSize.height: 240
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             clip: true
@@ -970,6 +972,7 @@ Kirigami.ScrollablePage {
     // ── Fullscreen Screenshot Zoom Popup ───────────────────────────────
     Controls.Popup {
         id: largeScreenshotPopup
+        objectName: "largeScreenshotPopup"
         parent: Controls.Overlay.overlay
         x: 0
         y: 0
@@ -988,8 +991,35 @@ Kirigami.ScrollablePage {
             NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 200; easing.type: Easing.OutQuad }
         }
 
-        background: Rectangle {
-            color: "#f5000000" // Immersive dark backdrop
+        // Translucent, blurred view of the app behind the overlay (KDE HIG),
+        // instead of a flat blackout.
+        background: Item {
+            // Capture the page behind the overlay only while the popup is open.
+            ShaderEffectSource {
+                id: appBackdropSource
+                anchors.fill: parent
+                // A closed popup must not retain the page's scene/window.
+                sourceItem: largeScreenshotPopup.visible ? page : null
+                live: false
+                recursive: false
+                hideSource: false
+            }
+
+            MultiEffect {
+                anchors.fill: parent
+                source: appBackdropSource
+                blurEnabled: true
+                blur: 1.0
+                blurMax: 64
+                autoPaddingEnabled: false
+            }
+
+            // Translucent scrim so screenshots and white HUD text stay legible
+            // over the blurred background.
+            Rectangle {
+                anchors.fill: parent
+                color: Qt.rgba(0, 0, 0, 0.55)
+            }
         }
 
         property var screenshotsList: []
@@ -997,6 +1027,9 @@ Kirigami.ScrollablePage {
         function openWithIndex(index) {
             screenshotsList = page.screenshotUrls;
             screenshotSwipeView.currentIndex = index;
+            // Refresh the (non-live) backdrop snapshot to reflect the current
+            // page/scroll state before showing the viewer.
+            appBackdropSource.scheduleUpdate();
             open();
         }
 
@@ -1159,15 +1192,19 @@ Kirigami.ScrollablePage {
                     Layout.fillWidth: true
                 }
 
-                Controls.ToolButton {
+                Controls.RoundButton {
                     icon.name: "window-close"
                     icon.color: "white"
                     display: Controls.AbstractButton.IconOnly
                     Layout.alignment: Qt.AlignVCenter
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.text: i18n("Close")
 
                     background: Rectangle {
-                        color: parent.hovered ? Qt.rgba(255, 255, 255, 0.15) : "transparent"
                         radius: width / 2
+                        color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(0, 0, 0, 0.4)
+                        border.color: parent.hovered ? "white" : "transparent"
+                        border.width: 1
                     }
 
                     onClicked: largeScreenshotPopup.close()
@@ -1186,7 +1223,7 @@ Kirigami.ScrollablePage {
 
                 background: Rectangle {
                     radius: width / 2
-                    color: parent.hovered ? Qt.rgba(255, 255, 255, 0.25) : Qt.rgba(0, 0, 0, 0.4)
+                    color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(0, 0, 0, 0.4)
                     border.color: parent.hovered ? "white" : "transparent"
                     border.width: 1
                 }
@@ -1206,7 +1243,7 @@ Kirigami.ScrollablePage {
 
                 background: Rectangle {
                     radius: width / 2
-                    color: parent.hovered ? Qt.rgba(255, 255, 255, 0.25) : Qt.rgba(0, 0, 0, 0.4)
+                    color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(0, 0, 0, 0.4)
                     border.color: parent.hovered ? "white" : "transparent"
                     border.width: 1
                 }
