@@ -105,10 +105,16 @@ impl qobject::RepoModel {
         let row = index.row() as usize;
         if let Some(item) = self.items.get(row) {
             match role {
-                Self::NAME_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.name)),
-                Self::TITLE_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.title)),
+                Self::NAME_ROLE => {
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.name))
+                }
+                Self::TITLE_ROLE => {
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.title))
+                }
                 Self::URL_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.url)),
-                Self::DESCRIPTION_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.description)),
+                Self::DESCRIPTION_ROLE => {
+                    cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.description))
+                }
                 _ => cxx_qt_lib::QVariant::default(),
             }
         } else {
@@ -128,7 +134,10 @@ impl qobject::RepoModel {
         roles.insert(Self::NAME_ROLE, cxx_qt_lib::QByteArray::from("name"));
         roles.insert(Self::TITLE_ROLE, cxx_qt_lib::QByteArray::from("title"));
         roles.insert(Self::URL_ROLE, cxx_qt_lib::QByteArray::from("url"));
-        roles.insert(Self::DESCRIPTION_ROLE, cxx_qt_lib::QByteArray::from("description"));
+        roles.insert(
+            Self::DESCRIPTION_ROLE,
+            cxx_qt_lib::QByteArray::from("description"),
+        );
         roles
     }
 
@@ -137,14 +146,19 @@ impl qobject::RepoModel {
         let qt_thread = self.qt_thread();
 
         crate::runtime::runtime().spawn(async move {
-            let remotes = crate::flatpak::cli::list_remotes().await.unwrap_or_default();
-            
-            let items: Vec<RepoEntry> = remotes.into_iter().map(|r| RepoEntry {
-                name: r.name,
-                title: r.title,
-                url: r.url,
-                description: r.description,
-            }).collect();
+            let remotes = crate::flatpak::cli::list_remotes()
+                .await
+                .unwrap_or_default();
+
+            let items: Vec<RepoEntry> = remotes
+                .into_iter()
+                .map(|r| RepoEntry {
+                    name: r.name,
+                    title: r.title,
+                    url: r.url,
+                    description: r.description,
+                })
+                .collect();
 
             let _ = qt_thread.queue(move |mut qobject| {
                 qobject.as_mut().begin_reset_model();
@@ -155,7 +169,11 @@ impl qobject::RepoModel {
         });
     }
 
-    pub fn add_remote(self: std::pin::Pin<&mut Self>, name: cxx_qt_lib::QString, url: cxx_qt_lib::QString) {
+    pub fn add_remote(
+        self: std::pin::Pin<&mut Self>,
+        name: cxx_qt_lib::QString,
+        url: cxx_qt_lib::QString,
+    ) {
         let qt_thread = self.qt_thread();
         let name_str = name.to_string();
         let url_str = url.to_string();
@@ -168,7 +186,9 @@ impl qobject::RepoModel {
             };
 
             let _ = qt_thread.queue(move |mut qobject| {
-                qobject.as_mut().remote_added(success, cxx_qt_lib::QString::from(&msg));
+                qobject
+                    .as_mut()
+                    .remote_added(success, cxx_qt_lib::QString::from(&msg));
                 if success {
                     qobject.as_mut().refresh();
                 }
@@ -188,7 +208,9 @@ impl qobject::RepoModel {
             };
 
             let _ = qt_thread.queue(move |mut qobject| {
-                qobject.as_mut().remote_removed(success, cxx_qt_lib::QString::from(&msg));
+                qobject
+                    .as_mut()
+                    .remote_removed(success, cxx_qt_lib::QString::from(&msg));
                 if success {
                     qobject.as_mut().refresh();
                 }

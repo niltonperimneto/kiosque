@@ -14,80 +14,18 @@
 // Forward declaration of the generated QML type registration function
 void qml_register_types_com_kiosque();
 
-#include <QQuickImageProvider>
-#include <cstdint>
-#include <cstring>
-
-extern "C" {
-    struct RustImageResult {
-        uint8_t* data;
-        int len;
-        int width;
-        int height;
-    };
-    RustImageResult fetch_image_from_rust(
-        const char* app_id,
-        const char* img_type,
-        int index,
-        int req_width,
-        int req_height
-    );
-    void free_rust_image(RustImageResult res);
-}
-
-class KiosqueImageProvider : public QQuickImageProvider
-{
-public:
-    KiosqueImageProvider()
-        : QQuickImageProvider(QQuickImageProvider::Image)
-    {
-    }
-
-    QImage requestImage(const QString &id, QSize *size, const QSize &requestedSize) override
-    {
-        QStringList parts = id.split(QLatin1Char('/'));
-        if (parts.size() < 2) {
-            return QImage();
-        }
-        
-        QString appId = parts.at(0);
-        QString imgType = parts.at(1);
-        int index = (parts.size() > 2) ? parts.at(2).toInt() : 0;
-
-        int reqWidth = requestedSize.width();
-        int reqHeight = requestedSize.height();
-
-        RustImageResult res = fetch_image_from_rust(
-            appId.toUtf8().constData(),
-            imgType.toUtf8().constData(),
-            index,
-            reqWidth,
-            reqHeight
-        );
-
-        if (res.data == nullptr || res.len <= 0 || res.width <= 0 || res.height <= 0) {
-            return QImage();
-        }
-
-        QImage img(res.width, res.height, QImage::Format_RGBA8888);
-        if (img.sizeInBytes() == res.len) {
-            std::memcpy(img.bits(), res.data, res.len);
-        } else {
-            img = QImage();
-        }
-
-        if (size) {
-            *size = QSize(res.width, res.height);
-        }
-
-        free_rust_image(res);
-        return img;
-    }
-};
+#include "image_provider.h"
+#include <QCommandLineParser>
+#include <QTextStream>
+#include <QTimer>
 
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
+    QCommandLineParser parser;
+    parser.addHelpOption();
+    parser.addOption({QStringLiteral("check-ui"), QStringLiteral("Validate startup resources and exit.")});
+    parser.process(app);
     QGuiApplication::setApplicationName(QStringLiteral("Kiosque"));
     QGuiApplication::setApplicationVersion(QStringLiteral(PROJECT_VERSION));
     QGuiApplication::setOrganizationName(QStringLiteral("Kiosque"));
@@ -131,5 +69,13 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    if (parser.isSet(QStringLiteral("check-ui"))) {
+        if (QImage(QStringLiteral(":/qml/images/logo.svg")).isNull()) {
+            qCritical("Cannot decode packaged logo");
+            return 2;
+        }
+        QTextStream(stdout) << "KIOSQUE_UI_READY\n";
+        QTimer::singleShot(0, &app, &QCoreApplication::quit);
+    }
     return app.exec();
 }

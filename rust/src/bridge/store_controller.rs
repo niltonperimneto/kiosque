@@ -129,6 +129,16 @@ pub struct StoreControllerRust {
     /// token is created per operation, so `cancelOperation` only affects the most
     /// recently started one rather than a process-wide flag.
     pub cancel_flag: Arc<AtomicBool>,
+    watch: Option<tokio_util::sync::CancellationToken>,
+    watched_app_id: String,
+}
+
+impl Drop for StoreControllerRust {
+    fn drop(&mut self) {
+        if let Some(watch) = &self.watch {
+            watch.cancel();
+        }
+    }
 }
 
 impl qobject::StoreController {
@@ -136,32 +146,69 @@ impl qobject::StoreController {
     /// so the UI never shows leftovers from the previously viewed app.
     fn clear_detail_state(mut self: std::pin::Pin<&mut Self>) {
         self.as_mut().set_detail_name(cxx_qt_lib::QString::from(""));
-        self.as_mut().set_detail_summary(cxx_qt_lib::QString::from(""));
-        self.as_mut().set_detail_description(cxx_qt_lib::QString::from(""));
-        self.as_mut().set_detail_icon_url(cxx_qt_lib::QString::from(""));
-        self.as_mut().set_detail_developer(cxx_qt_lib::QString::from(""));
-        self.as_mut().set_detail_license(cxx_qt_lib::QString::from(""));
+        self.as_mut()
+            .set_detail_summary(cxx_qt_lib::QString::from(""));
+        self.as_mut()
+            .set_detail_description(cxx_qt_lib::QString::from(""));
+        self.as_mut()
+            .set_detail_icon_url(cxx_qt_lib::QString::from(""));
+        self.as_mut()
+            .set_detail_developer(cxx_qt_lib::QString::from(""));
+        self.as_mut()
+            .set_detail_license(cxx_qt_lib::QString::from(""));
         self.as_mut().set_detail_is_installed(false);
-        self.as_mut().set_error_message(cxx_qt_lib::QString::from(""));
-        self.as_mut().set_detail_screenshots_json(cxx_qt_lib::QString::from("[]"));
-        self.as_mut().set_detail_permissions_json(cxx_qt_lib::QString::from("{}"));
-        self.as_mut().set_detail_urls_json(cxx_qt_lib::QString::from("{}"));
-        self.as_mut().set_detail_developer_apps_json(cxx_qt_lib::QString::from("[]"));
-        self.as_mut().set_detail_similar_apps_json(cxx_qt_lib::QString::from("[]"));
-        self.as_mut().set_detail_ratings_json(cxx_qt_lib::QString::from("{}"));
-        self.as_mut().set_detail_reviews_json(cxx_qt_lib::QString::from("[]"));
+        self.as_mut()
+            .set_error_message(cxx_qt_lib::QString::from(""));
+        self.as_mut()
+            .set_detail_screenshots_json(cxx_qt_lib::QString::from("[]"));
+        self.as_mut()
+            .set_detail_permissions_json(cxx_qt_lib::QString::from("{}"));
+        self.as_mut()
+            .set_detail_urls_json(cxx_qt_lib::QString::from("{}"));
+        self.as_mut()
+            .set_detail_developer_apps_json(cxx_qt_lib::QString::from("[]"));
+        self.as_mut()
+            .set_detail_similar_apps_json(cxx_qt_lib::QString::from("[]"));
+        self.as_mut()
+            .set_detail_ratings_json(cxx_qt_lib::QString::from("{}"));
+        self.as_mut()
+            .set_detail_reviews_json(cxx_qt_lib::QString::from("[]"));
     }
 
     pub fn load_app_details(mut self: std::pin::Pin<&mut Self>, app_id: cxx_qt_lib::QString) {
         self.as_mut().set_loading(true);
         self.as_mut().clear_detail_state();
 
+        self.as_mut().rust_mut().watched_app_id = app_id.to_string();
+        if self.watch.is_none() {
+            let cancel = tokio_util::sync::CancellationToken::new();
+            self.as_mut().rust_mut().watch = Some(cancel.clone());
+            let mut events = crate::services::services().registry.subscribe();
+            let thread = self.qt_thread();
+            crate::runtime::runtime().spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        event = events.recv() => {
+                            if event.is_err() { continue; }
+                            if thread.queue(|mut object| {
+                                let installed = crate::services::services().registry.is_installed(&object.watched_app_id);
+                                object.as_mut().set_detail_is_installed(installed);
+                            }).is_err() { break; }
+                        }
+                    }
+                }
+            });
+        }
         let qt_thread = self.qt_thread();
         let app_id_str = app_id.to_string();
 
-        klog!("StoreController::load_app_details: fetching \"{}\"", app_id_str);
+        klog!(
+            "StoreController::load_app_details: fetching \"{}\"",
+            app_id_str
+        );
         crate::runtime::runtime().spawn(async move {
-            let client = FlathubClient::new();
+            let client = crate::services::services().flathub.clone();
 
             // Fetch details and installation status concurrently
             let (details_res, installed) = tokio::join!(
@@ -182,7 +229,7 @@ impl qobject::StoreController {
                 let odrs_app_id = app_id_str.clone();
                 let odrs_qt_thread = qt_thread.clone();
                 crate::runtime::runtime().spawn(async move {
-                    let odrs_client = crate::flathub::odrs::OdrsClient::new();
+                    let odrs_client = crate::services::services().odrs.clone();
                     let (ratings_res, reviews_res) = tokio::join!(
                         odrs_client.fetch_ratings(&odrs_app_id),
                         odrs_client.fetch_reviews(&odrs_app_id),
@@ -209,11 +256,20 @@ impl qobject::StoreController {
             let _ = qt_thread.queue(move |mut qobject| {
                 match details_res {
                     Ok(details) => {
-                        apply_details(qobject.as_mut(), details, installed, permissions_val, developer_apps, similar_apps);
+                        apply_details(
+                            qobject.as_mut(),
+                            details,
+                            installed,
+                            permissions_val,
+                            developer_apps,
+                            similar_apps,
+                        );
                     }
                     Err(e) => {
                         kerr!("StoreController::load_app_details: {}", e);
-                        qobject.as_mut().set_error_message(cxx_qt_lib::QString::from(&e.to_string()));
+                        qobject
+                            .as_mut()
+                            .set_error_message(cxx_qt_lib::QString::from(&e.to_string()));
                         qobject.as_mut().reviews_loaded();
                     }
                 }
@@ -224,7 +280,10 @@ impl qobject::StoreController {
     }
 
     pub fn cancel_operation(mut self: std::pin::Pin<&mut Self>) {
-        self.as_mut().rust().cancel_flag.store(true, Ordering::SeqCst);
+        self.as_mut()
+            .rust()
+            .cancel_flag
+            .store(true, Ordering::SeqCst);
         self.as_mut().set_install_progress(0.0);
     }
 
@@ -235,7 +294,10 @@ impl qobject::StoreController {
         let qt_thread = self.qt_thread();
         let app_id_str = app_id.to_string();
 
-        klog!("StoreController::install_app: installing \"{}\"", app_id_str);
+        klog!(
+            "StoreController::install_app: installing \"{}\"",
+            app_id_str
+        );
         util::run_with_progress(
             qt_thread,
             async move { crate::flatpak::cli::install_app(&app_id_str).await },
@@ -270,7 +332,10 @@ impl qobject::StoreController {
         let qt_thread = self.qt_thread();
         let app_id_str = app_id.to_string();
 
-        klog!("StoreController::uninstall_app: uninstalling \"{}\"", app_id_str);
+        klog!(
+            "StoreController::uninstall_app: uninstalling \"{}\"",
+            app_id_str
+        );
         util::run_with_progress(
             qt_thread,
             async move { crate::flatpak::cli::uninstall_app(&app_id_str).await },
@@ -319,20 +384,12 @@ impl qobject::StoreController {
 
         crate::runtime::runtime().spawn(async move {
             // Distro auto-detection if empty
+            // Inside the sandbox /etc/os-release describes the KDE runtime;
+            // `distro_id` reads the host's /run/host/os-release first.
             if distro_str.is_empty() {
-                distro_str = if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
-                    let mut found = None;
-                    for line in content.lines() {
-                        if line.starts_with("ID=") {
-                            found = Some(line.trim_start_matches("ID=")
-                                .trim_matches('"')
-                                .to_string());
-                            break;
-                        }
-                    }
-                    found.unwrap_or_else(|| "Linux".to_string())
-                } else {
-                    "Linux".to_string()
+                distro_str = match kiosque_core::config::distro_id() {
+                    id if id == "generic" => "Linux".to_string(),
+                    id => id,
                 };
             }
 
@@ -349,7 +406,10 @@ impl qobject::StoreController {
             // Version auto-detection if empty
             if version_str.is_empty() {
                 if let Ok(installed_apps) = crate::flatpak::cli::list_installed_cached().await {
-                    if let Some(app) = installed_apps.iter().find(|a| a.application_id == app_id_str) {
+                    if let Some(app) = installed_apps
+                        .iter()
+                        .find(|a| a.application_id == app_id_str)
+                    {
                         if let Some(ref v) = app.version {
                             version_str = v.clone();
                         }
@@ -360,26 +420,33 @@ impl qobject::StoreController {
                 version_str = "1.0".to_string();
             }
 
-            let client = crate::flathub::odrs::OdrsClient::new();
-            match client.submit_review(
-                &app_id_str,
-                rating,
-                &summary_str,
-                &description_str,
-                &version_str,
-                &distro_str,
-                &locale_str,
-                is_anonymous,
-            ).await {
+            let client = crate::services::services().odrs.clone();
+            match client
+                .submit_review(
+                    &app_id_str,
+                    rating,
+                    &summary_str,
+                    &description_str,
+                    &version_str,
+                    &distro_str,
+                    &locale_str,
+                    is_anonymous,
+                )
+                .await
+            {
                 Ok(()) => {
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_submitted(true, cxx_qt_lib::QString::from(""));
+                        qobject
+                            .as_mut()
+                            .review_submitted(true, cxx_qt_lib::QString::from(""));
                     });
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_submitted(false, cxx_qt_lib::QString::from(&err_msg));
+                        qobject
+                            .as_mut()
+                            .review_submitted(false, cxx_qt_lib::QString::from(&err_msg));
                     });
                 }
             }
@@ -389,17 +456,21 @@ impl qobject::StoreController {
     pub fn upvote_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
-            let client = crate::flathub::odrs::OdrsClient::new();
+            let client = crate::services::services().odrs.clone();
             match client.upvote_review(review_id).await {
                 Ok(()) => {
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_action_finished(true, cxx_qt_lib::QString::from(""));
+                        qobject
+                            .as_mut()
+                            .review_action_finished(true, cxx_qt_lib::QString::from(""));
                     });
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
+                        qobject
+                            .as_mut()
+                            .review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
                     });
                 }
             }
@@ -409,17 +480,21 @@ impl qobject::StoreController {
     pub fn downvote_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
-            let client = crate::flathub::odrs::OdrsClient::new();
+            let client = crate::services::services().odrs.clone();
             match client.downvote_review(review_id).await {
                 Ok(()) => {
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_action_finished(true, cxx_qt_lib::QString::from(""));
+                        qobject
+                            .as_mut()
+                            .review_action_finished(true, cxx_qt_lib::QString::from(""));
                     });
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
+                        qobject
+                            .as_mut()
+                            .review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
                     });
                 }
             }
@@ -429,17 +504,21 @@ impl qobject::StoreController {
     pub fn dismiss_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
-            let client = crate::flathub::odrs::OdrsClient::new();
+            let client = crate::services::services().odrs.clone();
             match client.dismiss_review(review_id).await {
                 Ok(()) => {
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_action_finished(true, cxx_qt_lib::QString::from(""));
+                        qobject
+                            .as_mut()
+                            .review_action_finished(true, cxx_qt_lib::QString::from(""));
                     });
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
+                        qobject
+                            .as_mut()
+                            .review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
                     });
                 }
             }
@@ -449,17 +528,21 @@ impl qobject::StoreController {
     pub fn remove_review(self: std::pin::Pin<&mut Self>, review_id: i64) {
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
-            let client = crate::flathub::odrs::OdrsClient::new();
+            let client = crate::services::services().odrs.clone();
             match client.remove_review(review_id).await {
                 Ok(()) => {
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_action_finished(true, cxx_qt_lib::QString::from(""));
+                        qobject
+                            .as_mut()
+                            .review_action_finished(true, cxx_qt_lib::QString::from(""));
                     });
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
                     let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
+                        qobject
+                            .as_mut()
+                            .review_action_finished(false, cxx_qt_lib::QString::from(&err_msg));
                     });
                 }
             }
@@ -547,16 +630,35 @@ fn screenshot_urls(details: &AppDetails) -> Vec<String> {
 fn urls_object(details: &AppDetails) -> serde_json::Value {
     let mut urls_map = serde_json::Map::new();
     if let Some(ref u) = details.urls {
-        if let Some(ref h) = u.homepage { urls_map.insert("homepage".to_string(), serde_json::Value::String(h.clone())); }
-        if let Some(ref b) = u.bugtracker { urls_map.insert("bugtracker".to_string(), serde_json::Value::String(b.clone())); }
-        if let Some(ref d) = u.donation { urls_map.insert("donation".to_string(), serde_json::Value::String(d.clone())); }
-        if let Some(ref hp) = u.help { urls_map.insert("help".to_string(), serde_json::Value::String(hp.clone())); }
-        if let Some(ref v) = u.vcs_browser { urls_map.insert("vcs_browser".to_string(), serde_json::Value::String(v.clone())); }
+        if let Some(ref h) = u.homepage {
+            urls_map.insert("homepage".to_string(), serde_json::Value::String(h.clone()));
+        }
+        if let Some(ref b) = u.bugtracker {
+            urls_map.insert(
+                "bugtracker".to_string(),
+                serde_json::Value::String(b.clone()),
+            );
+        }
+        if let Some(ref d) = u.donation {
+            urls_map.insert("donation".to_string(), serde_json::Value::String(d.clone()));
+        }
+        if let Some(ref hp) = u.help {
+            urls_map.insert("help".to_string(), serde_json::Value::String(hp.clone()));
+        }
+        if let Some(ref v) = u.vcs_browser {
+            urls_map.insert(
+                "vcs_browser".to_string(),
+                serde_json::Value::String(v.clone()),
+            );
+        }
     }
     if let Some(ref m) = details.metadata
         && let Some(ref manifest) = m.manifest
     {
-        urls_map.insert("manifest".to_string(), serde_json::Value::String(manifest.clone()));
+        urls_map.insert(
+            "manifest".to_string(),
+            serde_json::Value::String(manifest.clone()),
+        );
     }
     serde_json::Value::Object(urls_map)
 }
@@ -586,36 +688,66 @@ fn apply_details(
     developer_apps: Vec<FlathubApp>,
     similar_apps: Vec<FlathubApp>,
 ) {
-    klog!("StoreController::load_app_details: OK — \"{}\" (installed={})", details.name, installed);
-    qobject.as_mut().set_detail_name(cxx_qt_lib::QString::from(&details.name));
-    qobject.as_mut().set_detail_summary(cxx_qt_lib::QString::from(&details.summary));
-    qobject.as_mut().set_detail_description(cxx_qt_lib::QString::from(&details.description.clone().unwrap_or_default()));
-    let app_id = details.id.clone();
+    klog!(
+        "StoreController::load_app_details: OK — \"{}\" (installed={})",
+        details.name,
+        installed
+    );
+    qobject
+        .as_mut()
+        .set_detail_name(cxx_qt_lib::QString::from(&details.name));
+    qobject
+        .as_mut()
+        .set_detail_summary(cxx_qt_lib::QString::from(&details.summary));
+    qobject
+        .as_mut()
+        .set_detail_description(cxx_qt_lib::QString::from(
+            &details.description.clone().unwrap_or_default(),
+        ));
     let raw_icon_url = details.icon.clone().unwrap_or_default();
-    crate::image_registry::register_image_url(format!("{}:icon", app_id), raw_icon_url);
-    qobject.as_mut().set_detail_icon_url(cxx_qt_lib::QString::from(&format!("image://kiosque/{}/icon", app_id)));
-    qobject.as_mut().set_detail_developer(cxx_qt_lib::QString::from(&details.developer_name.clone().unwrap_or_default()));
-    qobject.as_mut().set_detail_license(cxx_qt_lib::QString::from(&details.project_license.clone().unwrap_or_default()));
+    qobject
+        .as_mut()
+        .set_detail_icon_url(cxx_qt_lib::QString::from(&crate::image_cache::image_url(
+            &raw_icon_url,
+        )));
+    qobject
+        .as_mut()
+        .set_detail_developer(cxx_qt_lib::QString::from(
+            &details.developer_name.clone().unwrap_or_default(),
+        ));
+    qobject
+        .as_mut()
+        .set_detail_license(cxx_qt_lib::QString::from(
+            &details.project_license.clone().unwrap_or_default(),
+        ));
     qobject.as_mut().set_detail_is_installed(installed);
-    qobject.as_mut().set_error_message(cxx_qt_lib::QString::from(""));
+    qobject
+        .as_mut()
+        .set_error_message(cxx_qt_lib::QString::from(""));
 
-    let raw_screenshot_urls = screenshot_urls(&details);
-    let mut qml_screenshot_urls = Vec::new();
-    for (idx, scr_url) in raw_screenshot_urls.into_iter().enumerate() {
-        let key = format!("{}:screenshot:{}", app_id, idx);
-        crate::image_registry::register_image_url(key, scr_url);
-        qml_screenshot_urls.push(format!("image://kiosque/{}/screenshot/{}", app_id, idx));
-    }
-    qobject.as_mut().set_detail_screenshots_json(util::json_qstring(&qml_screenshot_urls, "[]"));
-
+    let qml_screenshot_urls: Vec<_> = screenshot_urls(&details)
+        .iter()
+        .map(|url| crate::image_cache::image_url(url))
+        .collect();
+    qobject
+        .as_mut()
+        .set_detail_screenshots_json(util::json_qstring(&qml_screenshot_urls, "[]"));
 
     let permissions = permissions_val
         .get("metadata")
         .and_then(|m| m.get("permissions"))
         .unwrap_or(&permissions_val);
-    qobject.as_mut().set_detail_permissions_json(util::json_qstring(permissions, "{}"));
+    qobject
+        .as_mut()
+        .set_detail_permissions_json(util::json_qstring(permissions, "{}"));
 
-    qobject.as_mut().set_detail_urls_json(util::json_qstring(&urls_object(&details), "{}"));
-    qobject.as_mut().set_detail_developer_apps_json(util::json_qstring(&apps_to_json(developer_apps), "[]"));
-    qobject.as_mut().set_detail_similar_apps_json(util::json_qstring(&apps_to_json(similar_apps), "[]"));
+    qobject
+        .as_mut()
+        .set_detail_urls_json(util::json_qstring(&urls_object(&details), "{}"));
+    qobject
+        .as_mut()
+        .set_detail_developer_apps_json(util::json_qstring(&apps_to_json(developer_apps), "[]"));
+    qobject
+        .as_mut()
+        .set_detail_similar_apps_json(util::json_qstring(&apps_to_json(similar_apps), "[]"));
 }

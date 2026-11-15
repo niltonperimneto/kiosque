@@ -8,18 +8,23 @@ URL:            https://github.com/Kiosque/kiosque
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  meson
+BuildRequires:  desktop-file-utils
 BuildRequires:  gcc-c++
 BuildRequires:  cargo
 BuildRequires:  rust
 BuildRequires:  cmake
+BuildRequires:  mold
 BuildRequires:  qt6-qtbase-devel
 BuildRequires:  qt6-qtdeclarative-devel
 BuildRequires:  kf6-kirigami-devel
 BuildRequires:  kf6-ki18n-devel
 BuildRequires:  dbus-devel
+BuildRequires:  flatpak-devel
 
 Requires:       qt6-qtdeclarative
 Requires:       kf6-kirigami
+Requires:       kf6-kirigami-addons
+Requires:       kf6-qqc2-desktop-style
 
 %description
 A modern, lightweight Flatpak software center for KDE Plasma.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
+#include <cstring>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QSystemTrayIcon>
@@ -287,6 +288,12 @@ void runOneShotCheck() {
 }
 
 int main(int argc, char* argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            QTextStream(stdout) << "Usage: kiosque-update [--check]\n";
+            return 0;
+        }
+    }
     bool daemonMode = true;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--check") == 0 || strcmp(argv[i], "-c") == 0) {
