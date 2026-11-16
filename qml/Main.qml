@@ -76,15 +76,28 @@ Kirigami.ApplicationWindow {
     }
 
     // Open the target requested on the command line (appstream:// URI,
-    // --app <id> or a .flatpakref). The context properties are always set by
-    // main.cpp, but are guarded so test harnesses without them still load.
+    // --app <id>, a .flatpakref or a .flatpakrepo). The context properties are
+    // always set by main.cpp, but are guarded so test harnesses without them
+    // still load. Files are never installed or added without confirmation.
     function openLaunchTarget() {
         if (typeof initialAppId !== "undefined" && initialAppId !== "") {
             root.pushAppDetail(initialAppId);
         }
         if (typeof initialRefFile !== "undefined" && initialRefFile !== "") {
-            StoreController.installRefFile(initialRefFile);
+            root.openRefFile(initialRefFile);
         }
+        if (typeof initialRepoFile !== "undefined" && initialRepoFile !== "") {
+            root.openRepoFile(initialRepoFile);
+        }
+    }
+
+    function openRefFile(path) {
+        refFileDialog.inspect(path);
+    }
+
+    function openRepoFile(path, name) {
+        repoFileDialog.requestedName = name || "";
+        repoFileDialog.inspect(path);
     }
 
     // ── Navigation button grouping ──────────────────────────────────────
@@ -410,7 +423,7 @@ Kirigami.ApplicationWindow {
                     highlighted: true
                     enabled: repoNameField.text.length > 0 && repoUrlField.text.length > 0
                     onClicked: {
-                        RepoModel.addRemote(repoNameField.text, repoUrlField.text);
+                        root.openRepoFile(repoUrlField.text, repoNameField.text);
                         addRepoSheet.close();
                     }
                 }
@@ -421,6 +434,7 @@ Kirigami.ApplicationWindow {
     // ── Repository addition status dialog ──────────────────────────────
     Controls.Dialog {
         id: statusDialog
+        objectName: "repositoryStatusDialog"
         anchors.centerIn: parent
         title: i18n("Repository Status")
         standardButtons: Controls.Dialog.Ok
@@ -437,8 +451,360 @@ Kirigami.ApplicationWindow {
     Connections {
         target: RepoModel
         function onRemoteAdded(success, message) {
-            statusDialog.messageText = message;
+            statusDialog.messageText = success
+                ? i18n("Repository added successfully.")
+                : i18n("Could not add the repository: %1", message);
             statusDialog.open();
+        }
+        function onRemoteRemoved(success, message) {
+            statusDialog.messageText = success
+                ? i18n("Repository removed successfully.")
+                : i18n("Could not remove the repository: %1", message);
+            statusDialog.open();
+        }
+    }
+
+    // ── .flatpakref confirmation and install progress ──────────────────
+    // phase: "loading" → "confirm" → "installing" → "done" | "failed".
+    Kirigami.Dialog {
+        id: refFileDialog
+        objectName: "refFileDialog"
+
+        property string phase: "loading"
+        property string source: ""
+        property string appTitle: ""
+        property string appName: ""
+        property string originUrl: ""
+        property bool isRuntime: false
+        property string errorText: ""
+
+        function inspect(path) {
+            source = path;
+            appTitle = "";
+            appName = "";
+            originUrl = "";
+            isRuntime = false;
+            errorText = "";
+            phase = "loading";
+            open();
+            StoreController.inspectRefFile(path);
+        }
+
+        title: phase === "installing" ? i18n("Installing…")
+             : phase === "done" ? i18n("Installation Complete")
+             : phase === "failed" ? i18n("Installation Failed")
+             : isRuntime ? i18n("Install Runtime?") : i18n("Install Application?")
+        closePolicy: phase === "installing" ? Controls.Popup.NoAutoClose
+                                            : Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
+        showCloseButton: phase !== "installing"
+        preferredWidth: Kirigami.Units.gridUnit * 24
+        padding: Kirigami.Units.largeSpacing
+
+        onRejected: {
+            if (phase === "loading" || phase === "confirm") {
+                StoreController.discardRefFile();
+            }
+        }
+
+        // The buttons change with the phase, so they live in the content: the
+        // footer DialogButtonBox mis-positions buttons swapped after opening.
+
+        ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+
+            Controls.BusyIndicator {
+                Layout.alignment: Qt.AlignHCenter
+                visible: refFileDialog.phase === "loading"
+                running: visible
+            }
+
+            Controls.Label {
+                Layout.fillWidth: true
+                visible: refFileDialog.phase === "loading"
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                text: i18n("Reading %1…", refFileDialog.source)
+            }
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                visible: refFileDialog.phase === "confirm" || refFileDialog.phase === "installing"
+                         || refFileDialog.phase === "done"
+
+                Controls.Label {
+                    objectName: "refTitleLabel"
+                    Kirigami.FormData.label: i18n("Name:")
+                    text: refFileDialog.appTitle
+                    textFormat: Text.PlainText
+                    font.weight: Font.Bold
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                Controls.Label {
+                    Kirigami.FormData.label: i18n("Identifier:")
+                    text: refFileDialog.appName
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WrapAnywhere
+                    Layout.fillWidth: true
+                }
+                Controls.Label {
+                    objectName: "refOriginLabel"
+                    Kirigami.FormData.label: i18n("Source:")
+                    text: refFileDialog.originUrl !== "" ? refFileDialog.originUrl : i18n("Unknown")
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WrapAnywhere
+                    Layout.fillWidth: true
+                }
+            }
+
+            Controls.Label {
+                Layout.fillWidth: true
+                visible: refFileDialog.phase === "confirm"
+                text: i18n("Repository signing key SHA-256: %1", StoreController.ref_key_sha256)
+                textFormat: Text.PlainText
+                wrapMode: Text.WrapAnywhere
+            }
+
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: refFileDialog.phase === "confirm"
+                type: Kirigami.MessageType.Warning
+                text: i18n("This file was opened from outside Kiosque. Only install software from sources you trust. It will be installed for your user only, and its repository may be added.")
+            }
+
+            Controls.ProgressBar {
+                objectName: "refInstallProgress"
+                Layout.fillWidth: true
+                visible: refFileDialog.phase === "installing"
+                from: 0
+                to: 1
+                value: Math.max(0, StoreController.install_progress)
+                indeterminate: StoreController.install_progress < 0.01
+            }
+
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: refFileDialog.phase === "failed"
+                type: Kirigami.MessageType.Error
+                text: refFileDialog.errorText
+            }
+
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: refFileDialog.phase === "done"
+                type: Kirigami.MessageType.Positive
+                text: i18n("%1 was installed.", refFileDialog.appTitle)
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: Kirigami.Units.smallSpacing
+
+                Controls.Button {
+                    objectName: "refInstallButton"
+                    visible: refFileDialog.phase === "confirm"
+                    text: i18n("Install")
+                    icon.name: "download"
+                    onClicked: {
+                        refFileDialog.phase = "installing";
+                        StoreController.confirmRefFileInstall();
+                    }
+                }
+                Controls.Button {
+                    objectName: "refCancelButton"
+                    visible: refFileDialog.phase === "loading" || refFileDialog.phase === "confirm"
+                    text: i18n("Cancel")
+                    icon.name: "dialog-cancel"
+                    onClicked: {
+                        StoreController.discardRefFile();
+                        refFileDialog.close();
+                    }
+                }
+                Controls.Button {
+                    objectName: "refCancelInstallButton"
+                    visible: refFileDialog.phase === "installing"
+                    text: i18n("Cancel Installation")
+                    icon.name: "dialog-cancel"
+                    onClicked: StoreController.cancelOperation()
+                }
+                Controls.Button {
+                    objectName: "refCloseButton"
+                    visible: refFileDialog.phase === "done" || refFileDialog.phase === "failed"
+                    text: i18n("Close")
+                    icon.name: "dialog-close"
+                    onClicked: refFileDialog.close()
+                }
+            }
+        }
+    }
+
+    Connections {
+        target: StoreController
+        function onRefFileInspected(success, title, name, url, isRuntime, error) {
+            if (refFileDialog.phase !== "loading") {
+                return;
+            }
+            if (success) {
+                refFileDialog.appTitle = title !== "" ? title : name;
+                refFileDialog.appName = name;
+                refFileDialog.originUrl = url;
+                refFileDialog.isRuntime = isRuntime;
+                refFileDialog.phase = "confirm";
+            } else {
+                refFileDialog.errorText = i18n("Could not open the file: %1", error);
+                refFileDialog.phase = "failed";
+            }
+        }
+        function onInstallFinished(success) {
+            if (refFileDialog.phase !== "installing") {
+                return;
+            }
+            if (success) {
+                refFileDialog.phase = "done";
+            } else if (StoreController.error_message !== "") {
+                refFileDialog.errorText = StoreController.error_message;
+                refFileDialog.phase = "failed";
+            } else {
+                // Cancelled by the user.
+                refFileDialog.close();
+            }
+        }
+    }
+
+    Connections {
+        target: RepoModel
+        function onRepoFileInspected(success, suggestedName, title, url, error) {
+            if (repoFileDialog.phase !== "loading") {
+                return;
+            }
+            if (success) {
+                repoFileDialog.repoTitle = title;
+                repoFileDialog.repoUrl = url;
+                repoFileNameField.text = repoFileDialog.requestedName !== "" ? repoFileDialog.requestedName : suggestedName;
+                repoFileDialog.phase = "confirm";
+            } else {
+                repoFileDialog.errorText = i18n("Could not open the file: %1", error);
+                repoFileDialog.phase = "failed";
+            }
+        }
+    }
+
+    // ── .flatpakrepo confirmation ──────────────────────────────────────
+    Kirigami.Dialog {
+        id: repoFileDialog
+        objectName: "repoFileDialog"
+
+        property string phase: "loading"
+        property string source: ""
+        property string requestedName: ""
+        property string repoTitle: ""
+        property string repoUrl: ""
+        property string errorText: ""
+
+        function inspect(path) {
+            source = path;
+            repoTitle = "";
+            repoUrl = "";
+            errorText = "";
+            repoFileNameField.text = "";
+            phase = "loading";
+            open();
+            RepoModel.inspectRepoFile(path);
+        }
+
+        title: phase === "failed" ? i18n("Cannot Add Repository") : i18n("Add Repository?")
+        preferredWidth: Kirigami.Units.gridUnit * 24
+        padding: Kirigami.Units.largeSpacing
+
+        onRejected: RepoModel.discardRepoFile()
+
+        // Buttons live in the content; see refFileDialog.
+
+        ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+
+            Controls.BusyIndicator {
+                Layout.alignment: Qt.AlignHCenter
+                visible: repoFileDialog.phase === "loading"
+                running: visible
+            }
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                visible: repoFileDialog.phase === "confirm"
+
+                Controls.Label {
+                    Kirigami.FormData.label: i18n("Title:")
+                    visible: repoFileDialog.repoTitle !== ""
+                    text: repoFileDialog.repoTitle
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                Controls.Label {
+                    Kirigami.FormData.label: i18n("URL:")
+                    text: repoFileDialog.repoUrl
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WrapAnywhere
+                    Layout.fillWidth: true
+                }
+                Controls.TextField {
+                    id: repoFileNameField
+                    objectName: "repoFileNameField"
+                    Kirigami.FormData.label: i18n("Name:")
+                    placeholderText: "flathub-beta"
+                    Layout.fillWidth: true
+                }
+            }
+
+            Controls.Label {
+                Layout.fillWidth: true
+                visible: repoFileDialog.phase === "confirm"
+                text: i18n("Repository signing key SHA-256: %1", RepoModel.repo_key_sha256)
+                textFormat: Text.PlainText
+                wrapMode: Text.WrapAnywhere
+            }
+
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: repoFileDialog.phase === "confirm"
+                type: Kirigami.MessageType.Warning
+                text: i18n("Applications from this repository will be offered in Kiosque. Only add repositories you trust.")
+            }
+
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: repoFileDialog.phase === "failed"
+                type: Kirigami.MessageType.Error
+                text: repoFileDialog.errorText
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: Kirigami.Units.smallSpacing
+
+                Controls.Button {
+                    objectName: "repoAddButton"
+                    visible: repoFileDialog.phase === "confirm"
+                    enabled: /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(repoFileNameField.text)
+                    text: i18n("Add")
+                    icon.name: "list-add"
+                    onClicked: {
+                        RepoModel.addInspectedRemote(repoFileNameField.text);
+                        repoFileDialog.phase = "done";
+                        repoFileDialog.close();
+                    }
+                }
+                Controls.Button {
+                    objectName: "repoCancelButton"
+                    text: repoFileDialog.phase === "failed" ? i18n("Close") : i18n("Cancel")
+                    icon.name: "dialog-cancel"
+                    onClicked: {
+                        RepoModel.discardRepoFile();
+                        repoFileDialog.close();
+                    }
+                }
+            }
         }
     }
 
@@ -479,5 +845,4 @@ Kirigami.ApplicationWindow {
         // Defer until the page stack has created its initial page.
         Qt.callLater(root.openLaunchTarget);
     }
-
 }

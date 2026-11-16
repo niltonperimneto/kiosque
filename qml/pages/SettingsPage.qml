@@ -5,7 +5,6 @@ import org.kde.kirigami as Kirigami
 import org.kde.ki18n
 import com.kiosque
 import org.kde.kirigamiaddons.components as KirigamiAddons
-import QtCore
 
 Kirigami.ScrollablePage {
     id: page
@@ -27,11 +26,6 @@ Kirigami.ScrollablePage {
         }
     ]
 
-    Settings {
-        id: localSettings
-        category: "SettingsPage"
-        property bool showAdvanced: false
-    }
 
     Component.onCompleted: {
         SettingsController.loadSettings()
@@ -51,51 +45,38 @@ Kirigami.ScrollablePage {
             visible: text !== ""
         }
 
-        // ── Settings Header ────────────────────────────────────────────────
-        RowLayout {
+        Kirigami.InlineMessage {
             Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
+            type: Kirigami.MessageType.Information
+            visible: SettingsController.login_in_progress
+            text: SettingsController.login_user_code !== ""
+                ? i18n("Enter code %1 at %2 to sign in.", SettingsController.login_user_code, SettingsController.login_verification_url)
+                : i18n("Complete sign-in in your browser.")
+            actions: Kirigami.Action {
+                text: i18n("Cancel sign-in")
+                onTriggered: SettingsController.cancelLogin()
+            }
+        }
+
+        Controls.ComboBox {
+            id: categorySelector
+            objectName: "settingsCategorySelector"
             Layout.alignment: Qt.AlignHCenter
-            
-            ColumnLayout {
-                spacing: Kirigami.Units.smallSpacing
-                Layout.fillWidth: true
-                
-                Kirigami.Heading {
-                    text: i18n("Preferences")
-                    level: 2
-                }
-                Controls.Label {
-                    text: i18n("Configure updates, authentication, and flatpak repositories")
-                    color: Kirigami.Theme.disabledTextColor
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.95
-                }
-            }
-            
-            Controls.Switch {
-                id: advancedToggle
-                text: i18n("Advanced Settings")
-                checked: localSettings.showAdvanced
-                onCheckedChanged: localSettings.showAdvanced = checked
-                Layout.alignment: Qt.AlignVCenter
-            }
+            Layout.fillWidth: true
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 36
+            Accessible.name: i18n("Settings category")
+            model: [i18n("Updates"), i18n("Repositories"), i18n("Review Account"), i18n("Privacy"), i18n("About")]
         }
 
         // ── Automatic Updates Card ─────────────────────────────────────────
         Controls.Pane {
+            visible: categorySelector.currentIndex === 0
             Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 36
             Layout.alignment: Qt.AlignHCenter
             padding: Kirigami.Units.largeSpacing * 1.5
 
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
+            background: Item {}
 
             contentItem: ColumnLayout {
                 spacing: Kirigami.Units.largeSpacing
@@ -121,11 +102,12 @@ Kirigami.ScrollablePage {
 
                 Kirigami.FormLayout {
                     Layout.fillWidth: true
+                    wideMode: width > Kirigami.Units.gridUnit * 30
 
                     Controls.Switch {
                         id: autoUpdateSwitch
                         objectName: "autoUpdateSwitch"
-                        Kirigami.FormData.label: i18n("Enable Automatic Updates:")
+                        Kirigami.FormData.label: i18n("Automatic updates:")
                         checked: SettingsController.auto_update
                         enabled: !SettingsController.saving_settings
                         onToggled: page.saveSettings()
@@ -138,18 +120,19 @@ Kirigami.ScrollablePage {
                         model: [i18n("Daily"), i18n("Weekly")]
                         currentIndex: SettingsController.update_frequency.toLowerCase() === "weekly" ? 1 : 0
                         enabled: autoUpdateSwitch.checked && !SettingsController.saving_settings
-                        visible: advancedToggle.checked
+                        visible: true
                         onActivated: page.saveSettings()
                     }
 
                     Controls.TextField {
                         id: timeField
+                        implicitWidth: Kirigami.Units.gridUnit * 7
                         objectName: "updateTimeField"
                         Kirigami.FormData.label: i18n("Time (HH:MM):")
                         text: SettingsController.update_time
                         placeholderText: "02:00"
                         enabled: autoUpdateSwitch.checked && !SettingsController.saving_settings
-                        visible: advancedToggle.checked
+                        visible: true
                         validator: RegularExpressionValidator { regularExpression: /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/ }
                         onEditingFinished: {
                             if (acceptableInput) {
@@ -163,20 +146,13 @@ Kirigami.ScrollablePage {
 
         // ── Repositories Card ──────────────────────────────────────────────
         Controls.Pane {
-            visible: advancedToggle.checked
+            visible: categorySelector.currentIndex === 1
             Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 36
             Layout.alignment: Qt.AlignHCenter
             padding: Kirigami.Units.largeSpacing * 1.5
 
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
+            background: Item {}
 
             contentItem: ColumnLayout {
                 spacing: Kirigami.Units.largeSpacing
@@ -263,19 +239,13 @@ Kirigami.ScrollablePage {
 
         // ── ODRS Accounts Card ──────────────────────────────────────────────
         Controls.Pane {
+            visible: categorySelector.currentIndex === 2
             Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 36
             Layout.alignment: Qt.AlignHCenter
             padding: Kirigami.Units.largeSpacing * 1.5
 
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
+            background: Item {}
 
             contentItem: ColumnLayout {
                 spacing: Kirigami.Units.largeSpacing
@@ -376,7 +346,7 @@ Kirigami.ScrollablePage {
                         visible: !SettingsController.is_authenticated
 
                         Controls.Label {
-                            text: i18n("To write reviews and submit application ratings, you must authenticate using an open-source development provider. Reviews are submitted pseudonymously using a secure privacy hash.")
+                            text: i18n("Sign in to rate applications and write reviews.")
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                             color: Kirigami.Theme.textColor
@@ -389,24 +359,28 @@ Kirigami.ScrollablePage {
                             Controls.Button {
                                 text: "GitHub"
                                 icon.name: "git-brand"
+                                enabled: !SettingsController.login_in_progress
                                 onClicked: SettingsController.login("github")
                             }
 
                             Controls.Button {
                                 text: "GitLab"
                                 icon.name: "git-brand"
+                                enabled: !SettingsController.login_in_progress
                                 onClicked: SettingsController.login("gitlab")
                             }
 
                             Controls.Button {
                                 text: "KDE GitLab"
                                 icon.name: "kde"
+                                enabled: !SettingsController.login_in_progress
                                 onClicked: SettingsController.login("kde_gitlab")
                             }
 
                             Controls.Button {
                                 text: "GNOME GitLab"
                                 icon.name: "gnome"
+                                enabled: !SettingsController.login_in_progress
                                 onClicked: SettingsController.login("gnome_gitlab")
                             }
                         }
@@ -417,20 +391,13 @@ Kirigami.ScrollablePage {
 
         // ── Privacy & Security Card ─────────────────────────────────────────
         Controls.Pane {
-            visible: advancedToggle.checked
+            visible: categorySelector.currentIndex === 3
             Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 36
             Layout.alignment: Qt.AlignHCenter
             padding: Kirigami.Units.largeSpacing * 1.5
 
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
+            background: Item {}
 
             contentItem: ColumnLayout {
                 spacing: Kirigami.Units.largeSpacing
@@ -456,6 +423,7 @@ Kirigami.ScrollablePage {
 
                 Kirigami.FormLayout {
                     Layout.fillWidth: true
+                    wideMode: width > Kirigami.Units.gridUnit * 30
 
                     RowLayout {
                         Kirigami.FormData.label: i18n("Privacy User Hash:")
@@ -519,19 +487,13 @@ Kirigami.ScrollablePage {
 
         // ── About Card ─────────────────────────────────────────────────────
         Controls.Pane {
+            visible: categorySelector.currentIndex === 4
             Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 36
             Layout.alignment: Qt.AlignHCenter
             padding: Kirigami.Units.largeSpacing * 1.5
 
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
+            background: Item {}
 
             contentItem: ColumnLayout {
                 spacing: Kirigami.Units.largeSpacing

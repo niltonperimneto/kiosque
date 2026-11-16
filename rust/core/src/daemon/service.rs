@@ -15,18 +15,32 @@ fn scope_or_default(app_id: &str, remote: &str, scope: &str) -> (String, Scope) 
 
 #[interface(name = "org.kiosque.Kiosque.Daemon1")]
 impl Service {
-    /// No-op used by clients to check that the daemon is reachable.
-    async fn ping(&self) -> u32 {
+    async fn ping(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<u32> {
+        super::auth::authorize(&header, conn).await?;
         super::touch();
-        1
+        Ok(1)
     }
-
-    /// Queue an install. Empty `remote`/`scope` pick the app's origin from
-    /// the catalog. Returns the job id.
-    async fn install(&self, app_id: String, remote: String, scope: String, title: String) -> u64 {
-        super::touch();
+    async fn install(
+        &self,
+        app_id: String,
+        remote: String,
+        scope: String,
+        title: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<u64> {
+        super::auth::authorize(&header, conn).await?;
+        if !scope.is_empty() && Scope::parse(&scope).is_none() {
+            return Err(zbus::fdo::Error::InvalidArgs(
+                "Invalid installation scope".into(),
+            ));
+        }
         let (remote, scope) = scope_or_default(&app_id, &remote, &scope);
-        crate::transactions::local_manager().enqueue(
+        queue(
             Operation::Install {
                 remote,
                 id: app_id,
@@ -35,51 +49,181 @@ impl Service {
             &title,
         )
     }
-
-    /// Queue an install from the contents of a `.flatpakref` file.
-    async fn install_ref_file(&self, data: Vec<u8>, scope: String, title: String) -> u64 {
-        super::touch();
-        let scope = Scope::parse(&scope).unwrap_or(Scope::User);
-        crate::transactions::local_manager()
-            .enqueue(Operation::InstallRefFile { data, scope }, &title)
+    async fn install_ref_file(
+        &self,
+        data: Vec<u8>,
+        scope: String,
+        title: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<u64> {
+        super::auth::authorize(&header, conn).await?;
+        let scope = parse_scope(&scope)?;
+        queue(Operation::InstallRefFile { data, scope }, &title)
     }
-
-    async fn uninstall(&self, app_id: String, scope: String, title: String) -> u64 {
-        super::touch();
-        crate::transactions::local_manager().enqueue(
-            Operation::Uninstall {
-                id: app_id,
-                scope: Scope::parse(&scope),
-            },
-            &title,
-        )
+    async fn uninstall(
+        &self,
+        app_id: String,
+        scope: String,
+        title: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<u64> {
+        super::auth::authorize(&header, conn).await?;
+        let scope = if scope.is_empty() {
+            None
+        } else {
+            Some(parse_scope(&scope)?)
+        };
+        queue(Operation::Uninstall { id: app_id, scope }, &title)
     }
-
-    /// Update the given ids, or everything when the list is empty.
-    async fn update(&self, app_ids: Vec<String>, title: String) -> u64 {
-        super::touch();
-        crate::transactions::local_manager().enqueue(Operation::Update { ids: app_ids }, &title)
+    async fn update(
+        &self,
+        app_ids: Vec<String>,
+        title: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<u64> {
+        super::auth::authorize(&header, conn).await?;
+        queue(Operation::Update { ids: app_ids }, &title)
     }
-
-    async fn cancel(&self, job_id: u64) -> bool {
+    async fn cancel(
+        &self,
+        job_id: u64,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<bool> {
+        super::auth::authorize(&header, conn).await?;
         super::touch();
-        crate::transactions::local_manager().cancel(job_id)
+        Ok(crate::transactions::local_manager().cancel(job_id))
     }
-
-    /// All queued, running and recently finished jobs.
-    async fn get_jobs(&self) -> Vec<JobWire> {
+    async fn get_jobs(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<Vec<JobWire>> {
+        super::auth::authorize(&header, conn).await?;
         super::touch();
-        crate::registry::registry()
+        Ok(crate::registry::registry()
             .jobs()
             .iter()
             .map(JobWire::from)
-            .collect()
+            .collect())
     }
-
-    /// Re-check for updates; returns the number of app updates.
-    async fn check_updates(&self) -> u32 {
+    async fn check_updates(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<u32> {
+        super::auth::authorize(&header, conn).await?;
         super::touch();
-        super::check_updates().await as u32
+        Ok(super::check_updates().await as u32)
+    }
+    async fn read_installed(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<String> {
+        super::auth::authorize(&header, conn).await?;
+        json(
+            crate::flatpak::backend()
+                .list_installed()
+                .await
+                .map_err(failed)?,
+        )
+    }
+    async fn read_updates(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<String> {
+        super::auth::authorize(&header, conn).await?;
+        json(
+            crate::flatpak::backend()
+                .list_updates()
+                .await
+                .map_err(failed)?,
+        )
+    }
+    async fn read_remotes(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<String> {
+        super::auth::authorize(&header, conn).await?;
+        json(
+            crate::flatpak::backend()
+                .list_remotes()
+                .await
+                .map_err(failed)?,
+        )
+    }
+    async fn add_repository(
+        &self,
+        name: String,
+        data: Vec<u8>,
+        scope: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<()> {
+        super::auth::authorize(&header, conn).await?;
+        crate::security::remote_name(&name).map_err(zbus::fdo::Error::InvalidArgs)?;
+        crate::security::repo_file(&data).map_err(zbus::fdo::Error::InvalidArgs)?;
+        crate::flatpak::backend()
+            .add_remote(
+                &name,
+                crate::flatpak::RemoteSource::FlatpakRepo(data),
+                parse_scope(&scope)?,
+            )
+            .await
+            .map_err(failed)
+    }
+    async fn remove_repository(
+        &self,
+        name: String,
+        scope: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<()> {
+        super::auth::authorize(&header, conn).await?;
+        crate::security::remote_name(&name).map_err(zbus::fdo::Error::InvalidArgs)?;
+        let scope = if scope.is_empty() {
+            None
+        } else {
+            Some(parse_scope(&scope)?)
+        };
+        crate::flatpak::backend()
+            .remove_remote(&name, scope)
+            .await
+            .map_err(failed)
+    }
+    async fn launch_app(
+        &self,
+        id: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<()> {
+        super::auth::authorize(&header, conn).await?;
+        crate::security::app_ref(&id).map_err(zbus::fdo::Error::InvalidArgs)?;
+        crate::flatpak::backend().launch(&id).await.map_err(failed)
+    }
+    async fn refresh_metadata(
+        &self,
+        name: String,
+        scope: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<()> {
+        super::auth::authorize(&header, conn).await?;
+        crate::security::remote_name(&name).map_err(zbus::fdo::Error::InvalidArgs)?;
+        crate::flatpak::backend()
+            .refresh_appstream(&crate::flatpak::RemoteInfo {
+                name,
+                scope: parse_scope(&scope)?,
+                ..Default::default()
+            })
+            .await
+            .map_err(failed)
     }
 
     #[zbus(property)]
@@ -98,6 +242,30 @@ impl Service {
         emitter: &zbus::object_server::SignalEmitter<'_>,
         count: u32,
     ) -> zbus::Result<()>;
+}
+
+fn failed(error: crate::flatpak::FlatpakError) -> zbus::fdo::Error {
+    zbus::fdo::Error::Failed(error.to_string())
+}
+fn parse_scope(scope: &str) -> zbus::fdo::Result<Scope> {
+    Scope::parse(scope)
+        .ok_or_else(|| zbus::fdo::Error::InvalidArgs("Invalid installation scope".into()))
+}
+fn queue(operation: Operation, title: &str) -> zbus::fdo::Result<u64> {
+    super::touch();
+    crate::transactions::local_manager()
+        .try_enqueue(operation, title)
+        .map_err(zbus::fdo::Error::LimitsExceeded)
+}
+fn json(value: impl serde::Serialize) -> zbus::fdo::Result<String> {
+    let data = serde_json::to_string(&value)
+        .map_err(|_| zbus::fdo::Error::Failed("Cannot serialize backend state".into()))?;
+    if data.len() > crate::security::MAX_JSON_BYTES {
+        return Err(zbus::fdo::Error::LimitsExceeded(
+            "Backend state exceeds the response limit".into(),
+        ));
+    }
+    Ok(data)
 }
 
 /// Re-emit registry events as D-Bus signals.

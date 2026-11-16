@@ -166,6 +166,7 @@ Item {
                     width: parent.width
                     level: 1
                     text: root.appName
+                    textFormat: Text.PlainText
                     color: root.fgColor
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
@@ -179,6 +180,7 @@ Item {
                     level: 5
                     visible: root.developer.length > 0
                     text: root.developer
+                    textFormat: Text.PlainText
                     color: root.fgColor
                     opacity: 0.7
                     horizontalAlignment: Text.AlignHCenter
@@ -189,6 +191,7 @@ Item {
                 Text {
                     width: parent.width
                     text: root.appSummary
+                    textFormat: Text.PlainText
                     color: root.fgColor
                     opacity: 0.9
                     font: Kirigami.Theme.defaultFont

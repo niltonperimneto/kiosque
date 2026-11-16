@@ -211,6 +211,7 @@ fn run_transaction(
     tracker: Arc<Tracker>,
     cancellable: &gio::Cancellable,
     keep_going: bool,
+    allowed_origin: Option<String>,
 ) -> Result<()> {
     let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
 
@@ -256,8 +257,12 @@ fn run_transaction(
             keep_going
         });
     }
-    // Accept remotes referenced by .flatpakref files (RuntimeRepo).
-    txn.connect_add_new_remote(|_, _, _, _, _| true);
+    // Never accept an unreviewed dependency repository.
+    txn.connect_add_new_remote(move |_, _, _, _, url| {
+        crate::security::https_url(url)
+            .ok()
+            .is_some_and(|url| allowed_origin.as_deref() == Some(url.as_str()))
+    });
 
     let res = txn.run(Some(cancellable));
     if cancellable.is_cancelled() {
@@ -286,6 +291,7 @@ fn new_transaction(inst: &Installation, cancellable: &gio::Cancellable) -> Resul
 }
 
 fn run_blocking(op: Operation, sink: ProgressSink, cancellable: gio::Cancellable) -> Result<()> {
+    crate::security::operation(&op, "").map_err(FlatpakError::Failed)?;
     let tracker = Arc::new(Tracker {
         sink,
         index: AtomicUsize::new(0),
@@ -300,20 +306,24 @@ fn run_blocking(op: Operation, sink: ProgressSink, cancellable: gio::Cancellable
             let full_ref = resolve_remote_ref(&inst, &remote, &id, &cancellable)?;
             let txn = new_transaction(&inst, &cancellable)?;
             txn.add_install(&remote, &full_ref, &[]).map_err(gerr)?;
-            run_transaction(&txn, tracker, &cancellable, false)
+            run_transaction(&txn, tracker, &cancellable, false, None)
         }
         Operation::InstallRefFile { data, scope } => {
+            let summary = crate::security::ref_file(&data).map_err(FlatpakError::Failed)?;
             let inst = installation(scope)?;
             let txn = new_transaction(&inst, &cancellable)?;
+            txn.set_disable_dependencies(true);
+            txn.set_disable_related(true);
+            // Only the origin shown in the confirmation may be added.
             txn.add_install_flatpakref(&glib::Bytes::from_owned(data))
                 .map_err(gerr)?;
-            run_transaction(&txn, tracker, &cancellable, false)
+            run_transaction(&txn, tracker, &cancellable, false, Some(summary.origin))
         }
         Operation::Uninstall { id, scope } => {
             let (inst, full_ref) = find_installed(&id, scope)?;
             let txn = new_transaction(&inst, &cancellable)?;
             txn.add_uninstall(&full_ref).map_err(gerr)?;
-            run_transaction(&txn, tracker, &cancellable, false)
+            run_transaction(&txn, tracker, &cancellable, false, None)
         }
         Operation::Update { ids } => {
             // One transaction per installation that has something to update.
@@ -345,7 +355,7 @@ fn run_blocking(op: Operation, sink: ProgressSink, cancellable: gio::Cancellable
                 for r in &refs {
                     txn.add_update(r, &[], None).map_err(gerr)?;
                 }
-                match run_transaction(&txn, tracker.clone(), &cancellable, true) {
+                match run_transaction(&txn, tracker.clone(), &cancellable, true, None) {
                     Err(FlatpakError::Cancelled) => return Err(FlatpakError::Cancelled),
                     Err(FlatpakError::Failed(e)) => errors.push(e),
                     Ok(()) => {}
@@ -432,30 +442,33 @@ impl FlatpakBackend for LibflatpakBackend {
     }
 
     async fn add_remote(&self, name: &str, source: RemoteSource, scope: Scope) -> Result<()> {
-        // .flatpakrepo URLs are downloaded here so the blocking part stays offline.
-        let data = match source {
-            RemoteSource::FlatpakRepo(d) => Some(d),
-            RemoteSource::Url(u) if u.ends_with(".flatpakrepo") => {
-                Some(crate::flathub::client::fetch_bytes(&u).await.map_err(|e| {
-                    FlatpakError::Failed(format!("failed to download {}: {}", u, e))
-                })?)
+        crate::security::remote_name(name).map_err(FlatpakError::Failed)?;
+        let fixture = false;
+        #[cfg(feature = "test-util")]
+        let (source, fixture) = match source {
+            RemoteSource::LocalFixture { data, root } => {
+                crate::security::repo_fixture(&data, &root).map_err(FlatpakError::Failed)?;
+                (RemoteSource::FlatpakRepo(data), true)
             }
-            RemoteSource::Url(u) => {
-                let name = name.to_string();
-                return blocking(move || {
-                    let inst = installation(scope)?;
-                    let remote = Remote::new(&name);
-                    remote.set_url(&u);
-                    inst.add_remote(&remote, true, none()).map_err(gerr)
-                })
-                .await;
-            }
+            other => (other, fixture),
         };
+        let data = match source {
+            #[cfg(feature = "test-util")]
+            RemoteSource::LocalFixture { .. } => unreachable!("normalized fixture source"),
+            RemoteSource::FlatpakRepo(data) => data,
+            RemoteSource::Url(url) => crate::flathub::client::HttpClient::default()
+                .fetch_bytes_limited(&url, crate::security::MAX_REF_BYTES)
+                .await
+                .map_err(|e| FlatpakError::Failed(e.to_string()))?,
+        };
+        if !fixture {
+            crate::security::repo_file(&data).map_err(FlatpakError::Failed)?;
+        }
         let name = name.to_string();
-        let data = data.unwrap_or_default();
         blocking(move || {
             let inst = installation(scope)?;
             let remote = Remote::from_file(&name, &glib::Bytes::from_owned(data)).map_err(gerr)?;
+            remote.set_gpg_verify(true);
             inst.add_remote(&remote, true, none()).map_err(gerr)
         })
         .await

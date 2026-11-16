@@ -9,6 +9,9 @@ TestCase {
 
     SignalSpy { id: settingsSpy; target: SettingsController; signalName: "settingsSaved" }
     SignalSpy { id: reviewSpy; signalName: "reviewActionFinished" }
+    SignalSpy { id: installSpy; target: StoreController; signalName: "installFinished" }
+    SignalSpy { id: remoteAddedSpy; target: RepoModel; signalName: "remoteAdded" }
+    SignalSpy { id: remoteRemovedSpy; target: RepoModel; signalName: "remoteRemoved" }
 
     function init() {
         tryCompare(SettingsController, "saving_settings", false, 10000)
@@ -16,7 +19,10 @@ TestCase {
         settingsSpy.clear()
         failOnWarning(/TypeError|ReferenceError/)
     }
-    function cleanup() { reviewSpy.target = null }
+    function cleanup() {
+        reviewSpy.target = null
+        backendFixture.holdOperations(false)
+    }
     function window() {
         let component = Qt.createComponent("qrc:/qml/Main.qml")
         compare(component.status, Component.Ready, component.errorString())
@@ -91,6 +97,25 @@ TestCase {
         compare(SettingsController.update_time, "05:45")
         saveSettings(false, "Daily", "02:00")
     }
+    function test_remote_description_markup_is_displayed_without_resource_loading() {
+        let root = window()
+        root.pushAppDetail("org.kiosque.EncodedMarkup")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        let label = findChild(page, "appDescriptionText")
+        compare(label.textFormat, Text.PlainText)
+        compare(label.text, "<img src='file:///private'>")
+    }
+    function test_unknown_permissions_never_claim_isolation_or_allow_install() {
+        let root = window()
+        root.pushAppDetail("org.kiosque.UnknownPermissions")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        compare(page.details.permissionsKnown, false)
+        verify(findChild(page, "permissionsUnavailableMessage").visible)
+        verify(!findChild(page, "installRemoveButton").enabled)
+        verify(page.permissionItems[0].title.indexOf("unavailable") !== -1)
+    }
     function test_detail_failure_retry_and_action_feedback() {
         let root = window()
         root.pushAppDetail("org.kiosque.Broken")
@@ -159,11 +184,182 @@ TestCase {
         tryCompare(reviewSpy, "count", 1, 10000)
         compare(reviewSpy.signalArguments[0][0], false)
         let banner = findChild(page, "detailErrorMessage")
-        verify(banner.visible && banner.text.indexOf("fixture rejected review") !== -1)
+        verify(banner.visible)
+        verify(banner.text.indexOf("HTTP Error 503") !== -1)
+        verify(banner.text.indexOf("fixture rejected review") === -1)
         compare(details.reviews.length, 1)
         details.dismissReview(second)
         tryVerify(() => details.reviews.length === 0, 10000)
         compare(details.ratings.total, 0)
         compare(banner.visible, false)
+    }
+
+    // The bridge models expose rowCount(parent) without a default argument.
+    function rows(model) { return model.rowCount(model.index(-1, -1)) }
+    // Dialog content is reparented into the popup's visual tree, which
+    // findChild() does not reach; walk the item children instead.
+    function findItem(item, name) {
+        if (!item)
+            return null
+        if (item.objectName === name)
+            return item
+        for (let child of item.children) {
+            let found = findItem(child, name)
+            if (found)
+                return found
+        }
+        return null
+    }
+    function press(dialog, name) {
+        let button = findItem(dialog.contentItem, name)
+        verify(button !== null, name)
+        verify(button.visible && button.enabled, name)
+        button.clicked()
+    }
+    function test_ref_file_requires_confirmation() {
+        let root = window()
+        let dialog = findChild(root, "refFileDialog")
+        verify(dialog !== null)
+        let before = backendFixture.operationCount()
+
+        // Declining installs nothing, and a later confirm has nothing to install.
+        root.openRefFile(fixtureEndpoint + "/files/fixture.flatpakref")
+        tryCompare(dialog, "phase", "confirm", 10000)
+        tryCompare(dialog, "opened", true, 5000)
+        compare(dialog.appTitle, "Ref Fixture")
+        compare(dialog.appName, "org.kiosque.RefFixture")
+        compare(dialog.originUrl, "https://example.org/kiosque-fixture/")
+        compare(backendFixture.operationCount(), before)
+        press(dialog, "refCancelButton")
+        tryCompare(dialog, "opened", false)
+        StoreController.confirmRefFileInstall()
+        wait(200)
+        compare(backendFixture.operationCount(), before)
+
+        // Accepting starts exactly one install with visible progress; it can be cancelled.
+        backendFixture.holdOperations(true)
+        installSpy.clear()
+        root.openRefFile(fixtureEndpoint + "/files/fixture.flatpakref")
+        tryCompare(dialog, "phase", "confirm", 10000)
+        press(dialog, "refInstallButton")
+        compare(dialog.phase, "installing")
+        tryVerify(() => backendFixture.operationCount() === before + 1, 10000)
+        let progress = findItem(dialog.contentItem, "refInstallProgress")
+        verify(progress !== null && progress.visible)
+        press(dialog, "refCancelInstallButton")
+        tryCompare(installSpy, "count", 1, 10000)
+        compare(installSpy.signalArguments[0][0], false)
+        tryCompare(dialog, "opened", false)
+        backendFixture.holdOperations(false)
+
+        // A completed install is reported in the dialog.
+        installSpy.clear()
+        root.openRefFile(fixtureEndpoint + "/files/fixture.flatpakref")
+        tryCompare(dialog, "phase", "confirm", 10000)
+        press(dialog, "refInstallButton")
+        tryCompare(dialog, "phase", "done", 10000)
+        compare(installSpy.signalArguments[0][0], true)
+        press(dialog, "refCloseButton")
+        installSpy.clear()
+        StoreController.uninstallApp("org.kiosque.RefFixture")
+        tryCompare(installSpy, "count", 1, 10000)
+
+        // Unreadable files are reported, never installed.
+        let count = backendFixture.operationCount()
+        root.openRefFile(fixtureEndpoint + "/files/missing.flatpakref")
+        tryCompare(dialog, "phase", "failed", 10000)
+        verify(dialog.errorText.length > 0)
+        compare(backendFixture.operationCount(), count)
+        press(dialog, "refCloseButton")
+    }
+    function test_repo_file_requires_confirmation_and_removal_reports() {
+        let root = window()
+        let dialog = findChild(root, "repoFileDialog")
+        verify(dialog !== null)
+        remoteAddedSpy.clear()
+        root.openRepoFile(fixtureEndpoint + "/files/fixture.flatpakrepo")
+        tryCompare(dialog, "phase", "confirm", 10000)
+        compare(dialog.repoTitle, "Repo Fixture")
+        compare(dialog.repoUrl, "https://example.org/kiosque-fixture/")
+        compare(findChild(dialog.contentItem, "repoFileNameField").text, "kiosque-fixture")
+        compare(remoteAddedSpy.count, 0)
+        press(dialog, "repoAddButton")
+        tryCompare(remoteAddedSpy, "count", 1, 10000)
+        compare(remoteAddedSpy.signalArguments[0][0], true)
+        tryVerify(() => rows(RepoModel) === 1, 10000)
+
+        let status = findChild(root, "repositoryStatusDialog")
+        verify(status !== null)
+        status.close()
+        remoteRemovedSpy.clear()
+        RepoModel.removeRemote("kiosque-fixture")
+        tryCompare(remoteRemovedSpy, "count", 1, 10000)
+        compare(remoteRemovedSpy.signalArguments[0][0], true)
+        tryVerify(() => status.opened, 10000)
+        status.close()
+        // A failed removal is shown to the user rather than ignored.
+        remoteRemovedSpy.clear()
+        RepoModel.removeRemote("kiosque-fixture")
+        tryCompare(remoteRemovedSpy, "count", 1, 10000)
+        compare(remoteRemovedSpy.signalArguments[0][0], false)
+        tryVerify(() => status.opened, 10000)
+        verify(status.messageText.indexOf("no such remote") !== -1)
+        status.close()
+    }
+    function test_installed_page_uninstall_and_update_progress_and_cancel() {
+        let root = window()
+        root.currentSection = "installed"
+        root.switchToPage("qrc:/qml/pages/InstalledPage.qml")
+        let page = root.pageStack.currentItem
+        let model = root.installedModel
+        model.refresh()
+        tryCompare(model, "loading", false, 10000)
+        compare(rows(model), 1)
+
+        backendFixture.holdOperations(true)
+        model.uninstallApp(0)
+        compare(model.uninstalling_app_id, "org.kiosque.Fixture")
+        let bar = findChild(page, "uninstallProgressBar")
+        verify(bar !== null)
+        tryCompare(bar, "visible", true)
+        verify(bar.indeterminate)
+        let cancel = findChild(page, "cancelUninstallButton")
+        verify(cancel !== null && cancel.visible)
+        cancel.clicked()
+        tryCompare(model, "uninstalling_app_id", "", 10000)
+        // The model resets when the job ends, so look the delegate up again.
+        let after = findChild(page, "uninstallProgressBar")
+        verify(after === null || !after.visible)
+        model.refresh()
+        tryCompare(model, "loading", false, 10000)
+        compare(rows(model), 1)
+
+        verify(backendFixture.setUpdates(["org.kiosque.Fixture"]))
+        model.checkForUpdates()
+        tryCompare(model, "updates_available_count", 1, 10000)
+        tryCompare(model, "checking_updates", false, 10000)
+        model.updateSelectedApps()
+        compare(model.updating, true)
+        let label = findChild(page, "updateStatusLabel")
+        verify(label !== null)
+        compare(label.text, "Initializing update…")
+        let cancelUpdate = findChild(page, "cancelUpdateButton")
+        verify(cancelUpdate !== null && cancelUpdate.visible)
+        cancelUpdate.clicked()
+        tryCompare(model, "updating", false, 10000)
+        backendFixture.holdOperations(false)
+        verify(backendFixture.setUpdates([]))
+        model.checkForUpdates()
+        tryCompare(model, "updates_available_count", 0, 10000)
+        tryCompare(model, "checking_updates", false, 10000)
+
+        // An uninstall that is not cancelled completes and removes the row.
+        model.uninstallApp(0)
+        tryCompare(model, "uninstalling_app_id", "", 10000)
+        tryVerify(() => rows(model) === 0, 10000)
+        installSpy.clear()
+        StoreController.installApp("org.kiosque.Fixture")
+        tryCompare(installSpy, "count", 1, 10000)
+        tryVerify(() => rows(model) === 1, 10000)
     }
 }

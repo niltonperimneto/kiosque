@@ -10,6 +10,7 @@ pub mod flatpak;
 pub mod image_cache;
 pub mod registry;
 pub mod runtime;
+pub mod security;
 pub mod settings;
 pub mod transactions;
 

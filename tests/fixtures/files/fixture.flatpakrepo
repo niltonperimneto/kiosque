@@ -1,0 +1,5 @@
+[Flatpak Repo]
+Title=Repo Fixture
+Url=https://example.org/kiosque-fixture/
+SuggestRemoteName=kiosque-fixture
+GPGKey=dGVzdA==

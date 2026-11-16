@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build the explicit application package and export cxx-qt initializers for Meson."""
 import argparse
+import fcntl
 import os
 from pathlib import Path
 import shutil
@@ -26,6 +27,11 @@ if args.backend == 'cli':
     command.append('--no-default-features')
 if args.test_support == 'true':
     command.extend(['--features', 'test-util'])
-subprocess.run(command, env=env, check=True)
-shutil.copy2(args.target_dir / args.profile / 'libkiosque.a', args.output)
-shutil.copy2(export / 'crates/libkiosque/initializers.o', args.initializers)
+# Cargo releases its own lock before Meson copies the exported CXX objects.
+# Keep competing backend builds out until both outputs have been collected.
+args.target_dir.mkdir(parents=True, exist_ok=True)
+with (args.target_dir / '.kiosque-build.lock').open('a') as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    subprocess.run(command, env=env, check=True)
+    shutil.copy2(args.target_dir / args.profile / 'libkiosque.a', args.output)
+    shutil.copy2(export / 'crates/libkiosque/initializers.o', args.initializers)

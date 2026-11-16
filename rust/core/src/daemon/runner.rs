@@ -33,7 +33,20 @@ pub type RemoteMatch = (
 /// bits_per_sample, channels, data)
 fn icon_data(icon_url: &str) -> Option<OwnedVariant> {
     let path = icon_url.strip_prefix("file://")?;
-    let img = image::open(path).ok()?;
+    use std::io::Read;
+    let path = std::path::Path::new(path).canonicalize().ok()?;
+    if !crate::image_cache::allowed_local_icon(&path) {
+        return None;
+    }
+    let file = std::fs::File::open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(crate::security::MAX_IMAGE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    let img = crate::image_cache::decode(bytes).ok()?;
     let img = img
         .resize(ICON_SIZE, ICON_SIZE, image::imageops::FilterType::Lanczos3)
         .to_rgba8();
@@ -52,7 +65,7 @@ fn icon_data(icon_url: &str) -> Option<OwnedVariant> {
 
 pub fn matches(query: &str) -> Vec<RemoteMatch> {
     let query = query.trim();
-    if query.chars().count() < 3 {
+    if query.len() > 512 || query.chars().count() < 3 {
         return vec![];
     }
     let catalog = crate::catalog::catalog();
@@ -117,8 +130,24 @@ impl Runner {
 
     async fn run(&self, match_id: String, _action_id: String) {
         super::touch();
+        if crate::security::app_ref(&match_id).is_err() || match_id.contains('/') {
+            return;
+        }
+        if crate::catalog::catalog()
+            .search(&match_id, 64)
+            .iter()
+            .all(|app| app.id != match_id)
+        {
+            return;
+        }
         let url = format!("appstream://{}", match_id);
-        let spawned = std::process::Command::new("kiosque")
+        let Ok(executable) = std::env::current_exe() else {
+            return;
+        };
+        let Some(directory) = executable.parent() else {
+            return;
+        };
+        let spawned = std::process::Command::new(directory.join("kiosque"))
             .arg(&url)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())

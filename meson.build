@@ -98,14 +98,16 @@ configure_file(
   input: 'data/org.kiosque.Kiosque.Daemon.service.in',
   output: 'org.kiosque.Kiosque.Daemon.service',
   configuration: daemon_service_conf,
-  install: true,
+  install: get_option('host_companion'),
   install_dir: get_option('datadir') / 'dbus-1/services'
 )
 
 # KRunner D-Bus runner served by the daemon at /runner.
+if get_option('host_companion')
 install_data('data/krunner/org.kiosque.Kiosque.desktop',
   install_dir: get_option('datadir') / 'krunner/dbusplugins'
 )
+endif
 
 install_data('qml/images/logo.svg',
   rename: 'org.kiosque.Kiosque.svg',

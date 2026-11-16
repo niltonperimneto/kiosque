@@ -21,7 +21,7 @@ pub mod cli {
             application_id: app.id.clone(),
             name: app.name.clone(),
             version: Some(app.version.clone()),
-            installed_size: Some(format!("{} B", app.installed_size)),
+            installed_size: Some(kiosque_core::entries::format_size(app.installed_size)),
             origin: Some(app.origin.clone()),
             options: Some(if app.is_runtime() { "runtime" } else { "app" }.into()),
             ref_string: Some(app.ref_string()),
@@ -78,6 +78,13 @@ pub mod cli {
         services()
             .backend
             .add_remote(name, RemoteSource::Url(url.into()), Scope::User)
+            .await
+            .map_err(|e| e.to_string())
+    }
+    pub async fn add_repository_file(name: &str, data: Vec<u8>) -> std::result::Result<(), String> {
+        services()
+            .backend
+            .add_remote(name, RemoteSource::FlatpakRepo(data), Scope::User)
             .await
             .map_err(|e| e.to_string())
     }

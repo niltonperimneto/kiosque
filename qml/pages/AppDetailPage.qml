@@ -67,8 +67,8 @@ Kirigami.ScrollablePage {
     readonly property var visibleReviews: allReviewsList.slice(0, reviewsShown)
     readonly property var screenshotUrls: details.screenshots || []
     readonly property var urlsData: details.urls || ({})
-    readonly property var permissionItems: getPermissionItems(details.permissions)
-    readonly property string windowingSystem: getWindowingSystem(details.permissions)
+    readonly property var permissionItems: getPermissionItems(details.permissions, details.permissionsKnown)
+    readonly property string windowingSystem: details.permissionsKnown ? getWindowingSystem(details.permissions) : i18n("Unknown")
 
     // Reveal the next batch of reviews
     function loadMoreReviews() {
@@ -91,12 +91,16 @@ Kirigami.ScrollablePage {
         return !perms || Object.keys(perms).length === 0;
     }
     // Helper to get structured list of permissions for the HIG display
-    function getPermissionItems(perms) {
+    function getPermissionItems(perms, known) {
+        if (known === false) {
+            return [{ icon: "security-medium-symbolic", title: i18n("Permissions unavailable"),
+                      description: i18n("The application's permissions could not be verified. Review its manifest before installing.") }];
+        }
         if (isEmptyPermissions(perms)) {
             return [{
                 icon: "security-high-symbolic",
-                title: i18n("No special permissions required (Fully Sandboxed)"),
-                description: i18n("This application is fully sandboxed and isolated from your files, network, and devices.")
+                title: i18n("No additional permissions declared"),
+                description: i18n("The available manifest declares no additional access. Sandbox security also depends on the runtime and system.")
             }];
         }
         try {
@@ -269,16 +273,16 @@ Kirigami.ScrollablePage {
             if (items.length === 0) {
                 return [{
                     icon: "security-high-symbolic",
-                    title: i18n("No special permissions required (Fully Sandboxed)"),
-                    description: i18n("This application is fully sandboxed and isolated from your files, network, and devices.")
+                    title: i18n("No additional permissions declared"),
+                    description: i18n("The available manifest declares no additional access. Sandbox security also depends on the runtime and system.")
                 }];
             }
             return items;
         } catch(e) {
             return [{
                 icon: "security-medium-symbolic",
-                title: i18n("Fully Sandboxed or permissions unavailable"),
-                description: i18n("The application is either fully sandboxed or its permissions could not be loaded.")
+                title: i18n("Permissions unavailable"),
+                description: i18n("The application permissions could not be verified.")
             }];
         }
     }
@@ -315,6 +319,19 @@ Kirigami.ScrollablePage {
     ColumnLayout {
         spacing: Kirigami.Units.largeSpacing * 1.5
         width: parent.width
+
+        Kirigami.InlineMessage {
+            objectName: "permissionsUnavailableMessage"
+            Layout.fillWidth: true
+            visible: !details.loading && !details.installed && !details.permissionsKnown && details.errorMessage === ""
+            type: Kirigami.MessageType.Warning
+            text: i18n("Permissions could not be verified. Reload the details before installing.")
+            actions: Kirigami.Action {
+                text: i18n("Retry")
+                icon.name: "view-refresh"
+                onTriggered: details.reload()
+            }
+        }
 
         Kirigami.InlineMessage {
             objectName: "detailErrorMessage"
@@ -385,6 +402,7 @@ Kirigami.ScrollablePage {
                 Kirigami.Heading {
                     level: 1
                     text: details.name
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
@@ -392,6 +410,7 @@ Kirigami.ScrollablePage {
 
                 Controls.Label {
                     text: details.developer !== "" ? details.developer : i18n("Unknown Developer")
+                    textFormat: Text.PlainText
                     color: Kirigami.Theme.disabledTextColor
                     Layout.fillWidth: true
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
@@ -399,6 +418,7 @@ Kirigami.ScrollablePage {
 
                 Controls.Label {
                     text: details.summary
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
@@ -456,6 +476,7 @@ Kirigami.ScrollablePage {
                     }
                     icon.name: details.installed ? "edit-delete-symbolic" : "download-symbolic"
                     enabled: !details.loading && !details.busy
+                             && (details.installed || details.permissionsKnown)
                         && (details.installed || details.errorMessage === "")
                     highlighted: !details.installed
                     Layout.fillWidth: true
@@ -677,11 +698,11 @@ Kirigami.ScrollablePage {
 
             Controls.Label {
                 id: descText
+                objectName: "appDescriptionText"
                 Layout.fillWidth: true
                 text: details.description
-                textFormat: Text.RichText
+                textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
-                onLinkActivated: (link) => Qt.openUrlExternally(link)
             }
         }
 

@@ -37,7 +37,7 @@ def main():
         run([sys.executable, 'scripts/test.py', 'packages', '--artifact', str(args.artifact)], env=env)
         return
     run([sys.executable, 'tests/system/publish_fixture.py', str(root), '1'], env=env)
-    command = ['dbus-run-session', '--', 'cargo', 'test', '--locked', '--manifest-path', 'rust/Cargo.toml', '-p', 'kiosque-core', '--no-default-features']
+    command = ['dbus-run-session', '--', 'cargo', 'test', '--locked', '--manifest-path', 'rust/Cargo.toml', '-p', 'kiosque-core', '--no-default-features', '--features', 'test-util']
     if args.backend == 'native':
         command.extend(['--features', 'libflatpak'])
     command.extend(['--test', 'flatpak_system', '--', '--ignored', '--nocapture'])

@@ -7,6 +7,7 @@ import threading
 import time
 
 FIXTURES = Path(__file__).resolve().parents[1] / 'tests/fixtures/http'
+FILES = Path(__file__).resolve().parents[1] / 'tests/fixtures/files'
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -62,6 +63,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path.startswith('/app-picks/app-of-the-day/'):
             return self.respond(200, {'app_id': 'org.kiosque.Daily'})
+        if self.path.startswith('/files/'):
+            name = self.path[len('/files/'):]
+            path = FILES / name
+            if '/' in name or not path.is_file():
+                return self.respond(404, {'error': 'no such fixture file'})
+            data = path.read_bytes()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if self.path.startswith('/collection/'):
             if '/Slow' in self.path:
                 time.sleep(0.3)
@@ -75,6 +88,10 @@ class Handler(BaseHTTPRequestHandler):
                     {'app_id': 'org.kiosque.NoDate', 'name': 'NoDate'},
                 ]}
             return self.respond(200, fixture)
+        if self.path.startswith('/summary/'):
+            if self.path.endswith('/org.kiosque.UnknownPermissions'):
+                return self.respond(503, {'error': 'permissions unavailable'})
+            return self.respond(200, {'metadata': {'permissions': {}}})
         if self.path.startswith('/appstream/'):
             app_id = self.path.rsplit('/', 1)[1]
             with self.server.state_lock:
@@ -86,6 +103,8 @@ class Handler(BaseHTTPRequestHandler):
                 time.sleep(0.3)
             details = json.loads((FIXTURES / 'details.json').read_text())
             details.update(id=app_id, name=app_id.rsplit('.', 1)[1])
+            if app_id == 'org.kiosque.EncodedMarkup':
+                details['description'] = "&lt;img src='file:///private'&gt;"
             if app_id in ('org.kiosque.Daily', 'org.kiosque.Screenshots'):
                 details['screenshots'] = [{'sizes': [{'src': f'http://127.0.0.1:{self.server.server_port}/fixture-image.png', 'width': 8, 'height': 8}]}]
             if app_id == 'org.kiosque.Daily':

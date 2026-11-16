@@ -7,6 +7,7 @@ Run suites from the repository root with `python3 scripts/test.py <suite>`. Comm
 | Suite | Prerequisites | Contract |
 | --- | --- | --- |
 | `guidance` | Python 3 | Skill frontmatter, local Markdown links, instruction inventory, change-to-suite routing |
+| `security` | Python 3, tar, Git and public network | Checksummed RustSec audit and redacted source/history secret scan; SPDX inventory of locked Rust dependencies |
 | `lint` | Stable Rust with rustfmt and Clippy | Workspace formatting; core Clippy with warnings denied |
 | `core` | Stable Rust, C/C++ build tools | Domain, registry, queue, parsers, scheduling, images, cache codecs; no Qt/KDE/libflatpak headers |
 | `services` | Core tools, Python, loopback sockets | Local HTTP responses, cache behavior, temporary persistence, real fake-command processes, cancellation/reaping |
@@ -50,7 +51,7 @@ Lifecycle guest provisioning uses the pinned Fedora release repositories with we
 
 Pull requests run core/service checks and a native/CLI desktop matrix before packaging. The existing RPM, Flatpak and AppImage builds remain. Scheduled/manual system qualification runs both real backends in disposable VMs. Trusted successful push builds trigger artifact smoke tests for the exact source commit and packaging run; untrusted pull-request artifacts are never promoted to the VM workflow.
 
-Release tags also trigger builds and system qualification. Before publishing, require green CI, both system backend checks, and all three package smoke checks for the same commit. This repository does not publish releases or configure remote branch-protection rules automatically. Configure required pull-request checks in repository settings if not already enforced.
+Release tags also trigger builds and system qualification. Before publishing, require green CI, both system backend checks, and all three package smoke checks for the same commit. Release publication remains a separate action. Main now requires pull requests and the existing core/native/CLI checks, including administrators, with resolved conversations and force-push/deletion disabled. Dependency alerts, automatic security fixes, secret push protection and private vulnerability reporting are enabled. Add the new Security audit context as a required check after its first published run.
 
 The `kiosque --check-ui` diagnostic loads the actual packaged QML and checks its image resource before exiting with `KIOSQUE_UI_READY`. `kiosque-update --help` exits without checking or applying updates.
 
@@ -59,3 +60,11 @@ The `kiosque --check-ui` diagnostic loads the actual packaged QML and checks its
 Preserve the first failure, source revision, backend selection and environment versions. Inspect `.test-results/` and the Meson logs; a compile failure, unavailable socket and behavior assertion are different failures. Do not retry away a failure. Reproduce its smallest suite, add a behavioral regression, then rerun affected boundaries.
 
 No coverage percentage or screenshot-equality gate is imposed. Sanitizers, performance baselines, broader distribution/desktop matrices, and dedicated accessibility audits are follow-up qualification. Current system contracts focus on backend lifecycle/scope; daemon disconnect/reconnect and sandbox host integration need dedicated guest scenarios as those application paths are integrated.
+
+## Security qualification
+
+The service suite runs a private D-Bus daemon and confirms that unrelated clients cannot invoke even valid-looking mutation requests. Streaming HTTP fixtures exercise length headers and chunked bodies; core tests cover private settings migration, invalid origins, PKCE/callback handling, queue bounds and image dimension budgets. Dedicated desktop fixtures supply an explicit local transport; release constructors retain public HTTPS restrictions.
+
+Use `KIOSQUE_TEST_BUILD_DIR` to select a separate Meson directory when another session is building the checkout. The security audit emits an SPDX lockfile inventory under its results directory; this covers Rust source dependencies, including optional/test/build crates, and is not a complete inventory of bundled system libraries. Trusted package pushes produce GitHub provenance attestations. Scheduled/trusted CodeQL scans cover Rust, C++, Python and Actions; no successful scan is claimed before those workflows execute.
+
+Live OAuth provider registration, signed native/CLI lifecycle, Flatpak-to-native companion identity/activation and exact package smoke checks require separate release qualification. See [the hardening record](security-hardening.md) for the current execution evidence.

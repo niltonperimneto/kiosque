@@ -44,6 +44,47 @@ private slots:
             QVERIFY(model->roleNames().values().contains("appId"));
         }
     }
+    void installedSizesAndUpdateChoices() {
+        QQmlEngine engine; setup.qmlEngineAvailable(&engine);
+        QQmlComponent component(&engine);
+        component.setData("import com.kiosque\nInstalledModel {}", QUrl());
+        QScopedPointer<QObject> object(component.create());
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto* model = qobject_cast<QAbstractItemModel*>(object.data());
+        QVERIFY(model);
+        const auto roles = model->roleNames();
+        const int sizeRole = roles.key("size");
+        const int checkedRole = roles.key("isChecked");
+        const int updateRole = roles.key("hasUpdate");
+        QVERIFY(QMetaObject::invokeMethod(model, "refresh"));
+        QTRY_VERIFY_WITH_TIMEOUT(!model->property("loading").toBool(), 10000);
+        QCOMPARE(model->rowCount(), 1);
+        // Bytes are shown with units, as the flatpak CLI does.
+        QCOMPARE(model->index(0, 0).data(sizeRole).toString(), QStringLiteral("565.4 MB"));
+
+        QVERIFY(kiosque_test_set_updates("org.kiosque.Fixture"));
+        QVERIFY(QMetaObject::invokeMethod(model, "checkForUpdates"));
+        QTRY_COMPARE_WITH_TIMEOUT(model->property("updates_available_count").toInt(), 1, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!model->property("checking_updates").toBool(), 10000);
+        QVERIFY(model->index(0, 0).data(updateRole).toBool());
+        QVERIFY(model->index(0, 0).data(checkedRole).toBool());
+
+        // The user's choice survives later registry events and checks.
+        QVERIFY(QMetaObject::invokeMethod(model, "toggleUpdateChecked", Q_ARG(int, 0)));
+        QCOMPARE(model->property("updates_checked_count").toInt(), 0);
+        QVERIFY(QMetaObject::invokeMethod(model, "checkForUpdates"));
+        QTRY_VERIFY_WITH_TIMEOUT(!model->property("checking_updates").toBool(), 10000);
+        QVERIFY(QMetaObject::invokeMethod(model, "refresh"));
+        QTRY_VERIFY_WITH_TIMEOUT(!model->property("loading").toBool(), 10000);
+        QCOMPARE(model->property("updates_available_count").toInt(), 1);
+        QCOMPARE(model->property("updates_checked_count").toInt(), 0);
+        QVERIFY(!model->index(0, 0).data(checkedRole).toBool());
+
+        QVERIFY(kiosque_test_set_updates(""));
+        QVERIFY(QMetaObject::invokeMethod(model, "checkForUpdates"));
+        QTRY_COMPARE_WITH_TIMEOUT(model->property("updates_available_count").toInt(), 0, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!model->property("checking_updates").toBool(), 10000);
+    }
     void imageProviderDecodesOwnedPixels() {
         QTemporaryDir root;
         QImage fixture(4, 4, QImage::Format_RGBA8888); fixture.fill(Qt::red);
