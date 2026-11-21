@@ -24,7 +24,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use chrono::{Datelike, Local, NaiveTime, TimeZone};
+use jiff::{
+    ToSpan, Zoned,
+    civil::{Time, Weekday},
+    tz::AmbiguousOffset,
+};
 use serde::{Deserialize, Serialize};
 use zbus::Type;
 
@@ -149,29 +153,31 @@ pub async fn check_updates() -> crate::flatpak::Result<usize> {
 }
 
 /// The next time automatic updates should run according to the settings.
-pub fn next_auto_update(
-    settings: &crate::settings::AppSettings,
-    now: chrono::DateTime<Local>,
-) -> Option<chrono::DateTime<Local>> {
+pub fn next_auto_update(settings: &crate::settings::AppSettings, now: &Zoned) -> Option<Zoned> {
     if !settings.auto_update {
         return None;
     }
-    let time = NaiveTime::parse_from_str(&settings.update_time, "%H:%M")
-        .unwrap_or(NaiveTime::from_hms_opt(2, 0, 0)?);
+    let time =
+        Time::strptime("%H:%M", &settings.update_time).unwrap_or(Time::new(2, 0, 0, 0).ok()?);
     let weekly = settings.update_frequency.eq_ignore_ascii_case("weekly");
     (0..=7).find_map(|d| {
-        let day = now.date_naive() + chrono::Duration::days(d);
-        if weekly && day.weekday() != chrono::Weekday::Mon {
+        let day = now.date().checked_add(d.days()).ok()?;
+        if weekly && day.weekday() != Weekday::Monday {
             return None;
         }
-        let at = Local.from_local_datetime(&day.and_time(time)).earliest()?;
-        (at > now).then_some(at)
+        let ambiguous = now.time_zone().to_ambiguous_zoned(day.to_datetime(time));
+        // Preserve existing semantics: skip nonexistent times and choose the first fold.
+        if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
+            return None;
+        }
+        let at = ambiguous.earlier().ok()?;
+        (&at > now).then_some(at)
     })
 }
 
 async fn scheduler() {
     let mut next_check = tokio::time::Instant::now();
-    let mut next_auto = next_auto_update(&crate::settings::load_settings(), Local::now());
+    let mut next_auto = next_auto_update(&crate::settings::load_settings(), &Zoned::now());
     let mut catalog_refreshed = tokio::time::Instant::now() - Duration::from_secs(86400);
     loop {
         let now = tokio::time::Instant::now();
@@ -186,12 +192,12 @@ async fn scheduler() {
 
         // Settings may change while we run; re-read every minute.
         let settings = crate::settings::load_settings();
-        let computed = next_auto_update(&settings, Local::now());
+        let computed = next_auto_update(&settings, &Zoned::now());
         if computed.is_none() || next_auto.is_none() {
             next_auto = computed;
         }
-        if let Some(at) = next_auto
-            && Local::now() >= at
+        if let Some(at) = &next_auto
+            && &Zoned::now() >= at
         {
             if check_updates().await.is_ok() && !crate::registry::registry().updates().is_empty() {
                 klog!("daemon: running scheduled automatic update");
@@ -201,7 +207,12 @@ async fn scheduler() {
                     "Automatic update",
                 );
             }
-            next_auto = next_auto_update(&settings, Local::now() + chrono::Duration::minutes(1));
+            next_auto = next_auto_update(
+                &settings,
+                &Zoned::now()
+                    .checked_add(1.minutes())
+                    .expect("current time plus one minute"),
+            );
         }
 
         // Idle exit for on-demand instances.
@@ -383,25 +394,43 @@ mod tests {
     #[test]
     fn auto_update_schedule() {
         // Wednesday 2026-11-11 10:00 local
-        let now = Local.with_ymd_and_hms(2026, 11, 11, 10, 0, 0).unwrap();
+        let now = "2026-11-11T10:00:00[UTC]".parse::<Zoned>().unwrap();
         assert_eq!(
-            next_auto_update(&settings(false, "Daily", "02:00"), now),
+            next_auto_update(&settings(false, "Daily", "02:00"), &now),
             None
         );
-        let daily = next_auto_update(&settings(true, "Daily", "02:00"), now).unwrap();
-        assert_eq!(
-            daily,
-            Local.with_ymd_and_hms(2026, 11, 12, 2, 0, 0).unwrap()
-        );
-        let later_today = next_auto_update(&settings(true, "Daily", "23:30"), now).unwrap();
+        let daily = next_auto_update(&settings(true, "Daily", "02:00"), &now).unwrap();
+        assert_eq!(daily, "2026-11-12T02:00:00[UTC]".parse::<Zoned>().unwrap());
+        let later_today = next_auto_update(&settings(true, "Daily", "23:30"), &now).unwrap();
         assert_eq!(
             later_today,
-            Local.with_ymd_and_hms(2026, 11, 11, 23, 30, 0).unwrap()
+            "2026-11-11T23:30:00[UTC]".parse::<Zoned>().unwrap()
         );
-        let weekly = next_auto_update(&settings(true, "Weekly", "02:00"), now).unwrap();
+        let weekly = next_auto_update(&settings(true, "Weekly", "02:00"), &now).unwrap();
+        assert_eq!(weekly, "2026-11-16T02:00:00[UTC]".parse::<Zoned>().unwrap());
+    }
+
+    #[test]
+    fn schedule_preserves_dst_gap_and_fold_behavior() {
+        let gap = "2026-03-08T00:00:00-05:00[America/New_York]"
+            .parse::<Zoned>()
+            .unwrap();
+        let next = next_auto_update(&settings(true, "Daily", "02:30"), &gap).unwrap();
         assert_eq!(
-            weekly,
-            Local.with_ymd_and_hms(2026, 11, 16, 2, 0, 0).unwrap()
+            next,
+            "2026-03-09T02:30:00-04:00[America/New_York]"
+                .parse::<Zoned>()
+                .unwrap()
+        );
+        let fold = "2026-11-01T00:00:00-04:00[America/New_York]"
+            .parse::<Zoned>()
+            .unwrap();
+        let next = next_auto_update(&settings(true, "Daily", "01:30"), &fold).unwrap();
+        assert_eq!(
+            next,
+            "2026-11-01T01:30:00-04:00[America/New_York]"
+                .parse::<Zoned>()
+                .unwrap()
         );
     }
 

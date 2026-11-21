@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use gio::glib;
 use gio::prelude::*;
 use libflatpak::prelude::*;
 use libflatpak::{Installation, InstalledRef, Remote, Transaction};

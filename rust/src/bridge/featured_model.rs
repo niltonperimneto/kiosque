@@ -216,7 +216,7 @@ impl qobject::FeaturedModel {
                 return;
             }
             let client = &crate::services::services().flathub;
-            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let today = jiff::Zoned::now().strftime("%Y-%m-%d").to_string();
             let aotd_id = client
                 .fetch_text(&format!("app-picks/app-of-the-day/{today}"))
                 .await

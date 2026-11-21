@@ -615,8 +615,8 @@ fn reviews_list(reviews: &[OdrsReview]) -> QVariantList {
     reviews
         .iter()
         .map(|review| {
-            let date = chrono::DateTime::from_timestamp(review.date_created as i64, 0)
-                .map(|d| d.format("%Y-%m-%d").to_string())
+            let date = jiff::Timestamp::from_second(review.date_created as i64)
+                .map(|d| d.strftime("%Y-%m-%d").to_string())
                 .unwrap_or_default();
             let mut map = QVariantMap::default();
             map.insert(
