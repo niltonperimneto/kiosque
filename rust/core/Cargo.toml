@@ -57,7 +57,7 @@ serde-saphyr = { version = "2.1.1", default-features = false, features = ["deser
 regex = "1.13.1"
 
 # libflatpak backend (optional, see [features])
-libflatpak = { version = "0.7.0", optional = true }
+libflatpak = { version = "0.7.0", features = ["v1_1"], optional = true }
 # Keep gio/glib on the version family required by libflatpak 0.7.
 gio = { version = "0.21.5", optional = true }
 glib = { version = "0.21.5", optional = true }
