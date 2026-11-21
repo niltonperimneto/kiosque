@@ -117,7 +117,7 @@ impl Service {
     ) -> zbus::fdo::Result<u32> {
         super::auth::authorize(&header, conn).await?;
         super::touch();
-        Ok(super::check_updates().await as u32)
+        Ok(super::check_updates().await.map_err(failed)? as u32)
     }
     async fn read_installed(
         &self,

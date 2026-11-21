@@ -1,18 +1,6 @@
-//! Flatpak backend abstraction.
-//!
-//! Every Flatpak operation in Kiosque goes through the [`FlatpakBackend`] trait.
-//! Two implementations exist:
-//!
-//! * [`native::LibflatpakBackend`] (feature `libflatpak`, the default) uses
-//!   libflatpak directly: real `FlatpakTransaction` progress, `GCancellable`
-//!   based cancellation and `FlatpakInstallation` file monitors.
-//! * [`cli::CliBackend`] shells out to the `flatpak` binary. It is used when
-//!   libflatpak is unavailable (feature disabled or initialisation failed).
-//!
-//! A [`mock::MockBackend`] is available to unit tests.
+//! Host operations use libflatpak. Sandboxed applications access the host companion.
 
 pub mod broker;
-pub mod cli;
 #[cfg(any(test, feature = "test-util"))]
 pub mod mock;
 #[cfg(feature = "libflatpak")]
@@ -50,14 +38,6 @@ impl Scope {
             "user" => Some(Scope::User),
             "system" | "default" => Some(Scope::System),
             _ => None,
-        }
-    }
-
-    /// The `flatpak` CLI flag selecting this installation.
-    pub fn cli_flag(self) -> &'static str {
-        match self {
-            Scope::User => "--user",
-            Scope::System => "--system",
         }
     }
 }
@@ -193,7 +173,7 @@ pub type Result<T> = std::result::Result<T, FlatpakError>;
 #[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait FlatpakBackend: Send + Sync {
-    /// Short identifier used in logs ("libflatpak", "cli", "mock").
+    /// Short identifier used in logs ("libflatpak", "host-companion", "mock").
     fn name(&self) -> &'static str;
 
     async fn list_installed(&self) -> Result<Vec<InstalledApp>>;
@@ -234,35 +214,29 @@ pub trait FlatpakBackend: Send + Sync {
 
 static BACKEND: OnceLock<Arc<dyn FlatpakBackend>> = OnceLock::new();
 
-/// The process-wide backend: libflatpak when available, CLI otherwise.
+/// The process-wide backend: libflatpak on the host, the companion inside Flatpak.
 pub fn backend() -> Arc<dyn FlatpakBackend> {
     BACKEND
         .get_or_init(|| {
-            let b = select_backend();
+            let b = select_backend(in_sandbox());
             klog!("flatpak backend: {}", b.name());
             b
         })
         .clone()
 }
 
-fn select_backend() -> Arc<dyn FlatpakBackend> {
-    if in_sandbox() {
+fn select_backend(sandbox: bool) -> Arc<dyn FlatpakBackend> {
+    if sandbox {
         return Arc::new(broker::BrokerBackend);
-    }
-    if std::env::var_os("KIOSQUE_FLATPAK_BACKEND").is_some_and(|v| v == "cli") {
-        return Arc::new(cli::CliBackend::new());
     }
     #[cfg(feature = "libflatpak")]
     {
-        match native::LibflatpakBackend::new() {
-            Ok(b) => return Arc::new(b),
-            Err(e) => kerr!(
-                "libflatpak unavailable ({}), falling back to the flatpak CLI",
-                e
-            ),
-        }
+        Arc::new(native::LibflatpakBackend)
     }
-    Arc::new(cli::CliBackend::new())
+    #[cfg(not(feature = "libflatpak"))]
+    {
+        Arc::new(broker::OutsideSandbox)
+    }
 }
 
 // ── Installation-change notifications ───────────────────────────────────────
@@ -463,5 +437,30 @@ mod tests {
         assert_eq!(summary.title, "");
         assert_eq!(summary.suggested_remote_name, "example");
         assert!(summarize_keyfile(b"[Flatpak Ref]\nName=a.b.C\nIsRuntime=true\n").is_runtime);
+    }
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn backend_matches_the_process_environment() {
+        assert_eq!(select_backend(true).name(), "host-companion");
+        let host = select_backend(false);
+        #[cfg(feature = "libflatpak")]
+        assert_eq!(host.name(), "libflatpak");
+        #[cfg(not(feature = "libflatpak"))]
+        {
+            assert!(
+                host.list_installed()
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("sandbox")
+            );
+            assert!(host.list_updates().await.is_err());
+            assert_ne!(crate::daemon::run_update_once(&*host).await, 0);
+        }
     }
 }

@@ -36,7 +36,7 @@
             "buildsystem": "meson",
             "config-opts": [
                 "--buildtype=release",
-                "-Dflatpak_backend=cli",
+                "-Dflatpak_backend=broker",
                 "-Dhost_companion=false"
             ],
             "sources": [

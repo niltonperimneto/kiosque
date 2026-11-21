@@ -180,9 +180,7 @@ impl qobject::RepoModel {
         let qt_thread = self.qt_thread();
 
         crate::runtime::runtime().spawn(async move {
-            let remotes = crate::flatpak::cli::list_remotes()
-                .await
-                .unwrap_or_default();
+            let remotes = crate::flatpak::ui::list_remotes().await.unwrap_or_default();
 
             let items: Vec<RepoEntry> = remotes
                 .into_iter()
@@ -213,7 +211,7 @@ impl qobject::RepoModel {
         let url_str = url.to_string();
 
         crate::runtime::runtime().spawn(async move {
-            let result = crate::flatpak::cli::add_repository(&name_str, &url_str).await;
+            let result = crate::flatpak::ui::add_repository(&name_str, &url_str).await;
             let (success, msg) = match result {
                 Ok(_) => (true, "Repository added successfully".to_string()),
                 Err(e) => (false, e),
@@ -278,7 +276,7 @@ impl qobject::RepoModel {
         let name = name.to_string();
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
-            let result = crate::flatpak::cli::add_repository_file(&name, data).await;
+            let result = crate::flatpak::ui::add_repository_file(&name, data).await;
             let (success, msg) = match result {
                 Ok(_) => (true, "Repository added successfully".to_string()),
                 Err(e) => (false, e),
@@ -304,7 +302,7 @@ impl qobject::RepoModel {
         let name_str = name.to_string();
 
         crate::runtime::runtime().spawn(async move {
-            let result = crate::flatpak::cli::remove_repository(&name_str).await;
+            let result = crate::flatpak::ui::remove_repository(&name_str).await;
             let (success, msg) = match result {
                 Ok(_) => (true, "Repository removed successfully".to_string()),
                 Err(e) => (false, e),

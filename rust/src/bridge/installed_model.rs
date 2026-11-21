@@ -33,6 +33,8 @@ pub mod qobject {
         #[base = QAbstractListModel]
         #[qml_element]
         #[qproperty(bool, loading)]
+        #[qproperty(QString, installed_error)]
+        #[qproperty(QString, updates_error)]
         #[qproperty(QString, uninstalling_app_id)]
         #[qproperty(f64, uninstall_progress)]
         #[qproperty(bool, checking_updates)]
@@ -135,6 +137,8 @@ pub struct InstalledModelRust {
     pub current_sort_criterion: String,
     pub current_sort_ascending: bool,
     pub loading: bool,
+    pub installed_error: cxx_qt_lib::QString,
+    pub updates_error: cxx_qt_lib::QString,
     pub uninstalling_app_id: cxx_qt_lib::QString,
     pub uninstall_progress: f64,
     pub checking_updates: bool,
@@ -162,6 +166,8 @@ impl Default for InstalledModelRust {
             current_sort_criterion: "name".to_string(),
             current_sort_ascending: true,
             loading: false,
+            installed_error: Default::default(),
+            updates_error: Default::default(),
             uninstalling_app_id: cxx_qt_lib::QString::from(""),
             uninstall_progress: 0.0,
             checking_updates: false,
@@ -348,11 +354,17 @@ impl qobject::InstalledModel {
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let services = crate::services::services();
-            if let Err(error) = services.registry.reload_installed(&*services.backend).await {
-                kerr!("InstalledModel::refresh: {}", error);
-            }
-            let _ = qt_thread.queue(|mut object| {
-                object.as_mut().sync_registry();
+            let result = services.registry.reload_installed(&*services.backend).await;
+            let _ = qt_thread.queue(move |mut object| {
+                match result {
+                    Ok(_) => {
+                        object.as_mut().set_installed_error(Default::default());
+                        object.as_mut().sync_registry();
+                    }
+                    Err(error) => object
+                        .as_mut()
+                        .set_installed_error(cxx_qt_lib::QString::from(error.to_string().as_str())),
+                }
                 object.as_mut().set_loading(false);
             });
         });
@@ -536,7 +548,7 @@ impl qobject::InstalledModel {
         let app_id = self.items[actual_idx].app_id.clone();
         klog!("InstalledModel::launch_app: launching \"{}\"", app_id);
         crate::runtime::runtime().spawn(async move {
-            if let Err(e) = crate::flatpak::cli::launch_app(&app_id).await {
+            if let Err(e) = crate::flatpak::ui::launch_app(&app_id).await {
                 kerr!("InstalledModel::launch_app: {}", e);
             }
         });
@@ -546,7 +558,7 @@ impl qobject::InstalledModel {
         self.as_mut().set_checking_updates(true);
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
-            let updates = match crate::flatpak::cli::list_updates().await {
+            let updates = match crate::flatpak::ui::list_updates().await {
                 Ok(ids) => {
                     klog!(
                         "InstalledModel::check_for_updates: found {} updates",
@@ -556,11 +568,18 @@ impl qobject::InstalledModel {
                 }
                 Err(e) => {
                     kerr!("InstalledModel::check_for_updates: {}", e);
-                    vec![]
+                    let _ = qt_thread.queue(move |mut object| {
+                        object
+                            .as_mut()
+                            .set_updates_error(cxx_qt_lib::QString::from(e.as_str()));
+                        object.as_mut().set_checking_updates(false);
+                    });
+                    return;
                 }
             };
 
             let _ = qt_thread.queue(move |mut qobject| {
+                qobject.as_mut().set_updates_error(Default::default());
                 qobject.as_mut().begin_reset_model();
                 {
                     let mut rust_mut = qobject.as_mut().rust_mut();

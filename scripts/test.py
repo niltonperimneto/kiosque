@@ -22,7 +22,7 @@ RESULTS = ROOT / '.test-results'
 RECORDS = []
 
 
-def run(command, *, env=None, timeout=900):
+def run(command, *, env=None, timeout=900, expected=0):
     command = [str(part) for part in command]
     print('+ ' + ' '.join(command), flush=True)
     start = time.monotonic()
@@ -51,9 +51,9 @@ def run(command, *, env=None, timeout=900):
             code = 124
         reader.join(timeout=10)
     text = ''.join(output)
-    RECORDS.append((' '.join(command), time.monotonic() - start, code, text))
-    if code:
-        raise RuntimeError(f'command exited {code}: {command[0]}')
+    RECORDS.append((' '.join(command), time.monotonic() - start, 0 if code == expected else code or 1, text))
+    if code != expected:
+        raise RuntimeError(f'command exited {code}, expected {expected}: {command[0]}')
     return text
 
 
@@ -126,7 +126,7 @@ def core():
 
 
 def services():
-    cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--test', 'services', '--test', 'processes')
+    cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--test', 'services')
 
 
 def lint():
@@ -160,6 +160,13 @@ def desktop(suite, backend):
     run([*setup, '--buildtype=debug', '-Dtests=true', '-Dtest_support=true', f'-Dflatpak_backend={backend}'])
     run(['meson', 'compile', '-C', directory, '-j', os.environ.get('CARGO_BUILD_JOBS', '2')])
     with desktop_environment() as env:
+        if suite == 'qt':
+            probe_env = dict(env, QT_QPA_PLATFORM='offscreen', FLATPAK_USER_DIR='/dev/null/user',
+                             FLATPAK_SYSTEM_DIR='/dev/null/system')
+            output = run([directory / 'kiosque', '--check-backend'], env=probe_env, expected=1)
+            selected = 'libflatpak' if backend == 'native' else 'unavailable'
+            if f'KIOSQUE_BACKEND_ERROR {selected}:' not in output:
+                raise RuntimeError('backend diagnostic did not report the expected host configuration')
         run(['xvfb-run', '-a', 'dbus-run-session', '--', 'meson', 'test', '-C', directory,
              '--suite', suite, '--no-rebuild', '--print-errorlogs', '--timeout-multiplier', '2'], env=env)
 
@@ -204,8 +211,9 @@ def main():
     global RESULTS
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('suite', choices=['guidance', 'security', 'lint', 'core', 'services', 'qt', 'qml', 'pr', 'system', 'packages'])
-    parser.add_argument('--backend', choices=['native', 'cli'], default='native')
+    parser.add_argument('--backend', choices=['native', 'broker'], default='native')
     parser.add_argument('--artifact', type=Path)
+    parser.add_argument('--companion', type=Path, help='matching native RPM for the Flatpak package check')
     args = parser.parse_args()
     RESULTS = RESULTS / f'{args.suite}-{args.backend}' / f'{time.time_ns()}-{os.getpid()}'
     os.environ.setdefault('CARGO_BUILD_JOBS', '2')
@@ -219,11 +227,16 @@ def main():
         elif args.suite in ('qt', 'qml'):
             desktop(args.suite, args.backend)
         elif args.suite == 'system':
+            if args.backend != 'native':
+                raise RuntimeError('Broker qualification requires the Flatpak artifact and matching companion RPM')
             run([sys.executable, ROOT / 'tests/system/vm.py', '--backend', args.backend], timeout=3600)
         elif args.suite == 'packages':
             if not args.artifact or not args.artifact.is_file():
                 raise RuntimeError('packages requires --artifact pointing to a built artifact')
-            run([sys.executable, ROOT / 'tests/system/package_smoke.py', args.artifact.resolve()], timeout=900)
+            command = [sys.executable, ROOT / 'tests/system/package_smoke.py', args.artifact.resolve()]
+            if args.companion:
+                command.append(args.companion.resolve())
+            run(command, timeout=900)
         else:
             globals()[args.suite]()
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
