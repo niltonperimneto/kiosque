@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Smoke-test an actual artifact; Flatpak installation is restricted to the VM."""
 import os
+import pwd
 from pathlib import Path
 import shutil
 import subprocess
@@ -27,12 +28,27 @@ def main(artifact, companion):
     with tempfile.TemporaryDirectory(prefix='kiosque-package-') as temporary, desktop_environment() as env:
         root = Path(temporary)
         helper = None
+        as_user = []
         if artifact.suffix == '.flatpak':
             if not Path('/run/kiosque-test-vm').exists():
                 raise RuntimeError('Flatpak package installation requires tests/system/vm.py --artifact')
-            run(['flatpak', 'remote-add', '--user', '--if-not-exists', 'flathub', 'https://dl.flathub.org/repo/flathub.flatpakrepo'], env=env)
-            run(['flatpak', 'install', '--user', '-y', '--noninteractive', 'flathub', 'org.kde.Platform//6.10'], env=env)
-            run(['flatpak', 'install', '--user', '-y', '--noninteractive', '--no-gpg-verify', artifact], env=env)
+            # Exercise the same per-user bus, runtime directory and UID checks
+            # used on a desktop. Only package provisioning needs guest root.
+            user = 'kiosque-smoke'
+            run(['useradd', '--create-home', user])
+            account = pwd.getpwnam(user)
+            home = Path(account.pw_dir)
+            runtime = Path('/run/user') / str(account.pw_uid)
+            runtime.mkdir(mode=0o700, exist_ok=True)
+            os.chown(runtime, account.pw_uid, account.pw_gid)
+            env.update(HOME=str(home), XDG_RUNTIME_DIR=str(runtime), XDG_DATA_HOME=str(home / '.local/share'),
+                       XDG_CONFIG_HOME=str(home / '.config'), XDG_CACHE_HOME=str(home / '.cache'))
+            for variable in ('FLATPAK_USER_DIR', 'FLATPAK_SYSTEM_DIR'):
+                env.pop(variable, None)
+            as_user = ['runuser', '--user', user, '--']
+            run([*as_user, 'flatpak', 'remote-add', '--user', '--if-not-exists', 'flathub', 'https://dl.flathub.org/repo/flathub.flatpakrepo'], env=env)
+            run([*as_user, 'flatpak', 'install', '--user', '-y', '--noninteractive', 'flathub', 'org.kde.Platform//6.10'], env=env)
+            run([*as_user, 'flatpak', 'install', '--user', '-y', '--noninteractive', '--no-gpg-verify', artifact], env=env)
             app = ['flatpak', 'run', '--user', 'org.kiosque.Kiosque', '--check-ui']
             helper = ['flatpak', 'run', '--user', '--command=kiosque-update', 'org.kiosque.Kiosque', '--help']
         elif artifact.suffix == '.rpm':
@@ -54,11 +70,11 @@ def main(artifact, companion):
             env['LD_LIBRARY_PATH'] = ':'.join(str(path) for path in [root / 'usr/lib', root / 'usr/lib64'])
         else:
             raise RuntimeError('supported artifacts: .rpm, .flatpak, .AppImage')
+        launch = ['unshare', '--net', '--', *as_user, 'xvfb-run', '-a', 'dbus-run-session', '--']
         if artifact.suffix == '.flatpak':
             if companion is None or not companion.is_file():
                 raise RuntimeError('Flatpak qualification requires the matching native RPM via --companion')
-            probe = ['unshare', '--net', '--', 'xvfb-run', '-a', 'dbus-run-session', '--',
-                     *app[:-1], '--check-backend']
+            probe = [*launch, *app[:-1], '--check-backend']
             output = run(probe, env=env, expected=1)
             if 'KIOSQUE_BACKEND_ERROR host-companion:' not in output:
                 raise RuntimeError('missing companion did not produce a broker error')
@@ -67,10 +83,10 @@ def main(artifact, companion):
                 raise RuntimeError('packaged client could not read installed state through the companion')
         if artifact.suffix != '.flatpak' and not list(root.rglob('kiosque.mo')):
             raise RuntimeError('artifact contains no compiled translations')
-        output = run(['unshare', '--net', '--', 'xvfb-run', '-a', 'dbus-run-session', '--', *app], env=env)
+        output = run([*launch, *app], env=env)
         if 'KIOSQUE_UI_READY' not in output:
             raise RuntimeError('application did not confirm QML/resource startup')
-        run(['unshare', '--net', '--', 'xvfb-run', '-a', 'dbus-run-session', '--', *helper], env=env)
+        run([*launch, *helper], env=env)
 
 
 if __name__ == '__main__':

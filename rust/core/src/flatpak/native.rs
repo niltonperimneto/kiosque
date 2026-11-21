@@ -41,41 +41,40 @@ fn gerr(e: glib::Error) -> FlatpakError {
     }
 }
 
-fn open(scope: Scope) -> std::result::Result<Installation, glib::Error> {
+fn installation(scope: Scope) -> Result<Installation> {
+    let variable = match scope {
+        Scope::User => "FLATPAK_USER_DIR",
+        Scope::System => "FLATPAK_SYSTEM_DIR",
+    };
+    if let Some(path) = std::env::var_os(variable) {
+        // libflatpak can construct a lazy installation even for an invalid path.
+        match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.is_dir() => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => {
+                return Err(FlatpakError::Failed(format!(
+                    "{variable} is not an accessible installation directory"
+                )));
+            }
+        }
+        return Installation::for_path(&gio::File::for_path(path), scope == Scope::User, none())
+            .map_err(gerr);
+    }
     match scope {
-        Scope::System if std::env::var_os("FLATPAK_SYSTEM_DIR").is_some() => {
-            let path = super::installation_paths()
-                .into_iter()
-                .find(|(s, _)| *s == Scope::System)
-                .unwrap()
-                .1;
-            Installation::for_path(&gio::File::for_path(path), false, none())
-        }
         Scope::System => Installation::new_system(none()),
-        Scope::User if super::in_sandbox() || std::env::var_os("FLATPAK_USER_DIR").is_some() => {
-            let path = super::installation_paths()
-                .into_iter()
-                .find(|(s, _)| *s == Scope::User)
-                .map(|(_, p)| p)
-                .expect("user installation path");
-            Installation::for_path(&gio::File::for_path(path), true, none())
-        }
         Scope::User => Installation::new_user(none()),
     }
+    .map_err(gerr)
 }
 
 /// All installations that could be opened, user first.
 fn installations() -> Result<Vec<(Scope, Installation)>> {
     let available: Vec<_> = [Scope::User, Scope::System]
         .into_iter()
-        .filter_map(|s| match open(s) {
+        .filter_map(|s| match installation(s) {
             Ok(i) => Some((s, i)),
             Err(e) => {
-                kerr!(
-                    "libflatpak: cannot open {} installation: {}",
-                    s.as_str(),
-                    e.message()
-                );
+                kerr!("libflatpak: cannot open {} installation: {}", s.as_str(), e);
                 None
             }
         })
@@ -86,10 +85,6 @@ fn installations() -> Result<Vec<(Scope, Installation)>> {
         ));
     }
     Ok(available)
-}
-
-fn installation(scope: Scope) -> Result<Installation> {
-    open(scope).map_err(gerr)
 }
 
 async fn blocking<T, F>(f: F) -> Result<T>
