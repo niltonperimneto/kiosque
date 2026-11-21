@@ -709,8 +709,14 @@ fn tidy_html(html: &str) -> String {
 }
 
 fn parse_date(d: &str) -> Option<u64> {
-    let date = chrono::NaiveDate::parse_from_str(d.get(..10)?, "%Y-%m-%d").ok()?;
-    Some(date.and_hms_opt(0, 0, 0)?.and_utc().timestamp() as u64)
+    let date = jiff::civil::Date::strptime("%Y-%m-%d", d.get(..10)?).ok()?;
+    Some(
+        date.at(0, 0, 0, 0)
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .ok()?
+            .timestamp()
+            .as_second() as u64,
+    )
 }
 
 fn finish(b: Builder, remote: &str, scope: Scope, icons_dir: &Path) -> Option<CatalogApp> {

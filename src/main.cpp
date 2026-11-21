@@ -23,6 +23,7 @@ void qml_register_types_com_kiosque();
 // transaction client and the AppStream catalog (used to pick each install's
 // remote and scope).
 extern "C" void kiosque_gui_init();
+extern "C" int kiosque_check_backend();
 
 namespace {
 
@@ -90,12 +91,16 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     QCommandLineParser parser;
     parser.addHelpOption();
+    parser.addOption({QStringLiteral("check-backend"), QStringLiteral("Read installed Flatpak state and exit.")});
     parser.addOption({QStringLiteral("check-ui"), QStringLiteral("Validate startup resources and exit.")});
     parser.addOption({QStringLiteral("app"), QStringLiteral("Open the details page of an application."), QStringLiteral("id")});
     parser.addPositionalArgument(QStringLiteral("url"),
                                  QStringLiteral("appstream:// link, or .flatpakref/.flatpakrepo file or URL to open."),
                                  QStringLiteral("[url]"));
     parser.process(app);
+    if (parser.isSet(QStringLiteral("check-backend"))) {
+        return kiosque_check_backend();
+    }
 
     LaunchTarget launch;
     for (const QString &arg : parser.positionalArguments()) {

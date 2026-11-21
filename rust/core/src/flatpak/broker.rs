@@ -113,3 +113,44 @@ impl FlatpakBackend for BrokerBackend {
             .map_err(failure)
     }
 }
+
+#[cfg(not(feature = "libflatpak"))]
+pub(super) struct OutsideSandbox;
+
+#[cfg(not(feature = "libflatpak"))]
+fn outside_sandbox<T>() -> Result<T> {
+    Err(FlatpakError::Failed("This build requires a Flatpak sandbox. Install the native Kiosque package for host operation.".into()))
+}
+
+#[cfg(not(feature = "libflatpak"))]
+#[async_trait]
+impl FlatpakBackend for OutsideSandbox {
+    fn name(&self) -> &'static str {
+        "unavailable"
+    }
+    async fn list_installed(&self) -> Result<Vec<InstalledApp>> {
+        outside_sandbox()
+    }
+    async fn list_updates(&self) -> Result<Vec<UpdateInfo>> {
+        outside_sandbox()
+    }
+    async fn list_remotes(&self) -> Result<Vec<RemoteInfo>> {
+        outside_sandbox()
+    }
+    async fn add_remote(&self, _: &str, _: RemoteSource, _: Scope) -> Result<()> {
+        outside_sandbox()
+    }
+    async fn remove_remote(&self, _: &str, _: Option<Scope>) -> Result<()> {
+        outside_sandbox()
+    }
+    async fn run(&self, _: Operation, _: ProgressSink, _: CancellationToken) -> Result<()> {
+        outside_sandbox()
+    }
+    async fn launch(&self, _: &str) -> Result<()> {
+        outside_sandbox()
+    }
+    async fn refresh_appstream(&self, _: &RemoteInfo) -> Result<()> {
+        outside_sandbox()
+    }
+    fn spawn_monitor(&self, _: broadcast::Sender<()>) {}
+}

@@ -498,6 +498,8 @@ async fn a_private_bus_rejects_non_application_callers_before_mutation() {
     let proxy = kiosque_core::daemon::client::DaemonProxy::new(&client)
         .await
         .unwrap();
+    let error = proxy.read_installed().await.unwrap_err().to_string();
+    assert!(error.contains("AccessDenied"), "{error}");
     let error = proxy.ping().await.unwrap_err().to_string();
     assert!(error.contains("AccessDenied"), "{error}");
     let error = proxy

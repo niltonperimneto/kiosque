@@ -1,10 +1,9 @@
 //! Legacy UI conversions over the shared backend/transaction services.
 pub use kiosque_core::flatpak::*;
 
-pub mod cli {
+pub mod ui {
     use super::*;
     use crate::services::services;
-    pub use kiosque_core::flatpak::cli::{CliBackend, flatpak_command};
     use std::sync::Arc;
 
     pub struct UiApp {

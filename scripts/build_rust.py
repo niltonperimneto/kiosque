@@ -13,7 +13,7 @@ parser.add_argument('--target-dir', type=Path, required=True)
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--initializers', type=Path, required=True)
 parser.add_argument('--profile', choices=['debug', 'release'], required=True)
-parser.add_argument('--backend', choices=['native', 'cli'], required=True)
+parser.add_argument('--backend', choices=['native', 'broker'], required=True)
 parser.add_argument('--test-support', choices=['true', 'false'], required=True)
 args = parser.parse_args()
 export = args.target_dir / 'cxxqt'
@@ -23,7 +23,7 @@ env.setdefault('CARGO_BUILD_JOBS', '2')
 command = ['cargo', 'build', '--locked', '--manifest-path', str(args.manifest), '-p', 'libkiosque']
 if args.profile == 'release':
     command.append('--release')
-if args.backend == 'cli':
+if args.backend == 'broker':
     command.append('--no-default-features')
 if args.test_support == 'true':
     command.extend(['--features', 'test-util'])

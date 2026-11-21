@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 use crate::flatpak::Operation;
-pub use crate::flatpak::cli::JobOutcome;
+pub use crate::flatpak::ui::JobOutcome;
 
 /// Serialize `value` to a JSON `QString`, falling back to `fallback` (e.g. `"[]"`
 /// or `"{}"`) if serialization fails. Replaces the repeated
@@ -94,7 +94,7 @@ pub fn run_job<T>(
         let last: Mutex<Option<(f64, String)>> = Mutex::new(None);
         let progress_thread = qt_thread.clone();
         let progress_control = control.clone();
-        let outcome = crate::flatpak::cli::run(op, &title, move |fraction, status, id| {
+        let outcome = crate::flatpak::ui::run(op, &title, move |fraction, status, id| {
             progress_control.attach(id);
             {
                 let mut last = last.lock().unwrap();
