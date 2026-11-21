@@ -949,8 +949,8 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-util",
- "gio-sys",
- "glib",
+ "gio-sys 0.21.5",
+ "glib 0.21.5",
  "libc",
  "pin-project-lite",
  "smallvec",
@@ -962,10 +962,23 @@ version = "0.21.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0071fe88dba8e40086c8ff9bbb62622999f49628344b1d1bf490a48a29d80f22"
 dependencies = [
- "glib-sys",
- "gobject-sys",
+ "glib-sys 0.21.5",
+ "gobject-sys 0.21.5",
  "libc",
- "system-deps",
+ "system-deps 7.0.8",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "gio-sys"
+version = "0.22.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9c253490f9a475047f109bf6ccb68c407e9d186b7bfab01849188f4e669e669"
+dependencies = [
+ "glib-sys 0.22.11",
+ "gobject-sys 0.22.9",
+ "libc",
+ "system-deps 9.0.1",
  "windows-sys 0.61.2",
 ]
 
@@ -981,10 +994,31 @@ dependencies = [
  "futures-executor",
  "futures-task",
  "futures-util",
- "gio-sys",
- "glib-macros",
- "glib-sys",
- "gobject-sys",
+ "gio-sys 0.21.5",
+ "glib-macros 0.21.5",
+ "glib-sys 0.21.5",
+ "gobject-sys 0.21.5",
+ "libc",
+ "memchr",
+ "smallvec",
+]
+
+[[package]]
+name = "glib"
+version = "0.22.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9c4cbf1972a07741ae5ce9b23a582a90efc69745fc713f8b037b8d962f604da"
+dependencies = [
+ "bitflags",
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-task",
+ "futures-util",
+ "gio-sys 0.22.11",
+ "glib-macros 0.22.11",
+ "glib-sys 0.22.11",
+ "gobject-sys 0.22.9",
  "libc",
  "memchr",
  "smallvec",
@@ -1004,13 +1038,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "glib-macros"
+version = "0.22.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4014e54e2049108c93cf278b64e89f490849402e09b455a25dfa2098cc35093"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
 name = "glib-sys"
 version = "0.21.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d95e1a3a19ae464a7286e14af9a90683c64d70c02532d88d87ce95056af3e6c"
 dependencies = [
  "libc",
- "system-deps",
+ "system-deps 7.0.8",
+]
+
+[[package]]
+name = "glib-sys"
+version = "0.22.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b01e8b94529c2698b98f765b887f1e001b76195c1e25d1139aa9336019e745d"
+dependencies = [
+ "libc",
+ "system-deps 9.0.1",
 ]
 
 [[package]]
@@ -1019,9 +1075,20 @@ version = "0.21.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dca35da0d19a18f4575f3cb99fe1c9e029a2941af5662f326f738a21edaf294"
 dependencies = [
- "glib-sys",
+ "glib-sys 0.21.5",
  "libc",
- "system-deps",
+ "system-deps 7.0.8",
+]
+
+[[package]]
+name = "gobject-sys"
+version = "0.22.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07595c9ba696bd9819cb6a8df39f08078f3dd679508fe052dd558492c2053834"
+dependencies = [
+ "glib-sys 0.22.11",
+ "libc",
+ "system-deps 9.0.1",
 ]
 
 [[package]]
@@ -1446,7 +1513,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "gio",
- "glib",
+ "glib 0.22.11",
  "hmac",
  "image 0.25.10",
  "libc",
@@ -1482,7 +1549,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8893413fbb293f3f608ae24154f28377fc63f3e0ac6e68f53ffd0467deedc25b"
 dependencies = [
  "gio",
- "glib",
+ "glib 0.21.5",
  "libc",
  "libflatpak-sys",
 ]
@@ -1493,12 +1560,12 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "828e83dbef64ac0f440c4479f0c96bfa98fdf7f42ca8823b169add41fb7afc23"
 dependencies = [
- "gio-sys",
- "glib-sys",
- "gobject-sys",
+ "gio-sys 0.21.5",
+ "glib-sys 0.21.5",
+ "gobject-sys 0.21.5",
  "libc",
  "pkg-config",
- "system-deps",
+ "system-deps 7.0.8",
 ]
 
 [[package]]
@@ -2457,6 +2524,19 @@ name = "system-deps"
 version = "7.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "396a35feb67335377e0251fcbc1092fc85c484bd4e3a7a54319399da127796e7"
+dependencies = [
+ "cfg-expr",
+ "heck",
+ "pkg-config",
+ "toml",
+ "version-compare",
+]
+
+[[package]]
+name = "system-deps"
+version = "9.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db551ad38aac61d5e0343e0eeeb0163be3115c4e23b6a025959570ee0c03c67d"
 dependencies = [
  "cfg-expr",
  "heck",
