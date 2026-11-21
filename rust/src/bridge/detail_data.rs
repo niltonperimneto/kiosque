@@ -37,14 +37,17 @@ pub async fn load(app_id: &str) -> Result<DetailData, String> {
     let permissions = permissions_val
         .get("metadata")
         .and_then(|m| m.get("permissions"))
-        .unwrap_or(&permissions_val)
+        .filter(|value| value.is_object())
+        .unwrap_or(&serde_json::Value::Null)
         .clone();
     Ok(DetailData {
         screenshots: screenshot_urls(&details),
         urls: urls_object(&details),
         name: details.name,
         summary: details.summary,
-        description: details.description.unwrap_or_default(),
+        description: kiosque_core::security::description_text(
+            details.description.as_deref().unwrap_or_default(),
+        ),
         icon: details.icon.unwrap_or_default(),
         developer: details.developer_name.unwrap_or_default(),
         license: details.project_license.unwrap_or_default(),
@@ -162,7 +165,7 @@ async fn fetch_supplementary(
     let perm_fut = async {
         client.fetch_summary(app_id).await.unwrap_or_else(|e| {
             kerr!("load_app_details: fetch_summary failed: {}", e);
-            serde_json::json!({})
+            serde_json::Value::Null
         })
     };
     let dev_fut = async {
@@ -224,8 +227,10 @@ fn screenshot_urls(details: &AppDetails) -> Vec<String> {
 fn urls_object(details: &AppDetails) -> serde_json::Value {
     let mut urls_map = serde_json::Map::new();
     let mut put = |key: &str, value: &Option<String>| {
-        if let Some(v) = value {
-            urls_map.insert(key.to_string(), serde_json::Value::String(v.clone()));
+        if let Some(v) = value
+            && let Ok(url) = kiosque_core::security::https_url(v)
+        {
+            urls_map.insert(key.to_string(), serde_json::Value::String(url.into()));
         }
     };
     if let Some(ref u) = details.urls {

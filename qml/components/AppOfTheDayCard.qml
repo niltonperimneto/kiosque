@@ -2,17 +2,14 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import QtQuick.Window
 import "../style" as Styles
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ki18n
 
-// Flathub's daily pick as a prominent vertical card: top-cropped hero
-// screenshot as the header (title bar of the app always visible), then a
-// clear vertical flow of logo, title and brief description. The stock
-// Kirigami.Card banner center-crops, so the header is a custom TopCropImage;
-// Card re-anchors any custom header edge-to-edge on its own.
+// Daily pick with a density-aware screenshot and a pointer-following spotlight.
 Kirigami.Card {
     id: root
 
@@ -32,17 +29,57 @@ Kirigami.Card {
     Accessible.name: root.appName
     Accessible.onPressAction: root.clicked()
 
-    header: TopCropImage {
-        source: root.screenshotUrl
-        sourceSizeWidth: Kirigami.Units.gridUnit * 40
-        visible: String(root.screenshotUrl).length > 0 && status !== Image.Error
-        // 2:1 hero band derived from the card's width — no fixed pixels; the
-        // band collapses entirely when there is no screenshot to show.
-        implicitHeight: visible ? Math.round(root.width / 2) : 0
-        color: Kirigami.Theme.alternateBackgroundColor
+    header: Item {
+        id: spotlight
+        objectName: "dailySpotlight"
+        implicitHeight: Math.min(root.width * 0.55, Kirigami.Units.gridUnit * 22)
+        clip: true
+        property real lightX: pointer.hovered ? pointer.point.position.x : width * 0.65
+        property real lightY: pointer.hovered ? pointer.point.position.y : height * 0.35
+        Behavior on lightX { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on lightY { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        onLightXChanged: glow.requestPaint()
+        onLightYChanged: glow.requestPaint()
+        HoverHandler { id: pointer }
 
-        corners.topLeftRadius: root.background.radius - root.background.border.width
-        corners.topRightRadius: root.background.radius - root.background.border.width
+        Rectangle {
+            anchors.fill: parent
+            color: Kirigami.Theme.alternateBackgroundColor
+        }
+        Canvas {
+            id: glow
+            anchors.fill: parent
+            property color accent: Kirigami.Theme.highlightColor
+            onAccentChanged: requestPaint()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint: {
+                let ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                let radius = Math.max(width, height) * 0.8
+                let gradient = ctx.createRadialGradient(spotlight.lightX, spotlight.lightY, 0,
+                                                       spotlight.lightX, spotlight.lightY, radius)
+                gradient.addColorStop(0, Qt.alpha(accent, 0.65))
+                gradient.addColorStop(0.45, Qt.alpha(accent, 0.24))
+                gradient.addColorStop(1, Qt.alpha(accent, 0))
+                ctx.fillStyle = gradient
+                ctx.fillRect(0, 0, width, height)
+            }
+        }
+        Image {
+            id: dailyScreenshot
+            objectName: "dailyScreenshot"
+            anchors.centerIn: parent
+            // Bound logical size by the decoded pixel size, including HiDPI.
+            width: Math.min(parent.width * 0.8, implicitWidth / Screen.devicePixelRatio)
+            height: Math.min(parent.height * 0.72, implicitHeight / Screen.devicePixelRatio)
+            source: root.screenshotUrl
+            sourceSize.width: 1600
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            mipmap: true
+            visible: status === Image.Ready
+        }
 
         // "App of the Day" badge overlaid on the hero so the content column
         // below stays an uncluttered logo → title → description flow.
@@ -103,6 +140,7 @@ Kirigami.Card {
                     Layout.fillWidth: true
                     level: 2
                     text: root.appName
+                    textFormat: Text.PlainText
                     elide: Text.ElideRight
                     maximumLineCount: 1
                 }
@@ -111,6 +149,7 @@ Kirigami.Card {
                     Layout.fillWidth: true
                     visible: root.developer.length > 0
                     text: root.developer
+                    textFormat: Text.PlainText
                     color: Kirigami.Theme.disabledTextColor
                     elide: Text.ElideRight
                     maximumLineCount: 1
@@ -121,6 +160,7 @@ Kirigami.Card {
         Controls.Label {
             Layout.fillWidth: true
             text: root.appSummary
+            textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             maximumLineCount: 3
             elide: Text.ElideRight

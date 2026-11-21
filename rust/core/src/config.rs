@@ -198,7 +198,7 @@ struct BlocklistFile {
 #[serde(rename_all = "kebab-case", default)]
 struct RawRule {
     priority: i64,
-    conditions: Vec<serde_yaml_ng::Value>,
+    conditions: Vec<serde_json::Value>,
     block: Vec<String>,
     block_regex: Vec<String>,
     allow: Vec<String>,
@@ -216,10 +216,30 @@ fn full_regex(re: &str) -> Option<Regex> {
     }
 }
 
-fn parse_condition(v: &serde_yaml_ng::Value) -> Option<Condition> {
-    let map = v.as_mapping()?;
+fn parse_yaml<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, String> {
+    if text.len() > 2 * 1024 * 1024 {
+        return Err("Configuration exceeds its size limit".into());
+    }
+    let options = serde_saphyr::options! {
+        duplicate_keys: serde_saphyr::DuplicateKeyPolicy::Error,
+        strict_booleans: true,
+        budget: serde_saphyr::budget! {
+            max_depth: 32,
+            max_nodes: 100_000,
+            max_events: 200_000,
+            max_aliases: 64,
+            max_anchors: 64,
+            max_total_scalar_bytes: 2 * 1024 * 1024,
+            max_recorded_anchor_bytes: 2 * 1024 * 1024,
+        },
+    };
+    serde_saphyr::from_str_with_options(text, options).map_err(|error| error.to_string())
+}
+
+fn parse_condition(v: &serde_json::Value) -> Option<Condition> {
+    let map = v.as_object()?;
     let (kind, body) = map.iter().next()?;
-    let kind = kind.as_str()?;
+    let kind = kind.as_str();
     let s = |k: &str| body.get(k).and_then(|x| x.as_str()).map(str::to_string);
     let invert = s("post-process").as_deref() == Some("invert")
         || map.get("post-process").and_then(|x| x.as_str()) == Some("invert");
@@ -241,7 +261,7 @@ fn parse_condition(v: &serde_yaml_ng::Value) -> Option<Condition> {
 }
 
 pub fn parse_yaml_blocklist(text: &str) -> Result<Vec<BlockRule>, String> {
-    let file: BlocklistFile = serde_yaml_ng::from_str(text).map_err(|e| e.to_string())?;
+    let file: BlocklistFile = parse_yaml(text)?;
     Ok(file
         .blocklists
         .into_iter()
@@ -268,10 +288,10 @@ pub fn parse_txt_blocklist(text: &str) -> BlockRule {
     }
 }
 
-fn app_ids_of(v: &serde_yaml_ng::Value) -> Vec<String> {
+fn app_ids_of(v: &serde_json::Value) -> Vec<String> {
     v.get("appids")
         .and_then(|a| a.get("list").or(Some(a)))
-        .and_then(|l| l.as_sequence())
+        .and_then(|l| l.as_array())
         .map(|seq| {
             seq.iter()
                 .filter_map(|x| x.as_str().map(str::to_string))
@@ -281,18 +301,18 @@ fn app_ids_of(v: &serde_yaml_ng::Value) -> Vec<String> {
 }
 
 pub fn parse_curated(text: &str) -> Result<Vec<CuratedRow>, String> {
-    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(text).map_err(|e| e.to_string())?;
+    let doc: serde_json::Value = parse_yaml(text)?;
     let rows = doc
         .get("rows")
-        .and_then(|r| r.as_sequence())
+        .and_then(|r| r.as_array())
         .cloned()
         .unwrap_or_default();
     Ok(rows
         .iter()
         .filter_map(|row| {
-            let map = row.as_mapping()?;
+            let map = row.as_object()?;
             let (kind, body) = map.iter().next()?;
-            match kind.as_str()? {
+            match kind.as_str() {
                 "section" => {
                     let title = body
                         .get("title")
@@ -381,7 +401,7 @@ pub fn load_from_dirs(dirs: &[PathBuf]) -> DistroConfig {
     for dir in dirs {
         let main_path = dir.join("main.yaml");
         let (curated, yaml_bl, txt_bl) = if let Some(text) = read(&main_path, &mut cfg.files) {
-            let main: MainFile = match serde_yaml_ng::from_str(&text) {
+            let main: MainFile = match parse_yaml(&text) {
                 Ok(m) => m,
                 Err(e) => {
                     kerr!("config: {}: {}", main_path.display(), e);

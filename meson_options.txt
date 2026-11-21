@@ -2,3 +2,5 @@ option('tests', type: 'boolean', value: false, description: 'Build Qt and QML te
 option('test_support', type: 'boolean', value: false, description: 'Link isolated-service bootstrap for dedicated test builds')
 option('flatpak_backend', type: 'combo', choices: ['native', 'cli'], value: 'native', description: 'Enable libflatpak or compile CLI fallback only')
 option('cargo_target_dir', type: 'string', value: '', description: 'Override Cargo artifact directory for a prepared build environment')
+
+option('host_companion', type: 'boolean', value: true, description: 'Install native host companion D-Bus activation and KRunner integration')

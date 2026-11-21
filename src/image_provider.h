@@ -4,7 +4,6 @@
 #include <QSize>
 #include <QQuickImageProvider>
 #include <cstdint>
-#include <cstring>
 
 extern "C" {
     struct RustImageResult {
@@ -31,14 +30,8 @@ public:
 
     QImage requestImage(const QString &id, QSize *size, const QSize &requestedSize) override
     {
-        int reqWidth = requestedSize.width();
-        int reqHeight = requestedSize.height();
-
-        RustImageResult res = fetch_image_from_rust(
-            id.toUtf8().constData(),
-            reqWidth,
-            reqHeight
-        );
+        const RustImageResult res = fetch_image_from_rust(
+            id.toUtf8().constData(), requestedSize.width(), requestedSize.height());
 
         if (res.data == nullptr || res.len <= 0 || res.width <= 0 || res.height <= 0) {
             return QImage();
@@ -62,4 +55,3 @@ public:
         return img;
     }
 };
-

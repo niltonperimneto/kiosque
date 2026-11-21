@@ -17,7 +17,7 @@
         "--filesystem=xdg-data/flatpak:ro",
         "--filesystem=host-etc:ro",
         "--filesystem=host-os:ro",
-        "--talk-name=org.freedesktop.Flatpak",
+        "--talk-name=org.kiosque.Kiosque.Daemon",
         "--talk-name=org.freedesktop.Notifications",
         "--talk-name=org.kde.StatusNotifierWatcher"
     ],
@@ -36,7 +36,8 @@
             "buildsystem": "meson",
             "config-opts": [
                 "--buildtype=release",
-                "-Dflatpak_backend=cli"
+                "-Dflatpak_backend=cli",
+                "-Dhost_companion=false"
             ],
             "sources": [
                 {

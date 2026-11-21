@@ -41,7 +41,7 @@ impl CliBackend {
 
     pub fn with_routing(sandbox: bool) -> Self {
         if sandbox {
-            Self::with_command("flatpak-spawn", vec!["--host".into(), "flatpak".into()])
+            Self::with_command("/nonexistent/kiosque-host-companion-required", vec![])
         } else {
             Self::with_command("flatpak", vec![])
         }
@@ -111,20 +111,8 @@ fn check_remote_name(value: &str) -> Result<&str> {
 
 /// Repository URLs: a known scheme, no whitespace or control characters.
 fn check_remote_url(value: &str) -> Result<&str> {
-    const SCHEMES: [&str; 5] = [
-        "https://",
-        "http://",
-        "file://",
-        "oci+https://",
-        "oci+http://",
-    ];
-    let ok = SCHEMES.iter().any(|s| value.starts_with(s))
-        && !value.chars().any(|c| c.is_whitespace() || c.is_control());
-    if ok {
-        Ok(value)
-    } else {
-        Err(invalid("remote URL", value))
-    }
+    crate::security::https_url(value).map_err(|_| invalid("remote URL", value))?;
+    Ok(value)
 }
 
 async fn output(backend: &CliBackend, args: &[&str]) -> Result<String> {
@@ -195,22 +183,34 @@ impl FlatpakBackend for CliBackend {
 
     async fn add_remote(&self, name: &str, source: RemoteSource, scope: Scope) -> Result<()> {
         check_remote_name(name)?;
-        match source {
+        let fixture = false;
+        #[cfg(feature = "test-util")]
+        let (source, fixture) = match source {
+            RemoteSource::LocalFixture { data, root } => {
+                crate::security::repo_fixture(&data, &root).map_err(FlatpakError::Failed)?;
+                (RemoteSource::FlatpakRepo(data), true)
+            }
+            other => (other, fixture),
+        };
+        let source = match source {
             RemoteSource::Url(url) => {
                 check_remote_url(&url)?;
-                output(
-                    self,
-                    &[
-                        "remote-add",
-                        "--if-not-exists",
-                        scope.cli_flag(),
-                        name,
-                        &url,
-                    ],
-                )
-                .await?;
+                let data = crate::flathub::client::HttpClient::default()
+                    .fetch_bytes_limited(&url, crate::security::MAX_REF_BYTES)
+                    .await
+                    .map_err(|e| FlatpakError::Failed(e.to_string()))?;
+                RemoteSource::FlatpakRepo(data)
             }
+            other => other,
+        };
+        match source {
+            RemoteSource::Url(_) => unreachable!("normalized descriptor source"),
+            #[cfg(feature = "test-util")]
+            RemoteSource::LocalFixture { .. } => unreachable!("normalized fixture source"),
             RemoteSource::FlatpakRepo(data) => {
+                if !fixture {
+                    crate::security::repo_file(&data).map_err(FlatpakError::Failed)?;
+                }
                 let path = write_temp("remote.flatpakrepo", &data).await?;
                 let p = path.to_string_lossy().to_string();
                 let res = output(
@@ -263,7 +263,9 @@ impl FlatpakBackend for CliBackend {
                     check_ref(id)?;
                 }
             }
-            Operation::InstallRefFile { .. } => {}
+            Operation::InstallRefFile { data, .. } => {
+                crate::security::ref_file(data).map_err(FlatpakError::Failed)?;
+            }
         }
         let mut temp = None;
         let mut args: Vec<String> = vec![];
@@ -281,6 +283,8 @@ impl FlatpakBackend for CliBackend {
                 args.extend([
                     "install".into(),
                     scope.cli_flag().into(),
+                    "--no-deps".into(),
+                    "--no-related".into(),
                     "--from".into(),
                     path.to_string_lossy().into(),
                 ]);
@@ -337,12 +341,21 @@ impl FlatpakBackend for CliBackend {
 }
 
 async fn write_temp(name: &str, data: &[u8]) -> Result<std::path::PathBuf> {
-    // The cache dir lives under ~/.var/app/<id>/cache inside the sandbox,
-    // which is the same path on the host, so `flatpak-spawn --host` sees it.
-    let path = crate::disk_cache::cache_dir().join(format!("{}-{}", std::process::id(), name));
-    tokio::fs::write(&path, data)
+    use tokio::io::AsyncWriteExt;
+    let path =
+        crate::disk_cache::cache_dir().join(format!("{:032x}-{name}", rand::random::<u128>()));
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(&path)
         .await
-        .map_err(|e| FlatpakError::Failed(format!("failed to write {}: {}", path.display(), e)))?;
+        .map_err(|e| FlatpakError::Failed(e.to_string()))?;
+    if let Err(error) = file.write_all(data).await {
+        let _ = tokio::fs::remove_file(&path).await;
+        return Err(FlatpakError::Failed(error.to_string()));
+    }
     Ok(path)
 }
 
@@ -640,7 +653,7 @@ mod tests {
             assert!(check_remote_name(bad).is_err(), "{bad:?}");
         }
         assert!(check_remote_url("https://dl.flathub.org/repo/flathub.flatpakrepo").is_ok());
-        assert!(check_remote_url("oci+https://registry.example.org").is_ok());
+        assert!(check_remote_url("oci+https://registry.example.org").is_err());
         for bad in [
             "--gpg-import=/x",
             "ftp://x",

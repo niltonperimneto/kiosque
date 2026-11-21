@@ -11,11 +11,9 @@
 
 #include <QAction>
 #include <QApplication>
-#include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusMessage>
-#include <QDir>
 #include <QFileInfo>
 #include <QMenu>
 #include <QMetaObject>
@@ -23,6 +21,8 @@
 #include <QSystemTrayIcon>
 #include <QTextStream>
 #include <KLocalizedString>
+
+#include "localization.h"
 
 // Exported by kiosque-core (rust/core/src/daemon/mod.rs), linked via libkiosque.a.
 extern "C" {
@@ -58,19 +58,6 @@ std::mutex &daemonLock()
 UpdateDaemon *g_daemon = nullptr;
 
 void daemonEventCallback(int event, int count, const char *text, void *ctx);
-
-void setupLocalization()
-{
-    QDir localeDir(QCoreApplication::applicationDirPath() + QStringLiteral("/../po"));
-    if (localeDir.exists()) {
-        KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), localeDir.absolutePath());
-    } else {
-#ifdef LOCALE_INSTALL_DIR
-        KLocalizedString::addDomainLocaleDir(QByteArrayLiteral("kiosque"), QStringLiteral(LOCALE_INSTALL_DIR));
-#endif
-    }
-    KLocalizedString::setApplicationDomain("kiosque");
-}
 
 class UpdateDaemon : public QObject
 {
@@ -129,7 +116,7 @@ public:
     bool start()
     {
         // The update check runs inside the daemon scheduler immediately.
-        return kiosque_daemon_start(m_background, &daemonEventCallback, this);
+        return kiosque_daemon_start(m_background, &daemonEventCallback, nullptr);
     }
 
     // Called on the GUI thread (queued from the Rust worker threads).
@@ -273,7 +260,7 @@ private:
 };
 
 // Invoked on Rust worker threads; `text` is only valid during the call.
-void daemonEventCallback(int event, int count, const char *text, void * /*ctx*/)
+void daemonEventCallback(int event, int count, const char *text, void * /*unused*/)
 {
     const QString message = text ? QString::fromUtf8(text) : QString();
     std::lock_guard<std::mutex> guard(daemonLock());

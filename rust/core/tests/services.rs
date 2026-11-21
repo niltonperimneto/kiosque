@@ -386,6 +386,23 @@ fn branding_and_screenshot_metadata_have_safe_defaults() {
     .unwrap();
     assert_eq!(rich.brand_colors(), (Some("#123456".into()), None));
     assert_eq!(rich.best_screenshot_url(), Some("large".into()));
+    // Flathub sends explicit nulls for absent lists and strings (seen live for
+    // org.videolan.VLC, org.mozilla.firefox and org.inkscape.Inkscape).
+    let nulls: AppDetails = serde_json::from_value(serde_json::json!({"id":"a","name":"A",
+        "summary":null,"branding":null,"categories":null,
+        "screenshots":[{"sizes":null},{"sizes":[{"src":null,"width":null}]}]
+    }))
+    .unwrap();
+    assert_eq!(nulls.brand_colors(), (None, None));
+    assert_eq!(nulls.summary, "");
+    assert!(nulls.categories.is_empty());
+    assert_eq!(nulls.best_screenshot_url(), None);
+    let hits: kiosque_core::flathub::types::FlathubResponse = serde_json::from_value(
+        serde_json::json!({"hits":[{"app_id":"a","name":null,"sub_categories":null}]}),
+    )
+    .unwrap();
+    assert_eq!(hits.hits[0].name, "");
+    assert!(hits.hits[0].sub_categories.is_empty());
 }
 
 #[tokio::test]
@@ -409,4 +426,93 @@ async fn decoded_frame_budget_evicts_frames_and_transport_failures_remain_retrya
     assert!(loader.load(&id, 4, 4).await.is_err());
     assert!(loader.load(&id, 4, 4).await.is_err());
     assert_eq!(server.hits.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn oversized_http_responses_are_rejected_before_parsing() {
+    let server = Server::new(200, "a".repeat(1024), Duration::ZERO).await;
+    let http = HttpClient::new(reqwest::Client::builder().no_proxy().build().unwrap());
+    assert!(http.fetch_bytes_limited(&server.url, 32).await.is_err());
+    assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+    // The production client must reject loopback without making a request.
+    assert!(
+        HttpClient::default()
+            .fetch_bytes_limited(&server.url, 32)
+            .await
+            .is_err()
+    );
+    assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn chunked_responses_cannot_bypass_the_byte_budget() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = [0u8; 4096];
+        assert!(socket.read(&mut request).await.unwrap() > 0);
+        socket.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n10\r\naaaaaaaaaaaaaaaa\r\n10\r\nbbbbbbbbbbbbbbbb\r\n0\r\n\r\n").await.unwrap();
+    });
+    let http = HttpClient::new(reqwest::Client::builder().no_proxy().build().unwrap());
+    assert!(http.fetch_bytes_limited(&url, 20).await.is_err());
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn a_private_bus_rejects_non_application_callers_before_mutation() {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let root = tempfile::tempdir().unwrap();
+    let socket = format!("unix:path={}/bus", root.path().display());
+    let mut bus = tokio::process::Command::new("dbus-daemon")
+        .args([
+            "--session",
+            "--nofork",
+            "--nopidfile",
+            "--print-address=1",
+            &format!("--address={socket}"),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("dbus-daemon is required for authorization tests");
+    let mut lines = BufReader::new(bus.stdout.take().unwrap()).lines();
+    let address = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let server = zbus::connection::Builder::address(address.as_str())
+        .name("org.kiosque.Kiosque.Daemon")
+        .serve_at(
+            kiosque_core::daemon::OBJECT_PATH,
+            kiosque_core::daemon::service::Service,
+        )
+        .build()
+        .await
+        .unwrap();
+    let client = zbus::connection::Builder::address(address.as_str())
+        .build()
+        .await
+        .unwrap();
+    let proxy = kiosque_core::daemon::client::DaemonProxy::new(&client)
+        .await
+        .unwrap();
+    let error = proxy.ping().await.unwrap_err().to_string();
+    assert!(error.contains("AccessDenied"), "{error}");
+    let error = proxy
+        .install("--command=sh", "evil", "user", "attack")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("AccessDenied"), "{error}");
+    let error = proxy
+        .add_repository("evil", b"not a descriptor", "user")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("AccessDenied"), "{error}");
+    drop(server);
+    bus.kill().await.unwrap();
+    bus.wait().await.unwrap();
 }

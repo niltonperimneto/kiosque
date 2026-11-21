@@ -1,0 +1,27 @@
+{
+  "linuxdeploy": {
+    "repository": "linuxdeploy/linuxdeploy",
+    "asset_id": 699514588,
+    "sha256": "df908b19f1ed1cdafa79508d415aa12d6c56ce4d56d4149aa8c09286718706e5"
+  },
+  "linuxdeploy-plugin-qt": {
+    "repository": "linuxdeploy/linuxdeploy-plugin-qt",
+    "asset_id": 525032210,
+    "sha256": "cfc1055b2b9dbc08412b579f20990b7b41a17b61beaa5847dc9477c96c9e9617"
+  },
+  "appimagetool": {
+    "repository": "AppImage/appimagetool",
+    "asset_id": 715388534,
+    "sha256": "e8c1169c4af66c3184d7ee110713d4be04befe671fa358e2c1591ee840553b03"
+  },
+  "cargo-audit": {
+    "repository": "rustsec/rustsec",
+    "asset_id": 731640338,
+    "sha256": "b77993532b253fcbf550996d7716465ec3d734d4e74e7f87bfb65a19add0fb59"
+  },
+  "gitleaks": {
+    "repository": "gitleaks/gitleaks",
+    "asset_id": 378332058,
+    "sha256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+  }
+}

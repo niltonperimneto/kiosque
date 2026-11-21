@@ -366,14 +366,16 @@ impl qobject::InstalledModel {
             .map(|app| {
                 let has_update = registry.state(&app.id).update.is_some();
                 let is_runtime = app.is_runtime();
+                let is_checked_for_update = has_update && keep_update_choice(&self.items, &app.id);
                 InstalledEntry {
                     name: app.name,
+                    size: kiosque_core::entries::format_size(app.installed_size),
+                    size_bytes: app.installed_size,
                     app_id: app.id,
                     version: app.version,
-                    size: format!("{} B", app.installed_size),
                     origin: app.origin,
                     has_update,
-                    is_checked_for_update: has_update,
+                    is_checked_for_update,
                     is_runtime,
                 }
             })
@@ -568,8 +570,12 @@ impl qobject::InstalledModel {
 
                     for item in &mut rust_mut.items {
                         if updates.iter().any(|u| u.application_id == item.app_id) {
+                            // Keep the user's choice for updates already listed;
+                            // newly found updates start selected.
+                            if !item.has_update {
+                                item.is_checked_for_update = true;
+                            }
                             item.has_update = true;
-                            item.is_checked_for_update = true;
                             found_app_updates.insert(item.app_id.clone());
                         } else {
                             item.has_update = false;
@@ -590,6 +596,7 @@ impl qobject::InstalledModel {
                                     app_id: up.application_id.clone(),
                                     version: up.version.clone().unwrap_or_default(),
                                     size: up.installed_size.clone().unwrap_or_default(),
+                                    size_bytes: 0,
                                     origin: up.origin.clone().unwrap_or_default(),
                                     has_update: true,
                                     is_checked_for_update: true,
@@ -656,8 +663,10 @@ impl qobject::InstalledModel {
 
         self.as_mut().set_updating(true);
         self.as_mut().set_update_progress(-1.0);
+        // Left empty until the backend reports a status; QML shows a
+        // translated placeholder meanwhile.
         self.as_mut()
-            .set_update_status_text(cxx_qt_lib::QString::from("Initializing update…"));
+            .set_update_status_text(cxx_qt_lib::QString::default());
         let qt_thread = self.qt_thread();
         let control = JobControl::new();
         self.as_mut().rust_mut().update_job = Some(control.clone());
@@ -701,26 +710,14 @@ impl qobject::InstalledModel {
     }
 }
 
-fn parse_size_to_bytes(size_str: &str) -> u64 {
-    let size_str = size_str.trim().to_lowercase();
-    let parts: Vec<&str> = size_str.split_whitespace().collect();
-    if parts.is_empty() {
-        return 0;
-    }
-    let num_val: f64 = parts[0].parse().unwrap_or(0.0);
-    if parts.len() < 2 {
-        return num_val as u64;
-    }
-    let unit = parts[1];
-    if unit.contains("gb") || unit.contains("g") {
-        (num_val * 1024.0 * 1024.0 * 1024.0) as u64
-    } else if unit.contains("mb") || unit.contains("m") {
-        (num_val * 1024.0 * 1024.0) as u64
-    } else if unit.contains("kb") || unit.contains("k") {
-        (num_val * 1024.0) as u64
-    } else {
-        num_val as u64
-    }
+/// Whether a listed update stays selected across a registry resync: rows
+/// that already showed an update keep the user's choice, new ones start
+/// selected.
+fn keep_update_choice(previous: &[InstalledEntry], app_id: &str) -> bool {
+    previous
+        .iter()
+        .find(|item| item.app_id == app_id && item.has_update)
+        .is_none_or(|item| item.is_checked_for_update)
 }
 
 fn sort_items_helper(items: &mut [InstalledEntry], criterion: &str, ascending: bool) {
@@ -752,9 +749,7 @@ fn sort_items_helper(items: &mut [InstalledEntry], criterion: &str, ascending: b
                 if ascending { res } else { res.reverse() }
             }
             "size" => {
-                let size_a = parse_size_to_bytes(&a.size);
-                let size_b = parse_size_to_bytes(&b.size);
-                let res = size_a.cmp(&size_b);
+                let res = a.size_bytes.cmp(&b.size_bytes);
                 if ascending { res } else { res.reverse() }
             }
             _ => std::cmp::Ordering::Equal,

@@ -1,3 +1,4 @@
+#![cfg(feature = "test-util")]
 //! Explicitly selected real-backend contracts; never run by ordinary cargo test.
 use kiosque_core::flatpak::{self, FlatpakBackend, FlatpakError, Operation, RemoteSource, Scope};
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -34,7 +35,14 @@ async fn real_backend_lifecycle_and_scopes() {
     let repo = std::fs::read(root.join("fixture.flatpakrepo")).unwrap();
     for scope in [Scope::User, Scope::System] {
         backend
-            .add_remote("fixture", RemoteSource::FlatpakRepo(repo.clone()), scope)
+            .add_remote(
+                "fixture",
+                RemoteSource::LocalFixture {
+                    data: repo.clone(),
+                    root: root.clone(),
+                },
+                scope,
+            )
             .await
             .unwrap();
         let progress: flatpak::ProgressSink = Arc::new(|p| assert!(p.fraction.is_finite()));

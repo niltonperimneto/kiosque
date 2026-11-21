@@ -42,6 +42,7 @@ pub struct ImageLoader {
     dir: PathBuf,
     decoded: Cache<String, Arc<image::RgbaImage>>,
     downloads: DownloadLocks,
+    budget: Arc<tokio::sync::Semaphore>,
 }
 impl ImageLoader {
     pub fn new(http: HttpClient, dir: impl Into<PathBuf>) -> Self {
@@ -57,6 +58,7 @@ impl ImageLoader {
             http,
             dir: dir.into(),
             downloads: Arc::new(Mutex::new(HashMap::new())),
+            budget: Arc::new(tokio::sync::Semaphore::new(2)),
             decoded: Cache::builder()
                 .max_capacity(capacity)
                 .time_to_live(ttl)
@@ -78,15 +80,19 @@ impl ImageLoader {
     }
     async fn source_for(&self, url: &str) -> Result<DynamicImage, String> {
         if let Some(path) = local_path(url) {
-            let bytes = tokio::fs::read(path)
-                .await
-                .map_err(|e| format!("cannot read image: {e}"))?;
+            let path = path
+                .canonicalize()
+                .map_err(|_| "Local icon is unavailable")?;
+            if !self.http.is_fixture() && !allowed_local_icon(&path) {
+                return Err("Local icon is outside trusted icon directories".into());
+            }
+            let bytes = read_image_file(&path).await?;
             return decode_async(bytes).await;
         }
         let lock = self.download_lock(url);
         let _guard = lock.lock().await;
         let path = cache_path_for(&self.dir, url);
-        if let Ok(bytes) = tokio::fs::read(&path).await {
+        if let Ok(bytes) = read_image_file(&path).await {
             if let Ok(image) = decode_async(bytes).await {
                 if let Ok(file) = fs::File::options().append(true).open(&path) {
                     let _ = file.set_modified(SystemTime::now());
@@ -101,11 +107,17 @@ impl ImageLoader {
             .await
             .map_err(|e| e.to_string())?;
         let decoded = decode_async(bytes.clone()).await?;
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let tmp = path.with_extension(format!("{}.{}.part", std::process::id(), serial));
+        use tokio::io::AsyncWriteExt;
+        let tmp = path.with_extension(format!("{:032x}.part", rand::random::<u128>()));
         if tokio::fs::create_dir_all(&self.dir).await.is_ok()
-            && tokio::fs::write(&tmp, &bytes).await.is_ok()
+            && let Ok(mut file) = tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .open(&tmp)
+                .await
+            && file.write_all(&bytes).await.is_ok()
         {
             let _ = tokio::fs::rename(&tmp, &path).await;
         }
@@ -127,6 +139,11 @@ impl ImageLoader {
         let key = format!("{}:{url}:{width}:{height}:{local_version:?}", url.len());
         self.decoded
             .try_get_with(key, async {
+                let _permit = self
+                    .budget
+                    .acquire()
+                    .await
+                    .map_err(|_| "Image loading stopped".to_string())?;
                 let source = self.source_for(&url).await?;
                 tokio::task::spawn_blocking(move || resize(source, width, height).map(Arc::new))
                     .await
@@ -148,13 +165,81 @@ async fn decode_async(bytes: Vec<u8>) -> Result<DynamicImage, String> {
         .map_err(|e| e.to_string())?
 }
 
-fn decode(bytes: Vec<u8>) -> Result<DynamicImage, String> {
-    ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()
-        .map_err(|e| e.to_string())?
-        .decode()
-        .map_err(|e| e.to_string())
+pub(crate) fn allowed_local_icon(path: &Path) -> bool {
+    let mut roots: Vec<_> = crate::flatpak::installation_paths()
+        .into_iter()
+        .map(|(_, root)| root.join("appstream"))
+        .collect();
+    roots.extend([
+        PathBuf::from("/usr/share/icons"),
+        PathBuf::from("/usr/local/share/icons"),
+    ]);
+    if let Some(data) = dirs::data_dir() {
+        roots.push(data.join("icons"));
+    }
+    roots
+        .into_iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .any(|root| path.starts_with(root))
 }
+
+async fn read_image_file(path: &Path) -> Result<Vec<u8>, String> {
+    use tokio::io::AsyncReadExt;
+    let file = tokio::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
+        .open(path)
+        .await
+        .map_err(|_| "Image file is unavailable")?;
+    if !file
+        .metadata()
+        .await
+        .map_err(|_| "Image metadata is unavailable")?
+        .is_file()
+    {
+        return Err("Image must be a regular file".into());
+    }
+    let mut bytes = Vec::new();
+    file.take(crate::security::MAX_IMAGE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|_| "Could not read image")?;
+    if bytes.len() > crate::security::MAX_IMAGE_BYTES {
+        return Err("Image file exceeds its byte limit".into());
+    }
+    Ok(bytes)
+}
+
+pub(crate) fn decode(bytes: Vec<u8>) -> Result<DynamicImage, String> {
+    const MAX_PIXELS: u64 = 12 * 1024 * 1024;
+    if bytes.len() > crate::security::MAX_IMAGE_BYTES {
+        return Err("Image exceeds its byte limit".into());
+    }
+    let reader = || {
+        ImageReader::new(Cursor::new(bytes.as_slice()))
+            .with_guessed_format()
+            .map_err(|_| "Unknown image format".to_string())
+    };
+    let (width, height) = reader()?
+        .into_dimensions()
+        .map_err(|_| "Invalid image dimensions")?;
+    if width == 0
+        || height == 0
+        || width > 8192
+        || height > 8192
+        || u64::from(width) * u64::from(height) > MAX_PIXELS
+    {
+        return Err("Image dimensions exceed the decoding budget".into());
+    }
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(64 * 1024 * 1024);
+    let mut reader = reader()?;
+    reader.limits(limits);
+    reader.decode().map_err(|_| "Image decoding failed".into())
+}
+
 fn resize(img: DynamicImage, width: i32, height: i32) -> Result<image::RgbaImage, String> {
     let rgba = img.into_rgba8();
     let (w, h) = rgba.dimensions();
@@ -278,5 +363,18 @@ mod tests {
         assert!(dir.path().join("c").exists());
         assert!(dir.path().join("d").exists());
         assert!(!dir.path().join("legacy.jxl").exists());
+    }
+    #[test]
+    fn oversized_dimensions_are_rejected_before_allocating_pixels() {
+        use image::ImageEncoder;
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&[0, 0, 0, 255], 1, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        png[16..20].copy_from_slice(&8193u32.to_be_bytes());
+        let mut crc = flate2::Crc::new();
+        crc.update(&png[12..29]);
+        png[29..33].copy_from_slice(&crc.sum().to_be_bytes());
+        assert!(decode(png).unwrap_err().contains("budget"));
     }
 }

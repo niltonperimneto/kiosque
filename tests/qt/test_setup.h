@@ -17,6 +17,9 @@
 
 extern "C" bool kiosque_test_setup(const char*, const char*);
 extern "C" void kiosque_test_shutdown();
+extern "C" bool kiosque_test_set_updates(const char*);
+extern "C" void kiosque_test_hold_operations(bool);
+extern "C" unsigned long long kiosque_test_operation_count();
 void qml_register_types_com_kiosque();
 
 // Registered only on the harness's private dbus-run-session bus. No desktop
@@ -63,10 +66,22 @@ signals:
     void changed();
 };
 
+// Controls the harness's mock Flatpak backend. Only linked into test binaries.
+class BackendFixture : public QObject {
+    Q_OBJECT
+public:
+    Q_INVOKABLE bool setUpdates(const QStringList &ids) {
+        return kiosque_test_set_updates(ids.join(QLatin1Char('\n')).toUtf8().constData());
+    }
+    Q_INVOKABLE void holdOperations(bool hold) { kiosque_test_hold_operations(hold); }
+    Q_INVOKABLE int operationCount() const { return int(kiosque_test_operation_count()); }
+};
+
 class Setup : public QObject {
     Q_OBJECT
     QTemporaryDir root;
     BackgroundPortal portal;
+    BackendFixture backend;
 public slots:
     void applicationAvailable() {
         const auto endpoint = qgetenv("KIOSQUE_TEST_HTTP");
@@ -86,6 +101,12 @@ public slots:
     void qmlEngineAvailable(QQmlEngine* engine) {
         engine->rootContext()->setContextProperty(QStringLiteral("testArtifactDir"), qEnvironmentVariable("KIOSQUE_TEST_ARTIFACTS"));
         engine->rootContext()->setContextProperty(QStringLiteral("backgroundPortalFixture"), &portal);
+        engine->rootContext()->setContextProperty(QStringLiteral("backendFixture"), &backend);
+        engine->rootContext()->setContextProperty(QStringLiteral("fixtureEndpoint"), qEnvironmentVariable("KIOSQUE_TEST_HTTP"));
+        // Present in production (set by main.cpp); empty means no launch target.
+        engine->rootContext()->setContextProperty(QStringLiteral("initialAppId"), QString());
+        engine->rootContext()->setContextProperty(QStringLiteral("initialRefFile"), QString());
+        engine->rootContext()->setContextProperty(QStringLiteral("initialRepoFile"), QString());
         engine->addImageProvider(QStringLiteral("kiosque"), new KiosqueImageProvider());
         KLocalization::setupLocalizedContext(engine);
     }

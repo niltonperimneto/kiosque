@@ -82,6 +82,7 @@ Item {
                 width: parent.width
                 level: 4
                 text: root.appName
+                textFormat: Text.PlainText
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
                 maximumLineCount: 1
@@ -90,6 +91,7 @@ Item {
             Text {
                 width: parent.width
                 text: root.appSummary
+                textFormat: Text.PlainText
                 color: Kirigami.Theme.disabledTextColor
                 font: Kirigami.Theme.smallFont
                 horizontalAlignment: Text.AlignHCenter

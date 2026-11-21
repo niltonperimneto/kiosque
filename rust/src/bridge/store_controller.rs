@@ -16,6 +16,7 @@ pub mod qobject {
         #[qobject]
         #[qml_element]
         #[qml_singleton]
+        #[qproperty(QString, ref_key_sha256)]
         #[qproperty(bool, loading)]
         #[qproperty(QString, error_message)]
         #[qproperty(QString, detail_name)]
@@ -51,12 +52,38 @@ pub mod qobject {
         #[cxx_name = "cancelOperation"]
         fn cancel_operation(self: Pin<&mut StoreController>);
 
-        /// Install from a `.flatpakref`: a local path, a `file://` URL or an
-        /// `http(s)://` URL. Progress and completion are reported through
-        /// `install_progress` / `installFinished`, errors via `error_message`.
+        /// Read a `.flatpakref` (a local path, a `file://` URL or an
+        /// `http(s)://` URL) without installing it. The result arrives in
+        /// `refFileInspected`; on success the file is kept pending until
+        /// `confirmRefFileInstall` or `discardRefFile`.
         #[qinvokable]
-        #[cxx_name = "installRefFile"]
-        fn install_ref_file(self: Pin<&mut StoreController>, path: QString);
+        #[cxx_name = "inspectRefFile"]
+        fn inspect_ref_file(self: Pin<&mut StoreController>, path: QString);
+
+        /// Install the pending `.flatpakref` exactly as inspected. Progress and
+        /// completion are reported through `install_progress` /
+        /// `installFinished`, errors via `error_message`; `cancelOperation`
+        /// cancels it.
+        #[qinvokable]
+        #[cxx_name = "confirmRefFileInstall"]
+        fn confirm_ref_file_install(self: Pin<&mut StoreController>);
+
+        /// Forget the pending `.flatpakref` without installing it.
+        #[qinvokable]
+        #[cxx_name = "discardRefFile"]
+        fn discard_ref_file(self: Pin<&mut StoreController>);
+
+        #[qsignal]
+        #[cxx_name = "refFileInspected"]
+        fn ref_file_inspected(
+            self: Pin<&mut StoreController>,
+            success: bool,
+            title: QString,
+            name: QString,
+            url: QString,
+            is_runtime: bool,
+            error: QString,
+        );
 
         #[qsignal]
         #[cxx_name = "detailsLoaded"]
@@ -141,6 +168,12 @@ pub struct StoreControllerRust {
     generation: u64,
     watch: Option<tokio_util::sync::CancellationToken>,
     watched_app_id: String,
+    /// Contents and title of the inspected `.flatpakref` awaiting the user's
+    /// confirmation.
+    ref_key_sha256: cxx_qt_lib::QString,
+    pending_ref: Option<(Vec<u8>, String)>,
+    /// Inspection request generation; superseded inspections are dropped.
+    ref_generation: u64,
 }
 
 impl Drop for StoreControllerRust {
@@ -366,37 +399,67 @@ impl qobject::StoreController {
         );
     }
 
-    pub fn install_ref_file(mut self: std::pin::Pin<&mut Self>, path: cxx_qt_lib::QString) {
+    pub fn inspect_ref_file(mut self: std::pin::Pin<&mut Self>, path: cxx_qt_lib::QString) {
         let source = path.to_string();
-        klog!("StoreController::install_ref_file: \"{}\"", source);
-        self.as_mut().set_install_progress(-1.0);
-        self.as_mut()
-            .set_error_message(cxx_qt_lib::QString::default());
+        klog!("StoreController::inspect_ref_file: \"{}\"", source);
+        self.as_mut().rust_mut().pending_ref = None;
+        self.as_mut().rust_mut().ref_generation += 1;
+        let generation = self.ref_generation;
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let result = read_ref_file(&source).await;
-            let _ = qt_thread.queue(move |mut q| match result {
-                Ok(data) => {
-                    let title = crate::flatpak::keyfile_value(&data, "Title")
-                        .or_else(|| crate::flatpak::keyfile_value(&data, "Name"))
-                        .unwrap_or_default();
-                    q.start_job(
-                        Operation::InstallRefFile {
-                            data,
-                            scope: Scope::User,
-                        },
-                        title,
-                        |_| {},
-                    );
+            let _ = qt_thread.queue(move |mut q| {
+                if q.ref_generation != generation {
+                    return;
                 }
-                Err(e) => {
-                    kerr!("StoreController::install_ref_file: {}", e);
-                    q.as_mut().set_install_progress(0.0);
-                    q.as_mut().set_error_message(cxx_qt_lib::QString::from(&e));
-                    q.as_mut().install_finished(false);
+                let qs = |s: &str| cxx_qt_lib::QString::from(s);
+                match result {
+                    Ok(data) => {
+                        let validated =
+                            kiosque_core::security::ref_file(&data).expect("validated reference");
+                        q.as_mut().set_ref_key_sha256(qs(&validated.key_sha256));
+                        let mut summary = crate::flatpak::summarize_keyfile(&data);
+                        summary.url = validated.origin;
+                        q.as_mut().rust_mut().pending_ref = Some((data, summary.title.clone()));
+                        q.as_mut().ref_file_inspected(
+                            true,
+                            qs(&summary.title),
+                            qs(&summary.name),
+                            qs(&summary.url),
+                            summary.is_runtime,
+                            qs(""),
+                        );
+                    }
+                    Err(e) => {
+                        kerr!("StoreController::inspect_ref_file: {}", e);
+                        q.as_mut()
+                            .ref_file_inspected(false, qs(""), qs(""), qs(""), false, qs(&e));
+                    }
                 }
             });
         });
+    }
+
+    pub fn confirm_ref_file_install(mut self: std::pin::Pin<&mut Self>) {
+        let Some((data, title)) = self.as_mut().rust_mut().pending_ref.take() else {
+            kerr!("StoreController::confirm_ref_file_install: no inspected .flatpakref");
+            return;
+        };
+        klog!("StoreController::confirm_ref_file_install: \"{}\"", title);
+        self.start_job(
+            Operation::InstallRefFile {
+                data,
+                scope: Scope::User,
+            },
+            title,
+            |_| {},
+        );
+    }
+
+    pub fn discard_ref_file(mut self: std::pin::Pin<&mut Self>) {
+        self.as_mut().rust_mut().pending_ref = None;
+        // Drop any inspection still in flight as well.
+        self.as_mut().rust_mut().ref_generation += 1;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -521,20 +584,32 @@ fn apply_details(
         ));
 }
 
-/// Largest `.flatpakref` accepted; real ones are a few KiB (mostly the GPG key).
+/// Largest `.flatpakref`/`.flatpakrepo` accepted; real ones are a few KiB
+/// (mostly the GPG key).
 const MAX_REF_FILE_SIZE: usize = 1024 * 1024;
 
 /// Read a `.flatpakref` from a local path, `file://` URL or `http(s)://` URL
 /// and check that it looks like one.
 pub async fn read_ref_file(source: &str) -> Result<Vec<u8>, String> {
+    read_keyfile(source, ".flatpakref", "[Flatpak Ref]").await
+}
+
+/// Read a `.flatpakrepo` from a local path, `file://` URL or `http(s)://` URL
+/// and check that it looks like one.
+pub async fn read_repo_file(source: &str) -> Result<Vec<u8>, String> {
+    read_keyfile(source, ".flatpakrepo", "[Flatpak Repo]").await
+}
+
+async fn read_keyfile(source: &str, kind: &str, group: &str) -> Result<Vec<u8>, String> {
     let source = source.trim();
     if source.is_empty() {
-        return Err("no .flatpakref file given".into());
+        return Err(format!("no {kind} file given"));
     }
     let lower = source.to_ascii_lowercase();
     let data = if lower.starts_with("http://") || lower.starts_with("https://") {
-        crate::flathub::client::HttpClient::default()
-            .fetch_bytes(source)
+        crate::services::services()
+            .http
+            .fetch_bytes_limited(source, MAX_REF_FILE_SIZE)
             .await
             .map_err(|e| format!("could not download {source}: {e}"))?
     } else {
@@ -547,7 +622,7 @@ pub async fn read_ref_file(source: &str) -> Result<Vec<u8>, String> {
             }
             percent_decode(rest)?
         } else if lower.contains("://") {
-            return Err(format!("unsupported .flatpakref location: {source}"));
+            return Err(format!("unsupported {kind} location: {source}"));
         } else {
             source.to_string()
         };
@@ -561,7 +636,7 @@ pub async fn read_ref_file(source: &str) -> Result<Vec<u8>, String> {
             if metadata.len() > MAX_REF_FILE_SIZE as u64 {
                 return Err(format!("{} is too large", path.display()));
             }
-            std::fs::read(&path).map_err(|e| format!("could not read {}: {e}", path.display()))
+            kiosque_core::security::read_local_file(&path, MAX_REF_FILE_SIZE)
         })
         .await
         .map_err(|e| e.to_string())??
@@ -570,8 +645,13 @@ pub async fn read_ref_file(source: &str) -> Result<Vec<u8>, String> {
         return Err(format!("{source} is too large"));
     }
     let text = std::str::from_utf8(&data).map_err(|_| format!("{source} is not a text file"))?;
-    if !text.lines().any(|l| l.trim() == "[Flatpak Ref]") {
-        return Err(format!("{source} is not a .flatpakref file"));
+    if !text.lines().any(|l| l.trim() == group) {
+        return Err(format!("{source} is not a {kind} file"));
+    }
+    if group == "[Flatpak Ref]" {
+        kiosque_core::security::ref_file(&data)?;
+    } else {
+        kiosque_core::security::repo_file(&data)?;
     }
     Ok(data)
 }

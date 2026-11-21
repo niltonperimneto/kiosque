@@ -187,22 +187,43 @@ Kirigami.ScrollablePage {
                         spacing: Kirigami.Units.smallSpacing / 2
                         visible: updatesCard.busy
 
-                        Controls.ProgressBar {
+                        RowLayout {
                             Layout.fillWidth: true
-                            value: page.installedModel ? page.installedModel.update_progress : 0
-                            indeterminate: page.installedModel && page.installedModel.updating
-                                && page.installedModel.update_progress <= 0.01
+                            spacing: Kirigami.Units.smallSpacing
+
+                            Controls.ProgressBar {
+                                id: updateProgressBar
+                                objectName: "updateProgressBar"
+                                Layout.fillWidth: true
+                                value: page.installedModel ? Math.max(0, page.installedModel.update_progress) : 0
+                                indeterminate: page.installedModel && page.installedModel.updating
+                                    && page.installedModel.update_progress <= 0.01
+                            }
+
+                            Controls.Button {
+                                objectName: "cancelUpdateButton"
+                                visible: page.installedModel && page.installedModel.updating
+                                text: i18n("Cancel")
+                                icon.name: "dialog-cancel"
+                                onClicked: page.installedModel.cancelUpdate()
+                            }
                         }
 
                         Controls.Label {
+                            objectName: "updateStatusLabel"
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignHCenter
                             font: Kirigami.Theme.smallFont
                             color: Kirigami.Theme.disabledTextColor
                             elide: Text.ElideRight
-                            text: page.installedModel && page.installedModel.updating
-                                ? (page.installedModel.update_status_text || i18n("Updating…"))
-                                : i18n("Checking for updates…")
+                            text: {
+                                if (!page.installedModel || !page.installedModel.updating)
+                                    return i18n("Checking for updates…");
+                                if (page.installedModel.update_status_text !== "")
+                                    return page.installedModel.update_status_text;
+                                return page.installedModel.update_progress < 0
+                                    ? i18n("Initializing update…") : i18n("Updating…");
+                            }
                         }
                     }
 
@@ -277,28 +298,16 @@ Kirigami.ScrollablePage {
 
             onClicked: applicationWindow().pushAppDetail(model.appId)
 
-            // Uninstall progress fill drawn behind content.
+            readonly property bool uninstalling: page.installedModel !== null
+                && page.installedModel.uninstalling_app_id !== ""
+                && page.installedModel.uninstalling_app_id === model.appId
+
             background: Rectangle {
                 color: delegateItem.pressed ? Kirigami.Theme.highlightColor
                      : delegateItem.hovered ? Kirigami.Theme.alternateBackgroundColor
                      : Kirigami.Theme.backgroundColor
 
                 Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
-
-                Rectangle {
-                    visible: page.installedModel && page.installedModel.uninstalling_app_id === model.appId
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: parent.width * (page.installedModel ? page.installedModel.uninstall_progress : 0.0)
-                    color: Qt.rgba(
-                        Kirigami.Theme.negativeTextColor.r,
-                        Kirigami.Theme.negativeTextColor.g,
-                        Kirigami.Theme.negativeTextColor.b,
-                        0.2
-                    )
-                    Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                }
             }
 
             contentItem: RowLayout {
@@ -341,8 +350,9 @@ Kirigami.ScrollablePage {
                     }
 
                     Controls.Label {
+                        objectName: "sizeLabel"
                         Layout.fillWidth: true
-                        visible: model.version !== "" || model.size !== ""
+                        visible: !delegateItem.uninstalling && (model.version !== "" || model.size !== "")
                         text: {
                             let parts = [];
                             if (model.version !== "") parts.push(model.version);
@@ -353,6 +363,27 @@ Kirigami.ScrollablePage {
                         font: Kirigami.Theme.smallFont
                         elide: Text.ElideRight
                     }
+
+                    // Uninstall progress: indeterminate until the backend
+                    // reports a fraction (uninstall_progress < 0).
+                    Controls.ProgressBar {
+                        objectName: "uninstallProgressBar"
+                        Layout.fillWidth: true
+                        visible: delegateItem.uninstalling
+                        from: 0
+                        to: 1
+                        value: page.installedModel ? Math.max(0, page.installedModel.uninstall_progress) : 0
+                        indeterminate: page.installedModel !== null && page.installedModel.uninstall_progress < 0
+                    }
+                }
+
+                Controls.Button {
+                    objectName: "cancelUninstallButton"
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: delegateItem.uninstalling
+                    text: i18n("Cancel")
+                    icon.name: "dialog-cancel"
+                    onClicked: page.installedModel.cancelUninstall()
                 }
             }
 
@@ -366,6 +397,7 @@ Kirigami.ScrollablePage {
                 Kirigami.Action {
                     text: i18n("Uninstall")
                     icon.name: "edit-delete"
+                    enabled: !(page.installedModel && page.installedModel.uninstalling_app_id !== "")
                     onTriggered: page.installedModel.uninstallApp(index)
                 }
             ]

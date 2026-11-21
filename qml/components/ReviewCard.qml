@@ -68,6 +68,7 @@ Kirigami.ShadowedRectangle {
 
                 Controls.Label {
                     text: root.userName !== "" ? root.userName : i18n("Anonymous")
+                    textFormat: Text.PlainText
                     font.bold: true
                     Layout.fillWidth: true
                 }
@@ -117,6 +118,7 @@ Kirigami.ShadowedRectangle {
 
         Controls.Label {
             text: root.summary
+            textFormat: Text.PlainText
             font.bold: true
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
@@ -126,6 +128,7 @@ Kirigami.ShadowedRectangle {
 
         Controls.Label {
             text: root.description
+            textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
             opacity: 0.9

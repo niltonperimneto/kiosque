@@ -53,6 +53,7 @@ pub mod qobject {
         #[qproperty(QString, status_text, READ, NOTIFY)]
         #[qproperty(QStringList, screenshots, READ, NOTIFY)]
         #[qproperty(QMap_QString_QVariant, urls, READ, NOTIFY)]
+        #[qproperty(bool, permissions_known, READ, NOTIFY)]
         #[qproperty(QMap_QString_QVariant, permissions, READ, NOTIFY)]
         #[qproperty(QMap_QString_QVariant, ratings, READ, NOTIFY)]
         #[qproperty(QList_QVariant, developer_apps, READ, NOTIFY)]
@@ -128,6 +129,7 @@ pub struct AppDetailsRust {
     status_text: cxx_qt_lib::QString,
     screenshots: cxx_qt_lib::QStringList,
     urls: QVariantMap,
+    permissions_known: bool,
     permissions: QVariantMap,
     ratings: QVariantMap,
     developer_apps: QVariantList,
@@ -160,6 +162,7 @@ impl Default for AppDetailsRust {
             status_text: Default::default(),
             screenshots: Default::default(),
             urls: Default::default(),
+            permissions_known: false,
             permissions: Default::default(),
             ratings: Default::default(),
             developer_apps: Default::default(),
@@ -294,6 +297,7 @@ impl qobject::AppDetails {
         update!(self, license, license_changed, empty());
         replace!(self, screenshots, screenshots_changed, Default::default());
         replace!(self, urls, urls_changed, Default::default());
+        update!(self, permissions_known, permissions_known_changed, false);
         replace!(self, permissions, permissions_changed, Default::default());
         replace!(self, ratings, ratings_changed, Default::default());
         replace!(
@@ -400,6 +404,12 @@ impl qobject::AppDetails {
             urls,
             urls_changed,
             util::json_to_qvariant_map(&details.urls)
+        );
+        update!(
+            self,
+            permissions_known,
+            permissions_known_changed,
+            details.permissions.is_object()
         );
         replace!(
             self,

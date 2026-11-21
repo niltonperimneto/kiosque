@@ -1,6 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Flathub sends `null` for absent lists and strings (e.g. `"branding": null`);
+/// `#[serde(default)]` only covers a missing key, so treat `null` the same way.
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 // ── Flathub API v2 collection response ──────────────────────────────────────
 // The /api/v2/collection/* endpoints return this wrapper.
 // Fields we don't use are captured by `flatten` + ignored via `deny_unknown_fields`
@@ -8,7 +18,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct FlathubResponse {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub hits: Vec<FlathubApp>,
 }
 
@@ -19,11 +29,11 @@ pub struct FlathubResponse {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct FlathubApp {
     /// Human-readable display name.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub name: String,
 
     /// Reverse-DNS application identifier (e.g. "org.mozilla.firefox").
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub app_id: String,
 
     /// One-line description shown below the name.
@@ -43,7 +53,7 @@ pub struct FlathubApp {
     pub description: Option<String>,
 
     /// Subcategories of the app (e.g. Emulator, Utility).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub sub_categories: Vec<String>,
 
     /// Unix timestamp when the app was added to Flathub (collection endpoints).
@@ -53,7 +63,7 @@ pub struct FlathubApp {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ScreenshotSize {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub src: String,
     #[serde(default)]
     pub width: Option<serde_json::Value>,
@@ -63,7 +73,7 @@ pub struct ScreenshotSize {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Screenshot {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub sizes: Vec<ScreenshotSize>,
 }
 
@@ -121,16 +131,16 @@ pub struct AppMetadata {
 /// Full detail payload returned by /api/v2/appstream/{app_id}.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AppDetails {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub id: String,
 
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub name: String,
 
     #[serde(default)]
     pub developer_name: Option<String>,
 
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub summary: String,
 
     #[serde(default)]
@@ -142,19 +152,19 @@ pub struct AppDetails {
     #[serde(default)]
     pub project_license: Option<String>,
 
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub screenshots: Vec<Screenshot>,
 
     #[serde(default)]
     pub urls: Option<AppUrls>,
 
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub categories: Vec<String>,
 
     #[serde(default)]
     pub metadata: Option<AppMetadata>,
 
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub branding: Vec<BrandingColor>,
 }
 

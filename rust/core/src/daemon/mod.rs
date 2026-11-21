@@ -14,6 +14,7 @@
 //! notifications and drives this module through the C functions at the end
 //! of this file.
 
+pub mod auth;
 pub mod client;
 pub mod runner;
 pub mod service;
@@ -241,6 +242,11 @@ async fn job_notifier() {
 static CONNECTION: OnceLock<zbus::Connection> = OnceLock::new();
 
 async fn start(background: bool) -> Result<(), String> {
+    if crate::flatpak::in_sandbox() {
+        return Err(
+            "Install the native Kiosque companion on the host to manage applications".into(),
+        );
+    }
     BACKGROUND.store(background, Ordering::SeqCst);
     touch();
     let conn = zbus::connection::Builder::session()

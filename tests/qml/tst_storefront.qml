@@ -50,6 +50,27 @@ TestCase {
         verify(waitForRendering(root.contentItem))
         if (testArtifactDir !== "")
             grabImage(root.contentItem).save(testArtifactDir + "/storefront.png")
+        root.switchToPage("qrc:/qml/pages/SettingsPage.qml")
+        let settings = root.pageStack.currentItem
+        let selector = findChild(settings, "settingsCategorySelector")
+        verify(selector !== null)
+        compare(selector.count, 5)
+        verify(waitForRendering(root.contentItem))
+        if (testArtifactDir !== "")
+            grabImage(root.contentItem).save(testArtifactDir + "/settings.png")
+    }
+
+    function test_daily_image_and_spotlight() {
+        let card = component("AppOfTheDayCard", {width: 800, appName: "Daily", screenshotUrl: "qrc:/qml/images/logo.svg"})
+        let picture = findChild(card, "dailyScreenshot")
+        let light = findChild(card, "dailySpotlight")
+        tryCompare(picture, "status", Image.Ready)
+        compare(picture.fillMode, Image.PreserveAspectFit)
+        verify(picture.width <= picture.implicitWidth)
+        mouseMove(light, 100, 80)
+        tryVerify(function() { return Math.abs(light.lightX - 100) < 2 })
+        if (testArtifactDir !== "")
+            grabImage(card).save(testArtifactDir + "/daily-spotlight.png")
     }
 
     function test_branding_and_screenshot_fallbacks() {

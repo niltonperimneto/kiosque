@@ -87,6 +87,7 @@ Kirigami.AbstractCard {
         Kirigami.Heading {
             level: 4
             text: root.name
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
@@ -95,6 +96,7 @@ Kirigami.AbstractCard {
 
         Controls.Label {
             text: root.summary
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap

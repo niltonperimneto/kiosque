@@ -11,6 +11,7 @@
 //!
 //! A [`mock::MockBackend`] is available to unit tests.
 
+pub mod broker;
 pub mod cli;
 #[cfg(any(test, feature = "test-util"))]
 pub mod mock;
@@ -120,6 +121,9 @@ pub struct RemoteInfo {
 /// Where a new remote comes from.
 #[derive(Debug, Clone)]
 pub enum RemoteSource {
+    /// Only dedicated test binaries can access signed local fixture repositories.
+    #[cfg(feature = "test-util")]
+    LocalFixture { data: Vec<u8>, root: PathBuf },
     /// Either a plain repo URL or a URL to a `.flatpakrepo` file.
     Url(String),
     /// The contents of a `.flatpakrepo` file.
@@ -242,6 +246,9 @@ pub fn backend() -> Arc<dyn FlatpakBackend> {
 }
 
 fn select_backend() -> Arc<dyn FlatpakBackend> {
+    if in_sandbox() {
+        return Arc::new(broker::BrokerBackend);
+    }
     if std::env::var_os("KIOSQUE_FLATPAK_BACKEND").is_some_and(|v| v == "cli") {
         return Arc::new(cli::CliBackend::new());
     }
@@ -371,6 +378,46 @@ pub fn keyfile_value(data: &[u8], key: &str) -> Option<String> {
     })
 }
 
+/// What a `.flatpakref` or `.flatpakrepo` file asks for, shown to the user
+/// before anything is installed or added.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KeyfileSummary {
+    /// `Title=`, falling back to `Name=`.
+    pub title: String,
+    /// `Name=` (application id; empty for `.flatpakrepo`).
+    pub name: String,
+    /// `Url=`: the repository the file points at.
+    pub url: String,
+    /// `Branch=` (empty when absent).
+    pub branch: String,
+    /// `IsRuntime=true`.
+    pub is_runtime: bool,
+    /// `SuggestRemoteName=` (empty when absent).
+    pub suggested_remote_name: String,
+}
+
+/// Summarize a `.flatpakref`/`.flatpakrepo` keyfile. Control characters are
+/// stripped so a crafted file cannot spoof the confirmation text.
+pub fn summarize_keyfile(data: &[u8]) -> KeyfileSummary {
+    let get = |key: &str| {
+        keyfile_value(data, key)
+            .map(|v| v.chars().filter(|c| !c.is_control()).collect::<String>())
+            .unwrap_or_default()
+    };
+    let name = get("Name");
+    let title = Some(get("Title"))
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| name.clone());
+    KeyfileSummary {
+        title,
+        name,
+        url: get("Url"),
+        branch: get("Branch"),
+        is_runtime: get("IsRuntime").eq_ignore_ascii_case("true"),
+        suggested_remote_name: get("SuggestRemoteName"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,5 +446,22 @@ mod tests {
         let data = b"[Flatpak Ref]\nName=org.foo.Bar\nBranch=stable\n";
         assert_eq!(keyfile_value(data, "Name").as_deref(), Some("org.foo.Bar"));
         assert_eq!(keyfile_value(data, "Url"), None);
+    }
+
+    #[test]
+    fn keyfile_summary_prefers_title_and_strips_control_characters() {
+        let data = b"[Flatpak Ref]\nName=org.foo.Bar\nTitle=Foo\x1b[2J Bar\nUrl=https://example.org/repo/\nBranch=stable\nIsRuntime=False\n";
+        let summary = summarize_keyfile(data);
+        assert_eq!(summary.title, "Foo[2J Bar");
+        assert_eq!(summary.name, "org.foo.Bar");
+        assert_eq!(summary.url, "https://example.org/repo/");
+        assert_eq!(summary.branch, "stable");
+        assert!(!summary.is_runtime);
+
+        let repo = b"[Flatpak Repo]\nUrl=https://example.org/repo/\nSuggestRemoteName=example\n";
+        let summary = summarize_keyfile(repo);
+        assert_eq!(summary.title, "");
+        assert_eq!(summary.suggested_remote_name, "example");
+        assert!(summarize_keyfile(b"[Flatpak Ref]\nName=a.b.C\nIsRuntime=true\n").is_runtime);
     }
 }

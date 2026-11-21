@@ -16,10 +16,13 @@ fn sandbox_routing_is_explicit() {
     let host = CliBackend::with_routing(false).command();
     assert_eq!(host.as_std().get_program(), "flatpak");
     let sandbox = CliBackend::with_routing(true).command();
-    assert_eq!(sandbox.as_std().get_program(), "flatpak-spawn");
+    assert_eq!(
+        sandbox.as_std().get_program(),
+        "/nonexistent/kiosque-host-companion-required"
+    );
     assert_eq!(
         sandbox.as_std().get_args().collect::<Vec<_>>(),
-        vec!["--host", "flatpak"]
+        Vec::<&std::ffi::OsStr>::new()
     );
 }
 

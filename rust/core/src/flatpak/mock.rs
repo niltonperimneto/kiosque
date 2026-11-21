@@ -60,6 +60,12 @@ impl FlatpakBackend for MockBackend {
 
     async fn add_remote(&self, name: &str, source: RemoteSource, scope: Scope) -> Result<()> {
         let url = match source {
+            #[cfg(feature = "test-util")]
+            RemoteSource::LocalFixture { .. } => {
+                return Err(FlatpakError::Failed(
+                    "Local fixture source is unsupported".into(),
+                ));
+            }
             RemoteSource::Url(u) => u,
             RemoteSource::FlatpakRepo(d) => super::keyfile_value(&d, "Url").unwrap_or_default(),
         };

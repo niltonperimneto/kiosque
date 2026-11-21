@@ -16,7 +16,7 @@ flowchart LR
 
 ## Ownership and composition
 
-- Core default features contain no Qt, KDE or libflatpak dependency. The application's default `libflatpak` feature forwards to the optional core backend. Disabling it retains CLI operation. The Flatpak manifest explicitly selects CLI mode to route operations through the host command instead of requiring libflatpak inside the KDE runtime. It grants `org.freedesktop.Flatpak` D-Bus access, which the host-spawn interface requires.
+- Core default features contain no Qt, KDE or libflatpak dependency. The application's default `libflatpak` feature forwards to the optional core backend. Disabling it retains CLI operation. The Flatpak build does not link libflatpak. Sandboxed processes select a constrained D-Bus broker backend and require the native `kiosque-update` companion on the host; they never fall back to host spawning. The manifest grants only the companion bus name and disables installation of sandbox daemon activation/KRunner files.
 - The application composition root is `rust/src/services.rs`. Production constructors use production endpoints and paths. Dedicated `test-util` builds can install isolated services before any QObject is created; release builds do not export that bootstrap.
 - Registry owns installed/update/job state. TransactionManager serializes backend operations, deduplicates complete operations including scope and remote, and publishes terminal state after reloading installed refs. `shutdown()` cancels pending operations and joins the worker. Worker ownership uses a weak reference to avoid an idle Arc cycle.
 - Qt models project registry snapshots into serializable core entries. The adapter's compatibility helpers retain existing UI method names while sending mutations through the shared transaction client. Model/controller event subscriptions stop when their Rust QObject state is destroyed.
@@ -32,13 +32,17 @@ Tokio performs network, filesystem and process work. Qt changes are posted throu
 
 Meson builds the explicit `libkiosque` package, links its static library and exported cxx-qt initializer object, and embeds QML resources. Keep the initializer export integration aligned with cxx-qt upgrades; its export layout is not a stable public interface.
 
-The new core cache format is versioned. Old incompatible cache files are ignored. No settings schema migration is required; older records without an ODRS salt receive a generated salt when loaded.
+The new core cache format is versioned. Old incompatible cache files are ignored. Loading settings removes legacy OAuth tokens and persists missing ODRS salts. Settings directories/files use modes 0700/0600; atomic writes reject symlinks. OAuth bearer tokens are used only in memory to fetch a profile. GitLab sign-in uses PKCE and ephemeral loopback listeners; GitHub uses device authorization and requires device flow to be enabled in its OAuth application.
 
 The updater's existing C++ tray/one-shot shell is retained. The core daemon modules expose the ongoing Rust daemon refactor; a broader rewrite of the C++ shell is not part of the test architecture migration.
 
 ## Sandbox and trust boundaries
 
-The Flatpak build uses the CLI backend and runs `flatpak-spawn --host flatpak …`, which needs `--talk-name=org.freedesktop.Flatpak`. That name lets the app run host commands, so every value that becomes a `flatpak` argument (app ids, refs, remote names, repository URLs) is validated in `flatpak/cli.rs` before spawning. Option-like values (leading `-`) and characters outside flatpak's own id and name syntax are rejected. Keep this check in front of any new CLI call.
+The Flatpak build talks only to `org.kiosque.Kiosque.Daemon`. Install the native host package to provide the companion. An absent or unauthorized companion produces an explicit operation failure; the sandbox cannot start its own host daemon. Native and CLI host backends remain available for native packages.
+
+The companion obtains sender UID/PID from D-Bus and checks the executing native sibling or packaged Flatpak application identity before reading or mutating state. Its methods accept typed identifiers, scopes and bounded descriptor bytes, never commands, paths or environments. Queue submissions validate identifiers and cap active operations at 32, ref files at 1 MiB and update batches at 256 IDs. This policy trusts the current Unix account and does not replace host Flatpak/Polkit system authorization.
+
+External descriptors require a single, unambiguous HTTPS origin and signing key. The UI reviews retained descriptor bytes, origin, key SHA-256 and user installation scope before committing. Native transactions allow only the confirmed primary origin; dependency repositories are denied. External-reference transactions do not fetch missing dependencies/related refs automatically. Production HTTP clients reject local/private destinations, proxies, redirects and oversized decoded responses. Flatpak's own repository transport and trust checks remain the responsibility of the host Flatpak implementation.
 
 Every other permission is read-only and scoped to what the code reads:
 
@@ -48,7 +52,7 @@ Every other permission is read-only and scoped to what the code reads:
 | `host-etc:ro`, `host-os:ro` | Distributor configuration under `/run/host/etc/kiosque` and `/run/host/usr/share/kiosque` |
 | `org.freedesktop.Notifications`, `org.kde.StatusNotifierWatcher` | Update notifier notifications and tray icon |
 
-The app writes only to its own `~/.var/app` directories. Temporary `.flatpakref`/`.flatpakrepo` files go to its cache directory, which has the same path on the host. Do not reintroduce `--filesystem=host`. Never include OAuth response bodies in errors or logs, since they can contain tokens.
+The app writes only to its own `~/.var/app` directories. The host CLI backend writes unpredictable, exclusively created mode-0600 temporary descriptors to its cache directory. Descriptor bytes cross the companion API; sandbox paths never cross it. Do not reintroduce `--filesystem=host`. Never include OAuth response bodies in errors or logs, since they can contain tokens.
 
 ## Storefront projections
 

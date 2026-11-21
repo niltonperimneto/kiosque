@@ -1,4 +1,4 @@
-use cxx_qt::Threading;
+use cxx_qt::{CxxQtType, Threading};
 use std::pin::Pin;
 
 #[cxx_qt::bridge]
@@ -16,6 +16,9 @@ pub mod qobject {
         #[qproperty(QString, update_frequency)]
         #[qproperty(QString, update_time)]
         #[qproperty(bool, saving_settings)]
+        #[qproperty(bool, login_in_progress)]
+        #[qproperty(QString, login_user_code)]
+        #[qproperty(QString, login_verification_url)]
         #[qproperty(bool, is_authenticated)]
         #[qproperty(QString, oauth_provider)]
         #[qproperty(QString, oauth_username)]
@@ -39,6 +42,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "login"]
         fn login(self: Pin<&mut SettingsController>, provider: QString);
+
+        #[qinvokable]
+        #[cxx_name = "cancelLogin"]
+        fn cancel_login(self: Pin<&mut SettingsController>);
 
         #[qinvokable]
         #[cxx_name = "logout"]
@@ -70,11 +77,23 @@ pub struct SettingsControllerRust {
     pub update_frequency: cxx_qt_lib::QString,
     pub update_time: cxx_qt_lib::QString,
     pub saving_settings: bool,
+    pub login_in_progress: bool,
+    pub login_user_code: cxx_qt_lib::QString,
+    pub login_verification_url: cxx_qt_lib::QString,
     pub is_authenticated: bool,
+    login_cancel: Option<tokio_util::sync::CancellationToken>,
     pub oauth_provider: cxx_qt_lib::QString,
     pub oauth_username: cxx_qt_lib::QString,
     pub oauth_avatar_url: cxx_qt_lib::QString,
     pub odrs_user_hash: cxx_qt_lib::QString,
+}
+
+impl Drop for SettingsControllerRust {
+    fn drop(&mut self) {
+        if let Some(cancel) = &self.login_cancel {
+            cancel.cancel();
+        }
+    }
 }
 
 impl qobject::SettingsController {
@@ -86,7 +105,11 @@ impl qobject::SettingsController {
         self.as_mut()
             .set_update_time(cxx_qt_lib::QString::from(&settings.update_time));
 
-        let is_auth = settings.oauth_token.is_some();
+        let is_auth = settings
+            .oauth_user_id
+            .as_ref()
+            .is_some_and(|id| !id.is_empty())
+            && settings.oauth_provider.is_some();
         self.as_mut().set_is_authenticated(is_auth);
 
         let provider = settings.oauth_provider.unwrap_or_default();
@@ -97,7 +120,8 @@ impl qobject::SettingsController {
         self.as_mut()
             .set_oauth_username(cxx_qt_lib::QString::from(&username));
 
-        let avatar_url = settings.oauth_avatar_url.unwrap_or_default();
+        let avatar_url =
+            crate::image_cache::image_url(&settings.oauth_avatar_url.unwrap_or_default());
         self.as_mut()
             .set_oauth_avatar_url(cxx_qt_lib::QString::from(&avatar_url));
 
@@ -174,38 +198,55 @@ impl qobject::SettingsController {
         }
     }
 
-    pub fn login(self: Pin<&mut Self>, provider: cxx_qt_lib::QString) {
-        let provider_str = provider.to_string();
-        let provider_enum = match crate::flathub::oauth::OAuthProvider::from_str(&provider_str) {
-            Some(p) => p,
-            None => {
-                eprintln!("[kiosque] Unknown OAuth provider: {}", provider_str);
-                return;
-            }
+    pub fn login(mut self: Pin<&mut Self>, provider: cxx_qt_lib::QString) {
+        if self.login_in_progress {
+            return;
+        }
+        let Some(provider) = crate::flathub::oauth::OAuthProvider::from_str(&provider.to_string())
+        else {
+            self.login_failed("Unknown sign-in provider".into());
+            return;
         };
-
-        let qt_thread = self.qt_thread();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        self.as_mut().rust_mut().login_cancel = Some(cancel.clone());
+        self.as_mut().set_login_in_progress(true);
+        self.as_mut().set_login_user_code(Default::default());
+        self.as_mut().set_login_verification_url(Default::default());
+        let thread = self.qt_thread();
+        let prompt_thread = thread.clone();
         crate::runtime::runtime().spawn(async move {
-            match crate::flathub::oauth::perform_login(provider_enum).await {
-                Ok(()) => {
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().load_settings();
+            let result = tokio::select! {
+                _ = cancel.cancelled() => Err("Sign-in cancelled".to_string()),
+                result = crate::flathub::oauth::perform_login_with_prompt(provider, move |prompt| {
+                    let _ = prompt_thread.queue(move |mut object| {
+                        object.as_mut().set_login_user_code(prompt.user_code.as_str().into());
+                        object.set_login_verification_url(prompt.verification_uri.as_str().into());
                     });
+                }) => result,
+            };
+            let _ = thread.queue(move |mut object| {
+                object.as_mut().rust_mut().login_cancel = None;
+                object.as_mut().set_login_in_progress(false);
+                object.as_mut().set_login_user_code(Default::default());
+                object
+                    .as_mut()
+                    .set_login_verification_url(Default::default());
+                match result {
+                    Ok(()) => object.load_settings(),
+                    Err(error) => object.login_failed(error.as_str().into()),
                 }
-                Err(e) => {
-                    eprintln!("[kiosque] OAuth Login failed: {}", e);
-                    let err_str = e.to_string();
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .login_failed(cxx_qt_lib::QString::from(&err_str));
-                    });
-                }
-            }
+            });
         });
     }
 
+    pub fn cancel_login(self: Pin<&mut Self>) {
+        if let Some(cancel) = &self.login_cancel {
+            cancel.cancel();
+        }
+    }
+
     pub fn logout(mut self: Pin<&mut Self>) {
+        self.as_mut().cancel_login();
         if let Err(e) = crate::flathub::oauth::perform_logout() {
             eprintln!("[kiosque] Logout failed: {}", e);
         } else {
