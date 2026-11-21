@@ -144,9 +144,9 @@ Kirigami.ScrollablePage {
             anchors.centerIn: parent
             width: parent.width - Kirigami.Units.gridUnit * 4
             visible: listView.count === 0 && !(page.installedModel && page.installedModel.loading)
-            text: i18n("No Flatpak Applications Installed")
+            text: page.installedModel && page.installedModel.installed_error ? i18n("Could not read installed applications") : i18n("No Flatpak Applications Installed")
             icon.name: "application-x-executable"
-            explanation: i18n("Install applications from the Storefront tab")
+            explanation: page.installedModel && page.installedModel.installed_error ? "" : i18n("Install applications from the Storefront tab")
         }
 
         // ── Section headers (Updates Available / Up to Date) ───────────────────
@@ -443,6 +443,7 @@ Kirigami.ScrollablePage {
                     Layout.preferredWidth: Kirigami.Units.iconSizes.small
                     Layout.preferredHeight: Kirigami.Units.iconSizes.small
                     visible: page.hasChecked && page.installedModel
+                             && !page.installedModel.installed_error && !page.installedModel.updates_error
                              && page.installedModel.updates_available_count === 0
                     source: "checkmark"
                     color: Kirigami.Theme.positiveTextColor
@@ -452,8 +453,13 @@ Kirigami.ScrollablePage {
                 Controls.Label {
                     Layout.fillWidth: true
                     elide: Text.ElideRight
+                    textFormat: Text.PlainText
                     color: Kirigami.Theme.disabledTextColor
                     text: {
+                        if (page.installedModel && page.installedModel.installed_error)
+                            return page.installedModel.installed_error;
+                        if (page.installedModel && page.installedModel.updates_error)
+                            return page.installedModel.updates_error;
                         if (page.installedModel && page.installedModel.updates_available_count > 0)
                             return i18n("Updates are available");
                         return page.hasChecked ? i18n("All applications are up to date")

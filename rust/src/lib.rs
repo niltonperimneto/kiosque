@@ -25,3 +25,19 @@ pub extern "C" fn kiosque_gui_init() {
         catalog::refresh_if_stale().await;
     });
 }
+
+/// Read installed state through the production backend for package diagnostics.
+#[unsafe(no_mangle)]
+pub extern "C" fn kiosque_check_backend() -> i32 {
+    let backend = flatpak::backend();
+    match runtime::runtime().block_on(backend.list_installed()) {
+        Ok(refs) => {
+            println!("KIOSQUE_BACKEND_READY {} {}", backend.name(), refs.len());
+            0
+        }
+        Err(error) => {
+            eprintln!("KIOSQUE_BACKEND_ERROR {}: {error}", backend.name());
+            1
+        }
+    }
+}

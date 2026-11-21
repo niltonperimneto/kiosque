@@ -12,7 +12,7 @@ test-util = []
 [dependencies]
 
 # Async runtime
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "sync", "time", "fs"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "fs"] }
 tokio-util = "0.7.20"
 futures-util = "0.3.34"
 async-trait = "0.1.92"
@@ -65,4 +65,5 @@ glib = { version = "0.21.5", optional = true }
 
 
 [dev-dependencies]
+tokio = { version = "1.54.1", features = ["process"] }
 tempfile = "3.27.0"

@@ -28,16 +28,6 @@ use super::{
 
 pub struct LibflatpakBackend;
 
-impl LibflatpakBackend {
-    pub fn new() -> std::result::Result<Self, String> {
-        let insts = installations();
-        if insts.is_empty() {
-            return Err("no Flatpak installation could be opened".into());
-        }
-        Ok(Self)
-    }
-}
-
 fn none() -> Option<&'static gio::Cancellable> {
     gio::Cancellable::NONE
 }
@@ -74,8 +64,8 @@ fn open(scope: Scope) -> std::result::Result<Installation, glib::Error> {
 }
 
 /// All installations that could be opened, user first.
-fn installations() -> Vec<(Scope, Installation)> {
-    [Scope::User, Scope::System]
+fn installations() -> Result<Vec<(Scope, Installation)>> {
+    let available: Vec<_> = [Scope::User, Scope::System]
         .into_iter()
         .filter_map(|s| match open(s) {
             Ok(i) => Some((s, i)),
@@ -88,7 +78,13 @@ fn installations() -> Vec<(Scope, Installation)> {
                 None
             }
         })
-        .collect()
+        .collect();
+    if available.is_empty() {
+        return Err(FlatpakError::Failed(
+            "No Flatpak installation could be opened".into(),
+        ));
+    }
+    Ok(available)
 }
 
 fn installation(scope: Scope) -> Result<Installation> {
@@ -138,7 +134,7 @@ fn installed_from(r: &InstalledRef, scope: Scope) -> InstalledApp {
 
 /// Find the installation (and full ref) an id is installed in.
 fn find_installed(id: &str, scope: Option<Scope>) -> Result<(Installation, String)> {
-    for (sc, inst) in installations() {
+    for (sc, inst) in installations()? {
         if scope.is_some_and(|want| want != sc) {
             continue;
         }
@@ -328,7 +324,7 @@ fn run_blocking(op: Operation, sink: ProgressSink, cancellable: gio::Cancellable
         Operation::Update { ids } => {
             // One transaction per installation that has something to update.
             let mut plans = vec![];
-            for (_, inst) in installations() {
+            for (_, inst) in installations()? {
                 let refs = inst
                     .list_installed_refs_for_update(Some(&cancellable))
                     .map_err(gerr)?;
@@ -379,7 +375,7 @@ impl FlatpakBackend for LibflatpakBackend {
     async fn list_installed(&self) -> Result<Vec<InstalledApp>> {
         blocking(|| {
             let mut out = vec![];
-            for (scope, inst) in installations() {
+            for (scope, inst) in installations()? {
                 let refs = inst.list_installed_refs(none()).map_err(gerr)?;
                 out.extend(refs.iter().map(|r| installed_from(r, scope)));
             }
@@ -391,18 +387,8 @@ impl FlatpakBackend for LibflatpakBackend {
     async fn list_updates(&self) -> Result<Vec<UpdateInfo>> {
         blocking(|| {
             let mut out = vec![];
-            for (scope, inst) in installations() {
-                let refs = match inst.list_installed_refs_for_update(none()) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        kerr!(
-                            "libflatpak: update check for {} installation failed: {}",
-                            scope.as_str(),
-                            e.message()
-                        );
-                        continue;
-                    }
-                };
+            for (scope, inst) in installations()? {
+                let refs = inst.list_installed_refs_for_update(none()).map_err(gerr)?;
                 out.extend(refs.iter().map(|r| {
                     let app = installed_from(r, scope);
                     UpdateInfo {
@@ -424,7 +410,7 @@ impl FlatpakBackend for LibflatpakBackend {
     async fn list_remotes(&self) -> Result<Vec<RemoteInfo>> {
         blocking(|| {
             let mut out = vec![];
-            for (scope, inst) in installations() {
+            for (scope, inst) in installations()? {
                 let remotes = inst.list_remotes(none()).map_err(gerr)?;
                 out.extend(remotes.iter().map(|r| RemoteInfo {
                     name: s(r.name()),
@@ -478,7 +464,7 @@ impl FlatpakBackend for LibflatpakBackend {
         let name = name.to_string();
         blocking(move || {
             let mut last = None;
-            for (sc, inst) in installations() {
+            for (sc, inst) in installations()? {
                 if scope.is_some_and(|want| want != sc) {
                     continue;
                 }
@@ -523,9 +509,6 @@ impl FlatpakBackend for LibflatpakBackend {
     }
 
     async fn launch(&self, id: &str) -> Result<()> {
-        if super::in_sandbox() {
-            return super::cli::CliBackend::new().launch(id).await;
-        }
         let id = id.to_string();
         blocking(move || {
             let (inst, full_ref) = find_installed(&id, None)?;
@@ -554,7 +537,7 @@ impl FlatpakBackend for LibflatpakBackend {
                 let ctx = glib::MainContext::new();
                 let res = ctx.with_thread_default(|| {
                     let mut monitors = vec![];
-                    for (scope, inst) in installations() {
+                    for (scope, inst) in installations().unwrap_or_default() {
                         match inst.create_monitor(none()) {
                             Ok(m) => {
                                 let tx = tx.clone();

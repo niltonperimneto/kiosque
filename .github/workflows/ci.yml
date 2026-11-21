@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [native, cli]
+        backend: [native, broker]
     env:
       CARGO_BUILD_JOBS: '2'
     steps:

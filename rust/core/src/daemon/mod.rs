@@ -135,16 +135,17 @@ pub fn app_update_count() -> usize {
 }
 
 /// Re-check available updates and publish the result.
-pub async fn check_updates() -> usize {
+pub async fn check_updates() -> crate::flatpak::Result<usize> {
     let reg = crate::registry::registry();
     let backend = crate::flatpak::backend();
     if let Err(e) = reg.reload_updates(&*backend).await {
         kerr!("daemon: update check failed: {}", e);
+        return Err(e);
     }
     let n = app_update_count();
     klog!("daemon: {} app updates available", n);
     notify(EVENT_UPDATES, n as i32, "");
-    n
+    Ok(n)
 }
 
 /// The next time automatic updates should run according to the settings.
@@ -175,7 +176,7 @@ async fn scheduler() {
     loop {
         let now = tokio::time::Instant::now();
         if now >= next_check {
-            check_updates().await;
+            let _ = check_updates().await;
             next_check = now + CHECK_INTERVAL;
         }
         if now.duration_since(catalog_refreshed) > Duration::from_secs(12 * 3600) {
@@ -192,7 +193,7 @@ async fn scheduler() {
         if let Some(at) = next_auto
             && Local::now() >= at
         {
-            if check_updates().await > 0 || !crate::registry::registry().updates().is_empty() {
+            if check_updates().await.is_ok() && !crate::registry::registry().updates().is_empty() {
                 klog!("daemon: running scheduled automatic update");
                 notify(EVENT_AUTO_UPDATE, app_update_count() as i32, "");
                 crate::transactions::local_manager().enqueue(
@@ -303,7 +304,7 @@ pub unsafe extern "C" fn kiosque_daemon_start(
 pub extern "C" fn kiosque_daemon_check_updates() {
     touch();
     crate::runtime::runtime().spawn(async {
-        check_updates().await;
+        let _ = check_updates().await;
     });
 }
 

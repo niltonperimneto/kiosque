@@ -23,7 +23,7 @@ Kiosque was created to fill this gap: to build a Bazaar-equivalent storefront fo
 
 ### 2. High-Performance Rust Backend (`libkiosque`)
 - **Async Runtime**: Standardized on a multi-threaded `tokio` async runtime, offloading all expensive network calls, file system caching, and subprocess operations from the main GUI thread.
-- **Type-Safe Serialization**: Utilizes `serde` and `serde_json` to parse high-payload JSON responses from Flathub APIs and local Flatpak CLI utilities into structured Rust representations.
+- **Type-Safe Serialization**: Utilizes `serde` and `serde_json` to parse high-payload JSON responses from Flathub APIs into structured Rust representations.
 - **D-Bus Integration**: Leverages `zbus` for IPC, monitoring system tray notifications, background process states, and flatpak portal events natively under GNOME and KDE Plasma.
 
 ### 3. Flathub API Client & ODRS Integration
@@ -39,7 +39,7 @@ To minimize redundant network transactions and maintain a highly responsive UI, 
 
 ### 5. Flatpak Backends and Transactions
 - **Native backend by default**: Uses libflatpak for installation queries, transaction progress, cancellation, and installation monitoring.
-- **CLI fallback**: Runs non-blocking subprocesses and parses stable tab-separated `--columns` output. The Flatpak package selects this backend to route commands through the host.
+- **Sandbox backend**: The packaged storefront requests typed operations from the native companion over D-Bus.
 - **Shared state**: A registry and serialized transaction queue keep application views consistent and support explicit cancellation and worker shutdown.
 - **Testable core**: Domain and service code lives in `kiosque-core`, which builds without Qt/KDE development libraries when its optional native feature is disabled.
 
@@ -72,7 +72,7 @@ graph TD
     subgraph Backend ["Rust Backend Core (libkiosque)"]
         Cache[("AppCache (Moka Cache)")]
         Flathub["Flathub API Client (reqwest)"]
-        FlatpakCLI["Native / CLI Flatpak Backends"]
+        FlatpakBackend["Native / Broker Flatpak Backends"]
         Tokio["Tokio Async Runtime"]
     end
 
@@ -97,10 +97,10 @@ graph TD
     
     Tokio -->|Query / Mutate| Cache
     Tokio -->|HTTP Calls| Flathub
-    Tokio -->|Spawn Subprocesses| FlatpakCLI
+    Tokio -->|Run operations| FlatpakBackend
     
     Flathub <-->|JSON over HTTPS| FlathubAPI
-    FlatpakCLI <-->|CLI Commands| FlatpakSystem
+    FlatpakBackend <-->|libflatpak| FlatpakSystem
 
     %% Style Classes for Modern Theme
     classDef frontend fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px,color:#0A3C83;
@@ -110,7 +110,7 @@ graph TD
 
     class UI,Models,Ctrl frontend;
     class CXX_Bridge,Rust_Bridge bridge;
-    class Tokio,Cache,Flathub,FlatpakCLI backend;
+    class Tokio,Cache,Flathub,FlatpakBackend backend;
     class FlathubAPI,FlatpakSystem system;
 
     %% Subgraph Styling (GitHub Light/Dark theme safe via transparent tints)
@@ -177,7 +177,7 @@ To build and run Kiosque from source, ensure you have the following dependencies
   - KF6 Kirigami (KDE Frameworks 6 UI component system)
   - KF6 I18n & I18nQml (KDE Frameworks 6 translation support)
   - `dbus-1` (D-Bus message bus system library)
-  - libflatpak development libraries for the default native backend (`-Dflatpak_backend=cli` selects the CLI-only build)
+  - libflatpak development libraries for the default native backend (`-Dflatpak_backend=broker` selects the sandbox build)
 
 ---
 
@@ -225,4 +225,4 @@ python3 scripts/test.py services
 python3 scripts/test.py pr --backend native
 ```
 
-Real Flatpak lifecycle checks run only in disposable VMs. See the testing guide for desktop prerequisites, CLI-only builds, artifact smoke tests and release qualification.
+Real Flatpak lifecycle checks run only in disposable VMs. See the testing guide for desktop prerequisites, broker-only builds, artifact smoke tests and release qualification.

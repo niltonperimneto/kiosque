@@ -4,7 +4,7 @@ Start with the pull request checks. OAuth registration and installation of a nat
 
 ## 1. Review and merge the pull request
 
-Require green `Security audit`, `Core and service contracts`, `Desktop (native)` and `Desktop (cli)` checks. The packaging jobs also need to succeed. The PR includes the retained consent-dialog, localization, image and installed-page changes exercised by the security regression suite.
+Require green `Security audit`, `Core and service contracts`, `Desktop (native)` and `Desktop (broker)` checks. The packaging jobs also need to succeed.
 
 Main already requires pull requests, up-to-date core/desktop checks and resolved conversations, including administrators. Force pushes and deletion are disabled. Dependency alerts, Dependabot security fixes, secret scanning/push protection and private vulnerability reporting are enabled.
 
@@ -84,14 +84,13 @@ A direct `busctl` call to the restricted application interface is expected to be
 
 After merging, let the trusted main CI run finish. Its package smoke workflow verifies provenance before executing each RPM, Flatpak and AppImage in a disposable VM.
 
-In **Actions → System and package qualification → Run workflow**, select main and run the signed native/CLI fixture contracts. A scheduled run performs the same qualification. Before a release, require both backend jobs, all three exact-package smoke checks and CodeQL to be green for the intended source revision. Do not create a release tag as a way to bypass qualification.
+In **Actions → System and package qualification → Run workflow**, select main and run the signed native fixture contracts. A scheduled run performs the same qualification. Before a release, require the native lifecycle and broker desktop jobs, all three exact-package smoke checks and CodeQL to be green for the intended source revision. Do not create a release tag as a way to bypass qualification.
 
 The development host lacked `/dev/kvm`; its earlier software-emulated VM build exceeded the deadline. An administrator can make hardware virtualization/KVM available on a suitable machine if local qualification is needed. The shared commands are:
 
 ```sh
 python3 scripts/test.py system --backend native
-python3 scripts/test.py system --backend cli
-python3 scripts/test.py packages --artifact /path/to/the/exact/package
+python3 tests/system/vm.py --artifact /path/to/kiosque.flatpak --companion /path/to/matching/kiosque.rpm
 ```
 
 These commands launch disposable environments; they must not be replaced with install/remove tests on your developer Flatpak installations.
