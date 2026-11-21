@@ -229,9 +229,15 @@ fn run_transaction(
     }
     {
         let tracker = tracker.clone();
-        txn.connect_operation_done(move |_, op, _, _| {
+        // A removal has no resulting commit. The libflatpak 0.7 typed
+        // trampoline unconditionally borrows that nullable C string.
+        txn.connect("operation-done", false, move |args| {
+            let op = args[1]
+                .get::<libflatpak::TransactionOperation>()
+                .expect("operation-done operation");
             tracker.report(1.0, String::new(), s(op.get_ref()));
             tracker.index.fetch_add(1, Ordering::SeqCst);
+            None
         });
     }
     {
