@@ -94,17 +94,52 @@ Once built, you can launch Kiosque or the background update utility.
 Kiosque splits the desktop UI, application services, and Flatpak execution into layers. QML handles presentation and navigation, Rust owns catalog and transaction state, and libflatpak performs changes to the installation. The same application models serve the native and sandboxed packages through different backend implementations.
 
 ```mermaid
-flowchart LR
-    UI[Qt Quick and Kirigami] --> Bridge[cxx-qt models and controllers]
-    Bridge --> Services[Application services]
-    Services --> Catalog[Flathub and ODRS]
-    Services --> Cache[Metadata and image caches]
-    Services --> State[Installed-state registry and transaction queue]
-    State --> Backend{Flatpak backend}
-    Backend -->|Native build| Libflatpak[Host libflatpak]
-    Backend -->|Sandboxed build| Companion[Host D-Bus companion]
-    Companion --> Libflatpak
+flowchart TB
+    subgraph Desktop["Desktop · Qt GUI thread"]
+        Views["Qt Quick / Kirigami<br/>Storefront, app details, installed library"]
+        Models["CXX-Qt · com.kiosque<br/>AppListModel, AppDetails, InstalledModel<br/>Store and settings controllers"]
+        Views -->|Search, settings, install and update actions| Models
+        Models -.->|Model roles, properties and Qt signals| Views
+    end
+
+    subgraph Core["Application services · kiosque-core"]
+        Tokio["Tokio workers<br/>Catalog requests, settings and image work"]
+        Clients["Rust HTTP clients<br/>Public HTTPS and bounded responses"]
+        Cache["Moka metadata cache<br/>Disk cache and bounded image decoding"]
+        Registry["Installed-state registry<br/>Installed apps, updates and job state"]
+        Queue["Transaction queue<br/>Serialized operations, progress and cancellation"]
+        Tokio --> Clients
+        Tokio <-->|Metadata and image reuse| Cache
+        Queue -->|Refresh installed state before completion| Registry
+    end
+
+    subgraph Flatpak["Flatpak execution"]
+        Backend{"Backend selected at build time"}
+        Broker["Sandbox broker<br/>Typed requests to the host companion"]
+        Companion["kiosque-update · host D-Bus service<br/>Verifies caller identity and validates inputs"]
+        Native["Native backend<br/>libflatpak on blocking workers"]
+        Installations["User and system Flatpak installations"]
+        Backend -->|Native package| Native
+        Backend -->|Sandboxed package| Broker
+        Broker -->|D-Bus| Companion
+        Companion --> Native
+        Native -->|Read state and execute transactions| Installations
+    end
+
+    Flathub["Flathub<br/>Catalog, search and AppStream"]
+    ODRS["ODRS<br/>Ratings and reviews"]
+
+    Models -->|Catalog or detail request| Tokio
+    Tokio -.->|Queue current results on Qt GUI thread| Models
+    Models -->|Install, uninstall or update request| Queue
+    Registry -.->|Shared state and job updates| Models
+    Queue --> Backend
+    Backend -.->|Progress and installation changes| Registry
+    Clients <-->|Catalog and metadata| Flathub
+    Clients <-->|Ratings and reviews| ODRS
 ```
+
+Solid arrows show requests, reads, and operations. Dashed arrows show results and state flowing back to the interface.
 
 ### Desktop views, Qt models, and the Rust bridge
 
