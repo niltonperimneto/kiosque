@@ -115,6 +115,9 @@ mod object {
             let qt_thread = std::sync::Arc::new(self.get_thread_handle());
             crate::runtime::runtime().spawn(async move {
                 let result = crate::flatpak::ui::add_repository_file(&name, data).await;
+                if result.is_ok() {
+                    super::index_new_remote(name.clone());
+                }
                 let (success, msg) = match result {
                     Ok(_) => (true, "Repository added successfully".to_string()),
                     Err(e) => (false, e),
@@ -186,6 +189,9 @@ mod object {
             let handle = std::sync::Arc::new(self.get_thread_handle());
             crate::bridge::spawn(async move {
                 let result = ops::add_remote(name.trim(), url.trim()).await;
+                if result.is_ok() {
+                    super::index_new_remote(name.trim().to_string());
+                }
                 handle.invoke_mut(move |m| m.finish(result, true));
             });
         }
@@ -195,6 +201,10 @@ mod object {
             let handle = std::sync::Arc::new(self.get_thread_handle());
             crate::bridge::spawn(async move {
                 let result = ops::remove_remote(&name).await;
+                if result.is_ok() {
+                    // Its apps leave search and categories.
+                    crate::services::services().reload_catalog().await;
+                }
                 handle.invoke_mut(move |m| m.finish(result, false));
             });
         }
@@ -274,4 +284,14 @@ impl qtbridge::QModelItem for RepoItem {
             _ => Default::default(),
         }
     }
+}
+
+/// Download a newly added repository's AppStream data in the background, so
+/// its apps appear in search and categories without a restart.
+fn index_new_remote(name: String) {
+    crate::runtime::runtime().spawn(async move {
+        crate::services::services()
+            .refresh_catalog_remote(&name)
+            .await;
+    });
 }

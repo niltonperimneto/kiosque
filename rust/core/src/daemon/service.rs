@@ -226,6 +226,28 @@ impl Service {
             .map_err(failed)
     }
 
+    /// Save the automatic-update schedule for this daemon and keep it
+    /// running in the background while enabled (exiting when idle otherwise).
+    async fn configure_automatic_updates(
+        &self,
+        enabled: bool,
+        frequency: String,
+        time: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<()> {
+        super::auth::authorize(&header, conn).await?;
+        super::configure_automatic_updates(enabled, &frequency, &time)
+            .map_err(zbus::fdo::Error::InvalidArgs)
+    }
+
+    /// Interface version, so clients can tell an outdated companion apart
+    /// from a missing one. Public information; no authorization needed.
+    #[zbus(property)]
+    async fn api_version(&self) -> u32 {
+        super::API_VERSION
+    }
+
     #[zbus(property)]
     async fn busy(&self) -> bool {
         crate::transactions::local_manager().is_busy()

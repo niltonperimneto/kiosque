@@ -8,7 +8,7 @@
 //! API is only used to enrich this with things it does better: popularity,
 //! trending, recently updated, statistics and sandbox permissions.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
@@ -19,7 +19,7 @@ use quick_xml::{Reader, XmlVersion};
 use serde::{Deserialize, Serialize};
 
 use crate::flathub::types::FlathubApp;
-use crate::flatpak::{RemoteInfo, Scope};
+use crate::flatpak::{FlatpakBackend, RemoteInfo, Scope};
 
 /// One application from a remote's AppStream data.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -43,6 +43,8 @@ pub struct CatalogApp {
     pub urls: HashMap<String, String>,
     pub version: String,
     pub release_timestamp: u64,
+    /// Notes of the newest release, in the same HTML subset as `description`.
+    pub release_notes: String,
     /// `flathub::manifest` and similar `<metadata>` values.
     pub metadata: HashMap<String, String>,
     /// The flatpak ref from `<bundle type="flatpak">`.
@@ -73,16 +75,37 @@ impl CatalogApp {
 pub struct Catalog {
     apps: HashMap<String, CatalogApp>,
     remotes: Vec<RemoteInfo>,
+    /// Remotes that contributed at least one app.
+    indexed: HashSet<String>,
 }
 
 impl Catalog {
     pub fn from_apps(apps: Vec<CatalogApp>, remotes: Vec<RemoteInfo>) -> Self {
         let mut map: HashMap<String, CatalogApp> = HashMap::new();
+        let mut indexed = HashSet::new();
         for app in apps {
+            indexed.insert(app.remote.clone());
             // Keep the first remote that carries an app (remotes are ordered).
             map.entry(app.id.clone()).or_insert(app);
         }
-        Self { apps: map, remotes }
+        Self {
+            apps: map,
+            remotes,
+            indexed,
+        }
+    }
+
+    /// True when `remote`'s AppStream data is indexed (it has at least one app).
+    pub fn indexes(&self, remote: &str) -> bool {
+        self.indexed.contains(remote)
+    }
+
+    /// The configured remote `name` in `scope`, if known.
+    pub fn remote(&self, name: &str, scope: Scope) -> Option<&RemoteInfo> {
+        self.remotes
+            .iter()
+            .find(|r| r.name == name && r.scope == scope)
+            .or_else(|| self.remotes.iter().find(|r| r.name == name))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -252,16 +275,36 @@ pub async fn loaded() -> Arc<Catalog> {
     catalog()
 }
 
+fn changes_tx() -> &'static tokio::sync::broadcast::Sender<()> {
+    static TX: OnceLock<tokio::sync::broadcast::Sender<()>> = OnceLock::new();
+    TX.get_or_init(|| tokio::sync::broadcast::channel(4).0)
+}
+
+/// Fires after every successful reload of the catalog.
+pub fn changes() -> tokio::sync::broadcast::Receiver<()> {
+    changes_tx().subscribe()
+}
+
 /// Re-read every remote's AppStream data from disk.
 pub async fn reload() {
-    let remotes = match crate::flatpak::backend().list_remotes().await {
+    reload_with(
+        &*crate::flatpak::backend(),
+        crate::flatpak::installation_paths(),
+    )
+    .await;
+}
+
+/// Re-read the AppStream data of `backend`'s remotes found under the given
+/// installation directories, then publish the new catalog.
+pub async fn reload_with(backend: &dyn FlatpakBackend, installations: Vec<(Scope, PathBuf)>) {
+    let remotes = match backend.list_remotes().await {
         Ok(r) => r,
         Err(e) => {
             kerr!("catalog: cannot list remotes: {}", e);
             return;
         }
     };
-    let cat = tokio::task::spawn_blocking(move || load_all(remotes)).await;
+    let cat = tokio::task::spawn_blocking(move || load_all(remotes, &installations)).await;
     match cat {
         Ok(cat) => {
             klog!(
@@ -270,6 +313,7 @@ pub async fn reload() {
                 cat.remotes.len()
             );
             *slot().write().unwrap() = Arc::new(cat);
+            let _ = changes_tx().send(());
         }
         Err(e) => kerr!("catalog: load failed: {}", e),
     }
@@ -281,14 +325,25 @@ const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 /// Refresh AppStream data of remotes whose copy is missing or older than a
 /// day, then reload the catalog if anything changed.
 pub async fn refresh_if_stale() {
-    let backend = crate::flatpak::backend();
+    refresh_if_stale_with(
+        &*crate::flatpak::backend(),
+        crate::flatpak::installation_paths(),
+    )
+    .await;
+}
+
+/// [`refresh_if_stale`] for an explicit backend and installation directories.
+pub async fn refresh_if_stale_with(
+    backend: &dyn FlatpakBackend,
+    installations: Vec<(Scope, PathBuf)>,
+) {
     let remotes = match backend.list_remotes().await {
         Ok(r) => r,
         Err(_) => return,
     };
     let mut refreshed = false;
     for r in remotes.iter().filter(|r| !r.disabled && !r.noenumerate) {
-        let age = appstream_file(r)
+        let age = appstream_file(r, &installations)
             .and_then(|p| p.metadata().ok())
             .and_then(|m| m.modified().ok())
             .and_then(|t| SystemTime::now().duration_since(t).ok());
@@ -306,15 +361,32 @@ pub async fn refresh_if_stale() {
         }
     }
     if refreshed || catalog().is_empty() {
-        reload().await;
+        reload_with(backend, installations).await;
     }
 }
 
-fn appstream_dir(remote: &RemoteInfo) -> Option<PathBuf> {
-    let base = crate::flatpak::installation_paths()
-        .into_iter()
+/// Refresh one remote's AppStream data from the network, then reload the
+/// catalog (used after a repository was added).
+pub async fn refresh_remote_with(
+    backend: &dyn FlatpakBackend,
+    installations: Vec<(Scope, PathBuf)>,
+    name: &str,
+) {
+    if let Ok(remotes) = backend.list_remotes().await {
+        for r in remotes.iter().filter(|r| r.name == name && !r.disabled) {
+            if let Err(e) = backend.refresh_appstream(r).await {
+                kerr!("catalog: refreshing {} failed: {}", r.name, e);
+            }
+        }
+    }
+    reload_with(backend, installations).await;
+}
+
+fn appstream_dir(remote: &RemoteInfo, installations: &[(Scope, PathBuf)]) -> Option<PathBuf> {
+    let base = installations
+        .iter()
         .find(|(s, _)| *s == remote.scope)
-        .map(|(_, p)| p)?;
+        .map(|(_, p)| p.clone())?;
     Some(
         base.join("appstream")
             .join(&remote.name)
@@ -323,21 +395,21 @@ fn appstream_dir(remote: &RemoteInfo) -> Option<PathBuf> {
     )
 }
 
-fn appstream_file(remote: &RemoteInfo) -> Option<PathBuf> {
-    let dir = appstream_dir(remote)?;
+fn appstream_file(remote: &RemoteInfo, installations: &[(Scope, PathBuf)]) -> Option<PathBuf> {
+    let dir = appstream_dir(remote, installations)?;
     ["appstream.xml.gz", "appstream.xml"]
         .iter()
         .map(|f| dir.join(f))
         .find(|p| p.exists())
 }
 
-fn load_all(mut remotes: Vec<RemoteInfo>) -> Catalog {
+fn load_all(mut remotes: Vec<RemoteInfo>, installations: &[(Scope, PathBuf)]) -> Catalog {
     // Flathub first so it wins ties, then system before user.
     remotes.sort_by_key(|r| (r.name != "flathub", r.scope == Scope::User));
     let lang = user_language();
     let mut apps = vec![];
     for r in remotes.iter().filter(|r| !r.disabled && !r.noenumerate) {
-        let Some(file) = appstream_file(r) else {
+        let Some(file) = appstream_file(r, installations) else {
             continue;
         };
         match read_xml(&file) {
@@ -417,12 +489,14 @@ struct Builder {
     summary: Localized,
     developer: Localized,
     description: Localized,
+    release_notes: Localized,
     /// (size, url) of the best cached and remote icon.
     cached_icon: Option<(u32, String)>,
     remote_icon: Option<(u32, String)>,
     /// (is_default, width, url) per screenshot.
     shots: Vec<(bool, u32, String)>,
-    release_seen: bool,
+    /// `<release>` elements seen so far (newest first).
+    releases: u32,
 }
 
 fn attr(e: &BytesStart, key: &str) -> Option<String> {
@@ -461,6 +535,8 @@ pub fn parse_appstream(
     // While inside <description>: its language rank and the HTML so far.
     let mut desc: Option<(u8, String)> = None;
     let mut desc_skip = false;
+    // Whether that description holds release notes (not the app's).
+    let mut desc_release = false;
 
     loop {
         let ev = match reader.read_event() {
@@ -498,8 +574,10 @@ pub fn parse_appstream(
                             }
                         }
                     } else if name == "description"
-                        && stack.last().is_some_and(|p| p == "component")
+                        && (stack.last().is_some_and(|p| p == "component")
+                            || (stack.last().is_some_and(|p| p == "release") && b.releases == 1))
                     {
+                        desc_release = stack.last().is_some_and(|p| p == "release");
                         match lang_rank(attr(e, "xml:lang").as_deref(), lang) {
                             Some(rank) => {
                                 desc = Some((rank, String::new()));
@@ -513,9 +591,11 @@ pub fn parse_appstream(
                     } else if name == "screenshot" {
                         let screenshot_default = attr(e, "type").as_deref() == Some("default");
                         b.shots.push((screenshot_default, 0, String::new()));
-                    } else if name == "release" && !b.release_seen {
+                    } else if name == "release" && {
+                        b.releases += 1;
+                        b.releases == 1
+                    } {
                         // Releases are listed newest first.
-                        b.release_seen = true;
                         b.app.version = attr(e, "version").unwrap_or_default();
                         b.app.release_timestamp = attr(e, "timestamp")
                             .and_then(|t| t.parse().ok())
@@ -586,7 +666,12 @@ pub fn parse_appstream(
                     if name == "description" {
                         let (rank, html) = desc.take().unwrap();
                         if !desc_skip {
-                            b.description.offer(tidy_html(&html), rank);
+                            let target = if desc_release {
+                                &mut b.release_notes
+                            } else {
+                                &mut b.description
+                            };
+                            target.offer(tidy_html(&html), rank);
                         }
                     } else if !desc_skip
                         && matches!(name.as_str(), "p" | "ul" | "ol" | "li" | "em" | "code")
@@ -740,6 +825,7 @@ fn finish(b: Builder, remote: &str, scope: Scope, icons_dir: &Path) -> Option<Ca
     app.summary = b.summary.value;
     app.developer = b.developer.value;
     app.description = b.description.value;
+    app.release_notes = b.release_notes.value;
     app.icon = b
         .cached_icon
         .and_then(|(size, file)| {
@@ -793,7 +879,10 @@ mod tests {
         <image type="thumbnail" width="1248">https://e.org/1-big.png</image>
       </screenshot>
     </screenshots>
-    <releases><release version="2.0" timestamp="1700000000"/><release version="1.0" timestamp="1600000000"/></releases>
+    <releases>
+      <release version="2.0" timestamp="1700000000"><description><p>Faster <em>brushes</em></p></description></release>
+      <release version="1.0" timestamp="1600000000"><description><p>First</p></description></release>
+    </releases>
     <bundle type="flatpak" runtime="org.kde.Platform/x86_64/6.8">app/org.example.Paint/x86_64/stable</bundle>
     <metadata><value key="flathub::manifest">https://example.org/manifest.json</value></metadata>
   </component>
@@ -848,6 +937,10 @@ mod tests {
         assert_eq!(a.version, "2.0");
         assert_eq!(a.release_timestamp, 1_700_000_000);
         assert_eq!(
+            a.release_notes, "<p>Faster <em>brushes</em></p>",
+            "only the newest release's notes are kept"
+        );
+        assert_eq!(
             a.metadata.get("flathub::manifest").unwrap(),
             "https://example.org/manifest.json"
         );
@@ -857,6 +950,7 @@ mod tests {
         let n = &apps[1];
         assert_eq!(n.id, "org.example.Notes");
         assert_eq!(n.release_timestamp, 1_704_153_600);
+        assert_eq!(n.release_notes, "");
     }
 
     #[test]

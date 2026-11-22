@@ -90,14 +90,25 @@ mod object {
                 self.set_auto_update(settings.auto_update);
                 self.set_update_frequency(String::from(&settings.update_frequency));
                 self.set_update_time(String::from(&settings.update_time));
-                if previous_auto_update == auto_update {
+                let toggled = previous_auto_update != auto_update;
+                if !toggled {
+                    // A schedule edit needs no permission: it is saved now, and
+                    // the daemon is told in the background.
                     self.settings_saved(true, String::new());
+                    let thread = std::sync::Arc::new(self.get_thread_handle());
+                    crate::runtime::runtime().spawn(async move {
+                        if let Err(error) = super::apply_automatic_updates(&settings, false).await {
+                            thread.invoke_mut(move |object| {
+                                object.settings_saved(false, error);
+                            });
+                        }
+                    });
                     return;
                 }
                 self.set_saving_settings(true);
                 let thread = std::sync::Arc::new(self.get_thread_handle());
                 crate::runtime::runtime().spawn(async move {
-                    let result = crate::settings::apply_autostart(&settings).await;
+                    let result = super::apply_automatic_updates(&settings, true).await;
                     let error = match result {
                         Ok(()) => String::new(),
                         Err(error) => {
@@ -351,3 +362,42 @@ set_oauth_avatar_url: oauth_avatar_url: String => oauth_avatar_url_changed,
 set_odrs_user_hash: odrs_user_hash: String => odrs_user_hash_changed
 });
 qml_element!(SettingsController, "SettingsController", singleton);
+
+/// Register (or remove) the login autostart when automatic updates were
+/// toggled, then hand the schedule to the running daemon so it applies now
+/// instead of after the next login.
+///
+/// Inside Flatpak the host companion performs the updates, so enabling fails
+/// when it cannot be reached. A native install still updates from the next
+/// login if the daemon cannot be reached now.
+async fn apply_automatic_updates(
+    settings: &kiosque_core::settings::AppSettings,
+    toggled: bool,
+) -> Result<(), String> {
+    // Hand schedules to the daemon one at a time, in the order they were saved.
+    static ORDER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _turn = ORDER.lock().await;
+    if toggled {
+        kiosque_core::settings::apply_autostart(settings).await?;
+    }
+    match kiosque_core::daemon::client::configure_automatic_updates(settings).await {
+        Ok(()) => Ok(()),
+        Err(error) if kiosque_core::flatpak::in_sandbox() && settings.auto_update => {
+            if toggled {
+                // Undo the login autostart registered above.
+                let mut off = settings.clone();
+                off.auto_update = false;
+                let _ = kiosque_core::settings::apply_autostart(&off).await;
+            }
+            Err(format!(
+                "Automatic updates need the Kiosque companion. {error}"
+            ))
+        }
+        Err(error) => {
+            kiosque_core::kerr!(
+                "SettingsController: daemon not reachable, applying at next login: {error}"
+            );
+            Ok(())
+        }
+    }
+}

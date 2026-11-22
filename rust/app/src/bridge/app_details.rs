@@ -47,6 +47,11 @@ mod object {
         pub(super) reviews: QVariantList,
         pub(super) reviews_loading: bool,
         pub(super) latest_release: QVariantMap,
+        /// `{name, title, scope, url}` of the source repository; empty when
+        /// the app is only known from the Flathub web API.
+        pub(super) origin: QVariantMap,
+        /// The app's catalog entry when it was loaded, to reload on changes.
+        pub(super) catalog_entry: Option<kiosque_core::catalog::CatalogApp>,
         /// Load request generation: completions of superseded loads are dropped.
         pub(super) generation: u64,
         /// The job this object started (for `operationFinished` and early cancel).
@@ -81,6 +86,8 @@ mod object {
                 reviews: serde_json::json!([]),
                 reviews_loading: false,
                 latest_release: serde_json::json!({}),
+                origin: serde_json::json!({}),
+                catalog_entry: None,
                 generation: 0,
                 job: None,
                 watch: None,
@@ -151,20 +158,34 @@ mod object {
             self.watch = Some(cancel.clone());
             let services = crate::services::services();
             let mut events = services.registry.subscribe();
+            let mut catalog_changes = kiosque_core::catalog::changes();
             let thread = std::sync::Arc::new(self.get_thread_handle());
             crate::runtime::runtime().spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancel.cancelled() => break,
-                    event = events.recv() => {
-                        if matches!(event, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
-                            break;
+                use tokio::sync::broadcast::error::RecvError;
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        event = events.recv() => {
+                            if matches!(event, Err(RecvError::Closed)) {
+                                break;
+                            }
+                            thread.invoke_mut(|object| object.sync_registry());
                         }
-                        thread.invoke_mut(|object| object.sync_registry());
+                        change = catalog_changes.recv() => {
+                            if matches!(change, Err(RecvError::Closed)) {
+                                break;
+                            }
+                            // Reload when this app's catalog entry changed.
+                            thread.invoke_mut(|object| {
+                                let current = kiosque_core::catalog::catalog().get(&object.app_id);
+                                if !object.loading && current != object.catalog_entry {
+                                    object.start_load();
+                                }
+                            });
+                        }
                     }
                 }
-            }
-        });
+            });
             if !services.registry.installed_loaded() {
                 // The reload publishes `Event::Installed`, which syncs us.
                 crate::runtime::runtime().spawn(async move {
@@ -221,6 +242,7 @@ mod object {
                 latest_release_changed,
                 serde_json::json!({})
             );
+            replace!(self, origin, origin_changed, serde_json::json!({}));
             update!(self, permissions_known, permissions_known_changed, false);
             replace!(
                 self,
@@ -249,6 +271,7 @@ mod object {
             let generation = self.generation;
             self.clear_details();
             let app_id = self.app_id.to_string();
+            self.catalog_entry = kiosque_core::catalog::catalog().get(&app_id);
             if app_id.is_empty() {
                 update!(self, loading, loading_changed, false);
                 update!(self, reviews_loading, reviews_loading_changed, false);
@@ -359,6 +382,12 @@ mod object {
             );
             replace!(
                 self,
+                origin,
+                origin_changed,
+                util::json_to_qvariant_map(&details.origin)
+            );
+            replace!(
+                self,
                 developer_apps,
                 developer_apps_changed,
                 apps_list(&details.developer_apps)
@@ -419,7 +448,14 @@ mod object {
                 return;
             }
             klog!("AppDetails: installing \"{}\"", app_id);
-            let (remote, scope) = crate::services::services().install_target(&app_id);
+            // Install from the repository the page showed.
+            let origin = self
+                .origin
+                .get("name")
+                .and_then(|name| name.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let (remote, scope) = crate::services::services().install_target_from(&app_id, &origin);
             let title = self.name.to_string();
             self.start_job(
                 Operation::Install {
@@ -539,8 +575,20 @@ mod object {
         }
     }
 
+    /// `[{appId, name, summary, iconUrl}]`, the keys the related-app rows
+    /// (`HorizontalAppList`) read.
     fn apps_list(apps: &[FlathubApp]) -> QVariantList {
-        detail_data::apps_to_json(apps).into()
+        apps.iter()
+            .map(|app| {
+                serde_json::json!({
+                    "appId": app.app_id,
+                    "name": app.name,
+                    "summary": app.summary.clone().unwrap_or_default(),
+                    "iconUrl": app.icon.clone().unwrap_or_default(),
+                })
+            })
+            .collect::<Vec<_>>()
+            .into()
     }
     fn reviews_list(reviews: &[OdrsReview]) -> QVariantList {
         serde_json::Value::Array(reviews.iter().map(|r| serde_json::json!({
@@ -743,6 +791,12 @@ mod object {
         }
         #[qsignal(qml_name = "latestReleaseChanged")]
         pub fn latest_release_changed(&mut self);
+        qproperty!("origin", Read = get_origin, Notify = origin_changed);
+        fn get_origin(&self) -> serde_json::Value {
+            self.origin.clone()
+        }
+        #[qsignal(qml_name = "originChanged")]
+        pub fn origin_changed(&mut self);
         #[qsignal(qml_name = "loaded")]
         pub fn loaded(&mut self);
         #[qsignal(qml_name = "reviewsLoaded")]

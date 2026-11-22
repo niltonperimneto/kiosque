@@ -67,6 +67,7 @@ Item {
                 color: Kirigami.Theme.alternateBackgroundColor
 
                 RemoteImageView {
+                    id: cardIcon
                     anchors.centerIn: parent
                     width: Kirigami.Units.iconSizes.large
                     height: width
@@ -75,6 +76,18 @@ Item {
                     fillMode: Image.PreserveAspectFit
                     mipmap: true
                     asynchronous: true
+                }
+
+                // Generic application icon when the app has none (or it fails).
+                Kirigami.Icon {
+                    anchors.centerIn: parent
+                    width: Kirigami.Units.iconSizes.medium
+                    height: width
+                    source: "applications-all-symbolic"
+                    fallback: "application-x-executable"
+                    color: Kirigami.Theme.disabledTextColor
+                    isMask: true
+                    visible: cardIcon.status === Image.Null || cardIcon.status === Image.Error
                 }
             }
 

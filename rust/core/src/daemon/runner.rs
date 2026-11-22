@@ -141,20 +141,8 @@ impl Runner {
             return;
         }
         let url = format!("appstream://{}", match_id);
-        let Ok(executable) = std::env::current_exe() else {
-            return;
-        };
-        let Some(directory) = executable.parent() else {
-            return;
-        };
-        let spawned = std::process::Command::new(directory.join("kiosque"))
-            .arg(&url)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-        if let Err(e) = spawned {
-            kerr!("runner: cannot start kiosque {}: {}", url, e);
+        if let Err(e) = super::open_store(&[url]) {
+            kerr!("runner: {}", e);
         }
     }
 

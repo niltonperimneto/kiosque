@@ -50,6 +50,16 @@ mod object {
         /// Mirrors the current generation for tasks, so a superseded
         /// (debounced) request is never sent.
         pub(super) latest: Arc<AtomicU64>,
+        /// Stops the catalog subscription when the QObject is destroyed.
+        pub(super) catalog_watch: Option<tokio_util::sync::CancellationToken>,
+    }
+
+    impl Drop for AppListModel {
+        fn drop(&mut self) {
+            if let Some(watch) = &self.catalog_watch {
+                watch.cancel();
+            }
+        }
     }
 
     impl QListModel for AppListModel {
@@ -99,6 +109,15 @@ mod object {
                 kerr!("AppListModel: unknown source {:?}", source);
                 return;
             };
+            self.start(source);
+        }
+
+        /// Load `source`; search and category results also follow catalog
+        /// changes (a repository added or reindexed).
+        fn start(&mut self, source: AppSource) {
+            if matches!(source, AppSource::Search(_) | AppSource::Category(_)) {
+                self.ensure_catalog_watch();
+            }
             let generation = self.query.begin(source.clone());
             self.latest.store(generation, Ordering::SeqCst);
             self.set_loading(true);
@@ -122,7 +141,10 @@ mod object {
                         return;
                     }
                 }
-                let result = app_list::fetch(&crate::services::services().flathub, &source).await;
+                let services = crate::services::services();
+                let catalog = kiosque_core::catalog::catalog();
+                let config = kiosque_core::config::config();
+                let result = app_list::fetch(services.sources(&catalog, &config), &source).await;
                 if source == AppSource::Popular
                     && let Ok(items) = &result
                     && !items.is_empty()
@@ -177,6 +199,40 @@ mod object {
         fn load_mobile(&mut self) {
             self.load("mobile".into(), String::new());
         }
+        /// Repeat the current search or category request whenever the catalog
+        /// is reloaded, unless a newer request is still running.
+        fn ensure_catalog_watch(&mut self) {
+            if self.catalog_watch.is_some() {
+                return;
+            }
+            let cancel = tokio_util::sync::CancellationToken::new();
+            self.catalog_watch = Some(cancel.clone());
+            let mut changes = kiosque_core::catalog::changes();
+            let thread = Arc::new(self.get_thread_handle());
+            crate::runtime::runtime().spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        change = changes.recv() => {
+                            if matches!(change, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
+                                break;
+                            }
+                            thread.invoke_mut(|model| {
+                                if model.loading {
+                                    return;
+                                }
+                                if let Some(source @ (AppSource::Search(_) | AppSource::Category(_))) =
+                                    model.query.source().cloned()
+                                {
+                                    model.start(source);
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+        }
+
         /// Drop the items and invalidate in-flight requests.
         #[qslot]
         fn clear(&mut self) {
