@@ -161,7 +161,25 @@ flowchart TB
     Backend -.->|Progress and installation changes| Registry
     Clients <-->|Catalog and metadata| Flathub
     Clients <-->|Ratings and reviews| ODRS
+
+    classDef desktop fill:#dbeafe,stroke:#2563eb,color:#172554,stroke-width:2px
+    classDef service fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px
+    classDef state fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px
+    classDef execution fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:2px
+    classDef external fill:#fce7f3,stroke:#db2777,color:#831843,stroke-width:2px
+
+    class Views,Models desktop
+    class Tokio,Catalog,Clients service
+    class Cache,Registry,Queue,Installations state
+    class Backend,Broker,Companion,Native execution
+    class Flathub,ODRS external
+
+    style Desktop fill:transparent,stroke:#2563eb,stroke-width:2px
+    style Core fill:transparent,stroke:#16a34a,stroke-width:2px
+    style Flatpak fill:transparent,stroke:#7c3aed,stroke-width:2px
 ```
+
+**Colors:** blue = desktop UI; green = application services; amber = state and storage; violet = Flatpak execution; pink = external APIs. Labels and group boundaries identify the same layers.
 
 Solid arrows show requests, reads, and operations. Dashed arrows show results and state flowing back to the interface.
 
@@ -205,10 +223,14 @@ The same install from the Flatpak, across the sandbox boundary:
 ```mermaid
 sequenceDiagram
     autonumber
-    actor You
-    participant App as Kiosque (Flatpak)
-    participant Companion as kiosque-companion
-    participant Flatpak as libflatpak
+    box rgba(37,99,235,0.12) Desktop / sandbox
+        actor You
+        participant App as Kiosque (Flatpak)
+    end
+    box rgba(124,58,237,0.12) Host execution
+        participant Companion as kiosque-companion
+        participant Flatpak as libflatpak
+    end
     You->>App: Click Install
     App->>App: Check the app's permissions (Install stays off if unknown)
     App->>Companion: Install(app ID, repository, scope)
@@ -221,6 +243,8 @@ sequenceDiagram
     Companion-->>App: Finished, failed or cancelled
     App-->>You: Tasks dialog, and a notification if the window is in the background
 ```
+
+The blue band contains the user and sandboxed app; violet contains the authenticated host companion and native Flatpak execution.
 
 #### When the storefront is closed
 
