@@ -259,7 +259,7 @@ impl qobject::StoreController {
         crate::runtime::runtime().spawn(async move {
             let (details_res, installed) = tokio::join!(
                 detail_data::load(&app_id_str),
-                crate::flatpak::cli::is_installed_cached(&app_id_str),
+                crate::flatpak::ui::is_installed_cached(&app_id_str),
             );
 
             // ODRS ratings & reviews run in a separate task so slow ODRS responses

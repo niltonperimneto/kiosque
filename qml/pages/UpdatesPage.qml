@@ -22,6 +22,7 @@ Kirigami.ScrollablePage {
     readonly property int availableCount: installedModel ? installedModel.updates_available_count : 0
     readonly property int selectedCount: installedModel ? installedModel.updates_checked_count : 0
     readonly property bool updating: installedModel !== null && installedModel.updating
+    readonly property string checkError: installedModel ? installedModel.updates_error : ""
     readonly property bool checking: installedModel !== null && installedModel.checking_updates
 
     // Whether a check finished during this session, so "up to date" is only
@@ -54,7 +55,7 @@ Kirigami.ScrollablePage {
         ignoreUnknownSignals: true
         function onChecking_updatesChanged() {
             if (!page.installedModel.checking_updates) {
-                page.hasChecked = true;
+                page.hasChecked = page.installedModel.updates_error === "";
             }
         }
     }
@@ -82,8 +83,15 @@ Kirigami.ScrollablePage {
 
     header: ColumnLayout {
         spacing: 0
-        visible: page.updating || page.checking || page.availableCount > 0
+        visible: page.updating || page.checking || page.availableCount > 0 || page.checkError !== ""
 
+        Kirigami.InlineMessage {
+            objectName: "updateCheckError"
+            Layout.fillWidth: true
+            type: Kirigami.MessageType.Error
+            text: page.checkError
+            visible: text !== ""
+        }
         // Progress of the running update or check.
         ColumnLayout {
             Layout.fillWidth: true
@@ -176,12 +184,12 @@ Kirigami.ScrollablePage {
             anchors.centerIn: parent
             width: parent.width - Kirigami.Units.gridUnit * 4
             visible: listView.count === 0 && !page.checking && !page.updating
-            icon.name: page.hasChecked ? "checkmark" : "system-software-update"
-            text: page.hasChecked ? i18n("Up to Date") : i18n("No Updates Found Yet")
-            explanation: page.hasChecked
+            icon.name: page.checkError ? "dialog-error-symbolic" : page.hasChecked ? "checkmark" : "system-software-update"
+            text: page.checkError ? i18n("Could Not Check for Updates") : page.hasChecked ? i18n("Up to Date") : i18n("No Updates Found Yet")
+            explanation: page.checkError ? page.checkError : page.hasChecked
                 ? i18n("All installed applications and runtimes are up to date.")
                 : i18n("Check now to see whether newer versions are available.")
-            helpfulAction: page.hasChecked ? null : checkNowAction
+            helpfulAction: page.hasChecked && !page.checkError ? null : checkNowAction
 
             Kirigami.Action {
                 id: checkNowAction

@@ -149,7 +149,7 @@ impl qobject::SettingsController {
             return;
         };
         let time = time.to_string();
-        if chrono::NaiveTime::parse_from_str(&time, "%H:%M").is_err() {
+        if jiff::civil::Time::strptime("%H:%M", &time).is_err() {
             self.settings_saved(false, "Enter a valid update time (HH:MM)".into());
             return;
         }

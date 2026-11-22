@@ -125,9 +125,9 @@ Kirigami.ScrollablePage {
             anchors.centerIn: parent
             width: parent.width - Kirigami.Units.gridUnit * 4
             visible: listView.count === 0 && !(page.installedModel && page.installedModel.loading)
-            text: i18n("No Flatpak Applications Installed")
+            text: page.installedModel && page.installedModel.installed_error ? i18n("Could not read installed applications") : i18n("No Flatpak Applications Installed")
             icon.name: "application-x-executable"
-            explanation: i18n("Install applications from the Storefront tab")
+            explanation: page.installedModel && page.installedModel.installed_error ? page.installedModel.installed_error : i18n("Install applications from the Storefront tab")
         }
 
         // ── Section headers (Updates Available / Up to Date) ───────────────────
@@ -257,4 +257,5 @@ Kirigami.ScrollablePage {
             ]
         }
     }
+
 }

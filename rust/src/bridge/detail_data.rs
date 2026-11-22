@@ -118,7 +118,7 @@ pub async fn submit_review(
             .to_string();
     }
     if version.is_empty()
-        && let Ok(installed_apps) = crate::flatpak::cli::list_installed_cached().await
+        && let Ok(installed_apps) = crate::flatpak::ui::list_installed_cached().await
         && let Some(v) = installed_apps
             .iter()
             .find(|a| a.application_id == app_id)

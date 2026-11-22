@@ -11,12 +11,12 @@ flowchart LR
     Services --> Storage[Settings and disk caches]
     Core --> Backend[FlatpakBackend]
     Backend --> Native[Optional libflatpak]
-    Backend --> CLI[CLI fallback]
+    Backend --> Broker[D-Bus companion] --> Native
 ```
 
 ## Ownership and composition
 
-- Core default features contain no Qt, KDE or libflatpak dependency. The application's default `libflatpak` feature forwards to the optional core backend. Disabling it retains CLI operation. The Flatpak build does not link libflatpak. Sandboxed processes select a constrained D-Bus broker backend and require the native `kiosque-update` companion on the host; they never fall back to host spawning. The manifest grants only the companion bus name and disables installation of sandbox daemon activation/KRunner files.
+- Core default features contain no Qt, KDE or libflatpak dependency. The application's default `libflatpak` feature forwards to the optional core backend. A build without the feature requires the sandbox broker. The Flatpak build does not link libflatpak. Sandboxed processes select a constrained D-Bus broker backend and require the native `kiosque-update` companion on the host; they never fall back to host spawning. The manifest grants only the companion bus name and disables installation of sandbox daemon activation/KRunner files.
 - The application composition root is `rust/src/services.rs`. Production constructors use production endpoints and paths. Dedicated `test-util` builds can install isolated services before any QObject is created; release builds do not export that bootstrap.
 - Registry owns installed/update/job state. TransactionManager serializes backend operations, deduplicates complete operations including scope and remote, and publishes terminal state after reloading installed refs. `shutdown()` cancels pending operations and joins the worker. Worker ownership uses a weak reference to avoid an idle Arc cycle.
 - Qt models project registry snapshots into serializable core entries. The adapter's compatibility helpers retain existing UI method names while sending mutations through the shared transaction client. Model/controller event subscriptions stop when their Rust QObject state is destroyed.
@@ -31,7 +31,7 @@ flowchart LR
 
 ## Execution and compatibility
 
-Tokio performs network, filesystem and process work. Qt changes are posted through cxx-qt thread handles. App-list request generations reject responses for superseded requests. The native backend runs libflatpak work on blocking workers; CLI children are owned and reaped during cancellation.
+Tokio performs network, filesystem and process work. Qt changes are posted through cxx-qt thread handles. App-list request generations reject responses for superseded requests. The native backend runs libflatpak work on blocking workers; GCancellable delivers cancellation to active native transactions.
 
 Meson builds the explicit `libkiosque` package, links its static library and exported cxx-qt initializer object, and embeds QML resources. Keep the initializer export integration aligned with cxx-qt upgrades; its export layout is not a stable public interface.
 
@@ -41,9 +41,9 @@ The updater's existing C++ tray/one-shot shell is retained. The core daemon modu
 
 ## Sandbox and trust boundaries
 
-The Flatpak build talks only to `org.kiosque.Kiosque.Daemon`. Install the native host package to provide the companion. An absent or unauthorized companion produces an explicit operation failure; the sandbox cannot start its own host daemon. Native and CLI host backends remain available for native packages.
+The Flatpak build talks only to `org.kiosque.Kiosque.Daemon`. Install the native host package to provide the companion. An absent or unauthorized companion produces an explicit operation failure; the sandbox cannot start its own host daemon. Native packages use libflatpak directly.
 
-The companion obtains sender UID/PID from D-Bus and checks the executing native sibling or packaged Flatpak application identity before reading or mutating state. Its methods accept typed identifiers, scopes and bounded descriptor bytes, never commands, paths or environments. Queue submissions validate identifiers and cap active operations at 32, ref files at 1 MiB and update batches at 256 IDs. This policy trusts the current Unix account and does not replace host Flatpak/Polkit system authorization.
+The companion obtains sender UID/PID from D-Bus and checks the executing native sibling or packaged Flatpak application identity before reading or mutating state. For a filtered bus connection it verifies the system proxy executable, the app and instance IDs from its private Flatpak metadata, and the packaged executable of the live instance reported by libflatpak. Its methods accept typed identifiers, scopes and bounded descriptor bytes, never commands, paths or environments. Queue submissions validate identifiers and cap active operations at 32, ref files at 1 MiB and update batches at 256 IDs. This policy trusts the current Unix account and does not replace host Flatpak/Polkit system authorization.
 
 External descriptors require a single, unambiguous HTTPS origin and signing key. The UI reviews retained descriptor bytes, origin, key SHA-256 and user installation scope before committing. Native transactions allow only the confirmed primary origin; dependency repositories are denied. External-reference transactions do not fetch missing dependencies/related refs automatically. Production HTTP clients reject local/private destinations, proxies, redirects and oversized decoded responses. Flatpak's own repository transport and trust checks remain the responsibility of the host Flatpak implementation.
 
@@ -55,7 +55,7 @@ Every other permission is read-only and scoped to what the code reads:
 | `host-etc:ro`, `host-os:ro` | Distributor configuration under `/run/host/etc/kiosque` and `/run/host/usr/share/kiosque` |
 | `org.freedesktop.Notifications`, `org.kde.StatusNotifierWatcher` | Update notifier notifications and tray icon |
 
-The app writes only to its own `~/.var/app` directories. The host CLI backend writes unpredictable, exclusively created mode-0600 temporary descriptors to its cache directory. Descriptor bytes cross the companion API; sandbox paths never cross it. Do not reintroduce `--filesystem=host`. Never include OAuth response bodies in errors or logs, since they can contain tokens.
+The app writes only to its own `~/.var/app` directories. Descriptor bytes cross the companion API; sandbox paths never cross it. Do not reintroduce `--filesystem=host`. Never include OAuth response bodies in errors or logs, since they can contain tokens.
 
 ## Storefront projections
 
