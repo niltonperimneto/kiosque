@@ -11,9 +11,9 @@
   </p>
 </div>
 
-![Kiosque storefront with a featured app, category filters, and popular apps on a gradient canvas](docs/screenshots/storefront.webp)
+![Kiosque storefront on Plasma, with Blender in the featured carousel and the App of the Day below](docs/screenshots/home.png)
 
-*Screenshots show Kiosque with Plasma’s Breeze window decorations and a sample catalog.*
+*Screenshots show Kiosque on KDE Plasma with Breeze window decorations and live Flathub data.*
 
 ## Why Kiosque exists
 
@@ -31,9 +31,9 @@ That influence also shaped what distributors can ship. Kiosque reads a subset of
 
 Check [GitHub Releases](https://github.com/niltonperimneto/kiosque/releases) for downloads. Choose a package for your system when one is available.
 
-- **Fedora RPM** — Download the RPM, install it with `sudo dnf install ./<downloaded-file>.rpm` using the actual filename, then open **Kiosque** from your application launcher.
+- **Fedora RPM** — Download both RPMs, `kiosque` (the storefront) and `kiosque-companion` (background updates, KRunner and the host service), and install them together with `sudo dnf install ./kiosque-*.rpm`. Then open **Kiosque** from your application launcher.
 - **AppImage** — Make the downloaded `.AppImage` executable and open it.
-- **Flatpak** — The sandboxed package uses a matching native host companion for Flatpak operations. Follow the release’s package instructions for installing the companion.
+- **Flatpak** — The sandboxed app installs, removes and updates software through a native host companion. Install the `kiosque-companion` package on the host as well. It adds no second launcher. If it is missing or too old, Kiosque says which, instead of failing silently.
 
 If there’s no suitable download, [build and run Kiosque from source](#build-from-source). For installing apps, see [Flathub’s setup guide](https://flathub.org/setup) to configure Flatpak and add the Flathub remote on your distribution.
 
@@ -41,19 +41,26 @@ Once it’s open, try **Games → New Releases**, then open a title and look at 
 
 ## From browsing to installing
 
-- **Start with the storefront.** The featured carousel pairs app screenshots with colors from AppStream branding when available. Flathub’s App of the Day gets its own spotlight, and categories, game charts, and recently added or updated apps give you a way in even when you have no app name to search for.
-- **Keep your place while deciding.** On a wide window the detail page opens beside the storefront. Screenshots, descriptions, ratings, and reviews help you judge the app itself, while the Sandbox Permissions panel lets you inspect the access it requests before installing. If permissions are unavailable, the detail page asks you to reload before installing.
-- **Come back to a usable library.** Search and sort installed Flatpaks, filter to pending updates, and follow progress as operations run. For ongoing maintenance, Kiosque offers scheduled update checks through its background helper.
+- **Start with the storefront.** The featured carousel pairs app screenshots with colors from AppStream branding when available. Flathub’s App of the Day gets its own spotlight card, which lifts and glows under the pointer. Categories, game charts, and recently added or updated apps give you a way in even when you have no app name to search for. Search, categories and app details come from the AppStream data of every repository you have configured, so they also work offline and include apps from repositories other than Flathub.
+- **Decide with the facts in front of you.** Screenshots, release notes, descriptions, ratings, and reviews help you judge the app itself. A chip shows which repository the app comes from, and Install uses that repository. The Sandbox Permissions panel lists the access the app requests, read from that repository’s own metadata. If the permissions cannot be verified, Kiosque does not offer to install the app.
+- **Come back to a usable library.** Search and sort installed Flatpaks and filter to pending updates. Installs, removals and updates run in the background and are listed in a Tasks dialog, where you can cancel them. For ongoing maintenance, the companion installs updates on a daily or weekly schedule, and catches up after the computer was off.
 
-![Kiosque app details showing the install action, an app preview, and a description on a gradient canvas](docs/screenshots/app-details.webp)
+![Krita’s detail page with screenshots, release notes, licence and the sandbox summary](docs/screenshots/details.png)
+
+| App of the Day, hovered | A category with subcategory filters |
+| --- | --- |
+| ![The App of the Day card lifted on hover with an accent border and a spotlight following the pointer](docs/screenshots/app-of-the-day.png) | ![The Graphics category with 3D, vector, raster and photography filters](docs/screenshots/category.png) |
+| **Work in the background** | **Narrow windows** |
+| ![The Tasks dialog listing an installation in progress](docs/screenshots/tasks.png) | ![Search results in a phone-sized window with bottom navigation](docs/screenshots/mobile.png) |
 
 ### Beyond the storefront
 
 | When you want to… | Where to go |
 | --- | --- |
-| Find an app without opening the store first | With the native KRunner integration installed, open Plasma’s runner and type at least three characters. Kiosque searches AppStream metadata already on disk for apps you can install. Selecting a match opens its detail page. |
+| Find an app without opening the store first | With `kiosque-companion` installed, open Plasma’s runner and type at least three characters. Kiosque searches AppStream metadata already on disk for apps you can install. Selecting a match opens its detail page. |
 | Inspect a Flatpak link or file someone shared | Open an `appstream://` link in Kiosque to go straight to an app. Open a `.flatpakref` or `.flatpakrepo` file to review its source, key fingerprint and installation scope before confirming. |
-| Set up background updates | In **Settings → Updates**, choose a daily or weekly schedule and time. Enabling automatic updates requests desktop background permission. The host helper can then apply updates with the storefront closed. |
+| Set up background updates | In **Settings → Updates**, choose a daily or weekly schedule and time. Enabling automatic updates requests desktop background permission, and the change applies immediately. The companion then installs updates with the storefront closed. A run missed while the computer was off happens shortly after the next login, and a failed run is retried an hour later. |
+| Follow installs while browsing | Installs, removals and updates never block the window. **Tasks** in the sidebar lists queued, running and finished work, lets you cancel it and opens each app’s page. |
 | Manage repositories or reviews | **Settings → Repositories** lists remotes and lets you add a repository. **Review Account** handles sign-in for ratings and reviews. **Privacy** shows the pseudonymous review identity and explains what regenerating its salt means for access to earlier reviews. |
 
 ## Build from source
@@ -100,9 +107,11 @@ Once built, you can launch Kiosque or the background update utility.
 ./build/kiosque-update
 ```
 
+Distribution packages split the build in two. `kiosque` is the storefront. `kiosque-companion` contains `kiosque-update`, its D-Bus activation file, the KRunner plugin, the tray icon and the translations. The storefront requires the companion, and Flatpak users install the companion on its own.
+
 ## Technical Architecture & Data Flow
 
-Kiosque splits the desktop UI, application services, and Flatpak execution into layers. QML handles presentation and navigation, Rust owns catalog and transaction state, and libflatpak performs changes to the installation. The same application models serve the native and sandboxed packages through different backend implementations.
+Kiosque splits the desktop UI, application services, and Flatpak execution into layers. QML handles presentation and navigation, Rust owns catalog and transaction state, and libflatpak performs changes to the installation. The AppStream data of every configured repository is the base for search, categories and details; Flathub’s web API adds popularity, branding and reviews. The same application models serve the native and sandboxed packages through different backend implementations.
 
 ```mermaid
 flowchart TB
@@ -115,11 +124,13 @@ flowchart TB
 
     subgraph Core["Application services · kiosque-core"]
         Tokio["Tokio workers<br/>Catalog requests, settings and image work"]
+        Catalog["AppStream catalog & metadata policy<br/>Every configured repository, works offline"]
         Clients["Rust HTTP clients<br/>Public HTTPS and bounded responses"]
         Cache["Moka metadata cache<br/>Disk cache and bounded image decoding"]
         Registry["Installed-state registry<br/>Installed apps, updates and job state"]
         Queue["Transaction queue · daemon or in-process<br/>Serialized operations, progress and cancellation"]
-        Tokio --> Clients
+        Tokio --> Catalog
+        Catalog -->|Popularity, branding, fallback| Clients
         Tokio <-->|Metadata and image reuse| Cache
         Queue -->|Refresh installed state before completion| Registry
     end
@@ -127,7 +138,7 @@ flowchart TB
     subgraph Flatpak["Flatpak execution"]
         Backend{"Backend selected at build time"}
         Broker["Sandbox broker<br/>Typed requests to the host companion"]
-        Companion["kiosque-update · host D-Bus service<br/>Verifies caller identity and validates inputs"]
+        Companion["kiosque-companion · host D-Bus service<br/>Checks caller identity and API version,<br/>validates inputs, runs automatic updates"]
         Native["Native backend<br/>libflatpak on blocking workers"]
         Installations["User and system Flatpak installations"]
         Backend -->|Native package| Native
@@ -137,7 +148,9 @@ flowchart TB
         Native -->|Read state and execute transactions| Installations
     end
 
-    Flathub["Flathub<br/>Catalog, search and AppStream"]
+    Catalog -.->|Reads AppStream| Installations
+
+    Flathub["Flathub<br/>Collections, popularity, search fallback"]
     ODRS["ODRS<br/>Ratings and reviews"]
 
     Models -->|Catalog or detail request| Tokio
@@ -168,13 +181,13 @@ Flathub supplies collections, search, and AppStream metadata. The Open Desktop R
 
 #### How a detail page gets its contents
 
-Opening an app creates a page-scoped `AppDetails`. The loader first fetches the Flathub record for that ID. Once it knows the developer and categories, it can ask for other apps by that developer, similar apps and the permission summary concurrently. It converts the description to display text and selects a screenshot URL for each preview. Ratings and review text come from a separate pair of ODRS requests. A reviews outage can therefore leave a page without ratings, while a missing permission summary specifically disables its install action. [Detail loader](rust/src/bridge/detail_data.rs) · [Detail page](qml/pages/AppDetailPage.qml)
+Opening an app creates a page-scoped `AppDetails`. When the local catalog has the app, its repository’s AppStream data supplies the name, description, screenshots, links, release notes and origin, and the catalog supplies other apps by the same developer and similar apps, with no network request. The permissions come from the metadata keyfile that repository publishes for the app, converted to the same shape as Flathub’s summary. If that keyfile cannot be read, a Flathub app falls back to Flathub’s permission summary. An app from another repository then stays “unknown”, which disables Install. Apps not in the catalog yet use the Flathub web API. Ratings and review text come from a separate pair of ODRS requests, so a reviews outage leaves a page without ratings but still installable. A page reloads by itself when its app’s catalog entry changes. [App metadata policy](rust/core/src/apps.rs) · [Detail page](qml/pages/AppDetailPage.qml)
 
 Artwork has a different lifetime from metadata. Scrolling past a card and opening the same image at a larger size can reuse the downloaded bytes. The Rust image loader keys decoded frames by source and requested dimensions, resizes on blocking workers, and bounds the decoded cache to 96 MiB with a ten-minute lifetime. At the language boundary the Qt image provider wraps the pixels in a `QImage` with a cleanup callback. Qt can keep painting that image until the last reference releases the allocation. [Image loader](rust/core/src/image_cache.rs) · [Qt image provider](src/image_provider.h)
 
 #### What comes from the network and what is already on disk
 
-The storefront search field queries Flathub. Plasma’s KRunner integration looks for apps available from the machine’s configured remotes. Flatpak keeps an AppStream catalog per remote, architecture and installation. Kiosque indexes those files with their origin and scope. The runner searches that index, applies distributor blocklists, filters out installed apps and returns up to eight matches. This path works offline once Flatpak has downloaded the metadata. Choosing a match passes its app ID to the storefront as an AppStream link. [Local catalog](rust/core/src/catalog.rs) · [KRunner integration](rust/core/src/daemon/runner.rs)
+Flatpak keeps an AppStream catalog per remote, architecture and installation. Kiosque indexes those files with their origin and scope, refreshes them daily, and reindexes when you add or remove a repository. Search, categories and detail pages read that index first, so they work offline and cover every repository. While Flathub’s own data is not on disk yet, Flathub’s web search fills the gap. Distributor blocklists apply to search, categories, related apps and the storefront rows. Plasma’s KRunner integration searches the same index, filters out installed apps and returns up to eight matches. Choosing a match opens the app in the storefront: the native app when it is installed next to the companion, otherwise the Kiosque Flatpak. [Local catalog](rust/core/src/catalog.rs) · [KRunner integration](rust/core/src/daemon/runner.rs)
 
 ### Installed state, transactions, and the update helper
 
@@ -187,11 +200,35 @@ Consider installing a title from its detail page and then switching to **Install
 
 [Target selection and transaction manager](rust/core/src/transactions.rs) · [Installed-state registry](rust/core/src/registry.rs) · [Application service wiring](rust/src/services.rs)
 
+The same install from the Flatpak, across the sandbox boundary:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor You
+    participant App as Kiosque (Flatpak)
+    participant Companion as kiosque-companion
+    participant Flatpak as libflatpak
+    You->>App: Click Install
+    App->>App: Check the app's permissions (Install stays off if unknown)
+    App->>Companion: Install(app ID, repository, scope)
+    Companion->>Companion: Verify the caller is the packaged Kiosque and validate every argument
+    Companion->>Flatpak: Run the transaction
+    loop While it runs
+        Flatpak-->>Companion: Progress
+        Companion-->>App: JobChanged signal
+    end
+    Companion-->>App: Finished, failed or cancelled
+    App-->>You: Tasks dialog, and a notification if the window is in the background
+```
+
 #### When the storefront is closed
 
-The native `kiosque-update` executable serves two uses. D-Bus activation starts it on demand to handle requests, and it exits after an idle interval. In background mode it stays available for scheduled updates. Its Rust services own scheduling and transactions, while the C++ desktop shell displays the tray menu and notifications. The tray offers **Check for Updates** and **Update All**. The command-line `--check` mode checks **and installs** pending updates in one run. [Updater entry point and options](src/update_main.cpp)
+The `kiosque-update` executable from `kiosque-companion` serves two uses. D-Bus activation starts it on demand to handle requests, and it exits after an idle interval. While automatic updates are on it stays in background mode. It switches modes at runtime, so turning automatic updates on or off takes effect immediately rather than at the next login. Its Rust services own scheduling and transactions, while the C++ desktop shell displays the tray menu and notifications. The tray offers **Check for Updates** and **Update All**. The command-line `--check` mode checks **and installs** pending updates in one run. [Updater entry point and options](src/update_main.cpp)
 
-Saving a time or frequency only changes the schedule. Enabling automatic updates also asks the desktop portal for background permission. The settings controller waits for the response and restores the previous preference on rejection, so the switch reflects whether Kiosque could apply the change. [Settings controller](rust/src/bridge/settings_controller.rs) · [Background integration](rust/core/src/settings.rs)
+Every saved schedule is also sent to the running companion, which stores it. Enabling automatic updates also asks the desktop portal to start the companion at login. The settings controller waits for the response and restores the previous preference on rejection, so the switch reflects whether Kiosque could apply the change. Inside Flatpak, the login autostart runs `kiosque --update-companion`, which hands the schedule to the host companion and exits without opening a window. Enabling fails with an explanation when the companion is missing or too old.
+
+The companion records when automatic updates were enabled and when the last run succeeded. Any scheduled time that passed since then is due, so a laptop that was off at 02:00 updates five minutes after the next login. Enabling counts from that moment, so it never triggers an immediate run. A failed run is retried after an hour. [Update schedule](rust/core/src/daemon/schedule.rs) [Settings controller](rust/src/bridge/settings_controller.rs) · [Background integration](rust/core/src/settings.rs)
 
 ### Security boundaries
 
@@ -199,9 +236,9 @@ The hardening work changed both what the storefront accepts and what the sandbox
 
 | Boundary | What Kiosque enforces |
 | --- | --- |
-| Sandboxed Flatpak operations | The typed host companion replaced host command spawning. It verifies the caller’s bus identity and requires a recognized native or packaged Kiosque executable. It validates app IDs, scopes, and payloads. Flatpak and Polkit still enforce host authorization. |
+| Sandboxed Flatpak operations | The typed host companion replaced host command spawning. It verifies the caller’s bus identity and requires a recognized native or packaged Kiosque executable. It validates app IDs, scopes, schedules and payloads, and publishes an API version so an outdated companion is reported as such. Flatpak and Polkit still enforce host authorization. |
 | External repositories and app references | The confirmation screen displays the HTTPS origin, signing-key fingerprint, and target user installation. The operation consumes the descriptor bytes that were inspected and confirmed. |
-| App permissions and remote content | A known empty permission summary and an unavailable summary are distinct states. Installation from the detail page requires a known summary. The API transport enforces public HTTPS destinations and response limits, and the image loader caps decoded size. |
+| App permissions and remote content | Permissions come from the origin repository’s own metadata, which states what an installation grants. A known empty set and unavailable permissions are distinct states. Installation from the detail page requires known permissions. The API transport enforces public HTTPS destinations and response limits, and the image loader caps decoded size. |
 | Sign-in and local settings | GitHub sign-in uses device authorization. GitLab sign-in uses PKCE. Bearer tokens stay in memory, and legacy settings records are migrated to remove stored tokens. Settings are written atomically with private permissions. |
 
 For example, opening a repository file starts a review before any transaction can add the remote. Kiosque retains the descriptor and shows the origin and key fingerprint derived from those bytes. Confirmation passes the retained bytes to the backend, so changing the file on disk cannot substitute a different repository after review. The native transaction restricts the operation to the confirmed origin and denies additional dependency repositories. For an external app reference it also disables automatic fetching of missing dependencies and related refs. [Sandbox and trust boundaries](docs/architecture.md#sandbox-and-trust-boundaries)
@@ -210,10 +247,10 @@ CI also includes dependency audits, redacted source and history secret scanning,
 
 ### What happens when you search
 
-1. Submitting the search field in `ShopfrontPage.qml` invokes the QML-visible `AppListModel.search(query)`.
+1. Submitting the search field invokes the QML-visible `AppListModel.search(query)`.
 2. The Rust method receives a Qt `QString`, sets `loading`, and advances the model’s request generation. It captures a Qt thread handle and converts the query to a Rust string for the background task.
-3. Tokio calls the shared Flathub client, which posts to `https://flathub.org/api/v2/search`. The client deserializes the response, and the adapter maps the results into app IDs, names, icons, and summaries.
-4. The task queues the result back to the Qt thread. A generation check drops stale replies. For a changed result set, the model brackets the update with `beginResetModel()` and `endResetModel()`. It then clears `loading`, and QML redraws the cards through the model roles. [Search implementation](rust/src/bridge/app_list_model.rs)
+3. On a Tokio worker, the app metadata policy ranks matches from the local AppStream catalog by name, keywords, ID and summary. This step never waits on the network. While Flathub’s own AppStream data is not on disk, results from `https://flathub.org/api/v2/search` are appended. A search fails only when neither source returned anything. Blocked apps are removed.
+4. The task queues the result back to the Qt thread. A generation check drops stale replies. For a changed result set, the model brackets the update with `beginResetModel()` and `endResetModel()`. It then clears `loading`, and QML redraws the cards through the model roles. When the catalog is reindexed, for example after adding a repository, the model repeats its last search. [Search policy](rust/core/src/apps.rs) · [Search model](rust/src/bridge/app_list_model.rs)
 
 ## Development guidance and testing
 
