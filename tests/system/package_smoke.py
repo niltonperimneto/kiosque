@@ -48,7 +48,7 @@ def main(artifact, companion):
             as_user = ['runuser', '--user', user, '--']
             run([*as_user, 'flatpak', 'remote-add', '--user', '--if-not-exists', 'flathub', 'https://dl.flathub.org/repo/flathub.flatpakrepo'], env=env)
             run([*as_user, 'flatpak', 'install', '--user', '-y', '--noninteractive', 'flathub', 'org.kde.Platform//6.10'], env=env)
-            run([*as_user, 'flatpak', 'install', '--user', '-y', '--noninteractive', '--no-gpg-verify', artifact], env=env)
+            run([*as_user, 'flatpak', 'install', '--user', '-y', '--noninteractive', '--bundle', artifact], env=env)
             app = ['flatpak', 'run', '--user', 'org.kiosque.Kiosque', '--check-ui']
             helper = ['flatpak', 'run', '--user', '--command=kiosque-update', 'org.kiosque.Kiosque', '--help']
         elif artifact.suffix == '.rpm':
@@ -63,7 +63,10 @@ def main(artifact, companion):
         elif artifact.suffix.lower() == '.appimage':
             executable = root / 'artifact.AppImage'
             shutil.copy2(artifact, executable); executable.chmod(0o755)
-            run([executable, '--appimage-extract'], cwd=root)
+            offset = run([executable, '--appimage-offset']).strip()
+            if not offset.isdecimal():
+                raise RuntimeError('AppImage did not report a valid filesystem offset')
+            run(['unsquashfs', '-no-progress', '-o', offset, '-d', root / 'squashfs-root', executable])
             root = root / 'squashfs-root'
             app = [root / 'AppRun', '--check-ui']
             helper = [root / 'usr/bin/kiosque-update', '--help']
