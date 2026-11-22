@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+  <!-- SPDX-FileCopyrightText: 2026 Kiosque Contributors -->
+  <!-- Symbolic Kiosque icon for the icon theme (same shape as
+       qml/images/logo-symbolic-16-black.svg). Plasma recolours it through the
+       ColorScheme-Text class; elsewhere it renders in the default text colour. -->
+  <style type="text/css" id="current-color-scheme">.ColorScheme-Text { color:#232629; }</style>
+  <path class="ColorScheme-Text" fill="currentColor" fill-rule="evenodd" d="M1 1h1v4h1V1h1v4h1V1h1v4h1V1h1v4h1V1h1v4h1V1h1v4h1V1h2v7l-3 3 3 4h-2l-2.5-3.25L9 12.5V15H1z M9.5 8h3l-3 3z"/>
+</svg>

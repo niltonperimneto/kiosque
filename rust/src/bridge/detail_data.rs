@@ -23,6 +23,9 @@ pub struct DetailData {
     pub permissions: serde_json::Value,
     pub developer_apps: Vec<FlathubApp>,
     pub similar_apps: Vec<FlathubApp>,
+    /// `{version, timestamp, description}` of the newest release (plain-text
+    /// notes, timestamp 0 when unknown), or `null` without release data.
+    pub latest_release: serde_json::Value,
 }
 
 /// Fetch details plus the supplementary lists for `app_id`.
@@ -40,7 +43,20 @@ pub async fn load(app_id: &str) -> Result<DetailData, String> {
         .filter(|value| value.is_object())
         .unwrap_or(&serde_json::Value::Null)
         .clone();
+    let latest_release = details
+        .latest_release()
+        .map(|release| {
+            serde_json::json!({
+                "version": release.version,
+                "timestamp": release.timestamp.unwrap_or(0),
+                "description": kiosque_core::security::description_text(
+                    release.description.as_deref().unwrap_or_default(),
+                ),
+            })
+        })
+        .unwrap_or(serde_json::Value::Null);
     Ok(DetailData {
+        latest_release,
         screenshots: screenshot_urls(&details),
         urls: urls_object(&details),
         name: details.name,

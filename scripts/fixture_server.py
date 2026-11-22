@@ -107,6 +107,12 @@ class Handler(BaseHTTPRequestHandler):
                 details['description'] = "&lt;img src='file:///private'&gt;"
             if app_id in ('org.kiosque.Daily', 'org.kiosque.Screenshots'):
                 details['screenshots'] = [{'sizes': [{'src': f'http://127.0.0.1:{self.server.server_port}/fixture-image.png', 'width': 8, 'height': 8}]}]
+            if app_id == 'org.kiosque.Screenshots':
+                details['releases'] = [
+                    {'version': '2.0', 'timestamp': '1700000000', 'description': '<p>Faster <em>startup</em>.</p><ul><li>New gallery</li></ul>'},
+                    {'version': '1.0', 'timestamp': 1600000000, 'description': '<p>First release</p>'},
+                ]
+                details['urls'] = {'homepage': 'https://example.org/screenshots', 'bugtracker': 'https://example.org/screenshots/issues', 'donation': 'http://insecure.example.org/'}
             if app_id == 'org.kiosque.Daily':
                 details.update(branding=[{'scheme_preference': 'light', 'type': 'primary', 'value': '#8040ff'}])
             return self.respond(200, details)

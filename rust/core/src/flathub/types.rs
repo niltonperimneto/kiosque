@@ -166,9 +166,60 @@ pub struct AppDetails {
 
     #[serde(default, deserialize_with = "null_as_default")]
     pub branding: Vec<BrandingColor>,
+
+    /// AppStream releases; entries that cannot be parsed are skipped.
+    #[serde(default, deserialize_with = "lenient_releases")]
+    pub releases: Vec<Release>,
+}
+
+/// One AppStream `<release>` entry.
+#[derive(Debug, Deserialize, Serialize, Clone, Default, PartialEq)]
+pub struct Release {
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub version: String,
+    /// Unix time in seconds; Flathub sends it as a string or a number.
+    #[serde(default, deserialize_with = "lenient_timestamp")]
+    pub timestamp: Option<i64>,
+    /// Release notes as AppStream markup.
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+fn lenient_timestamp<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(
+        match Option::<serde_json::Value>::deserialize(deserializer)? {
+            Some(serde_json::Value::Number(n)) => n.as_i64(),
+            Some(serde_json::Value::String(s)) => s.trim().parse().ok(),
+            _ => None,
+        },
+    )
+}
+
+fn lenient_releases<'de, D>(deserializer: D) -> Result<Vec<Release>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let values = Option::<Vec<serde_json::Value>>::deserialize(deserializer)?.unwrap_or_default();
+    Ok(values
+        .into_iter()
+        .filter_map(|value| serde_json::from_value(value).ok())
+        .collect())
 }
 
 impl AppDetails {
+    /// The newest release with a version: the latest timestamp, or the first
+    /// listed entry (AppStream lists newest first) when none has a timestamp.
+    pub fn latest_release(&self) -> Option<&Release> {
+        let versioned = || self.releases.iter().filter(|r| !r.version.is_empty());
+        versioned()
+            .filter(|r| r.timestamp.is_some())
+            .max_by_key(|r| r.timestamp)
+            .or_else(|| versioned().next())
+    }
+
     /// Primary branding colors as (light, dark) hex values.
     pub fn brand_colors(&self) -> (Option<String>, Option<String>) {
         let pick = |scheme: &str| {
@@ -226,3 +277,50 @@ pub struct GlobalStats {
 }
 
 pub type LinterExceptions = HashMap<String, HashMap<String, String>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn details(json: &str) -> AppDetails {
+        serde_json::from_str(json).expect("details parse")
+    }
+
+    #[test]
+    fn releases_are_optional() {
+        assert!(details(r#"{"id":"a"}"#).releases.is_empty());
+        assert!(details(r#"{"id":"a","releases":null}"#).releases.is_empty());
+        assert!(details(r#"{"id":"a"}"#).latest_release().is_none());
+    }
+
+    #[test]
+    fn latest_release_uses_timestamps_in_either_encoding() {
+        let d = details(
+            r#"{"id":"a","releases":[
+                {"version":"1.0","timestamp":"1600000000","description":"<p>Old</p>"},
+                {"version":"2.0","timestamp":1700000000,"description":"<p>New</p>"},
+                {"version":"0.9"}
+            ]}"#,
+        );
+        assert_eq!(d.releases.len(), 3);
+        let latest = d.latest_release().unwrap();
+        assert_eq!(latest.version, "2.0");
+        assert_eq!(latest.timestamp, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn malformed_releases_do_not_break_details() {
+        let d = details(
+            r#"{"id":"a","name":"App","releases":[
+                {"version":3,"timestamp":"soon"},
+                {"version":"1.2","timestamp":"not-a-number","description":null},
+                "garbage"
+            ]}"#,
+        );
+        assert_eq!(d.name, "App");
+        assert_eq!(d.releases.len(), 1);
+        let latest = d.latest_release().unwrap();
+        assert_eq!(latest.version, "1.2");
+        assert_eq!(latest.timestamp, None);
+    }
+}

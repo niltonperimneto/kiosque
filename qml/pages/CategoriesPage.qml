@@ -13,14 +13,6 @@ Kirigami.Page {
 
     padding: 0
 
-    actions: [
-        Kirigami.Action {
-            icon.name: "window-close"
-            text: i18n("Close")
-            visible: applicationWindow().pageStack.depth > 1
-            onTriggered: applicationWindow().pageStack.pop()
-        }
-    ]
 
     GridView {
         id: grid
@@ -39,36 +31,38 @@ Kirigami.Page {
         model: applicationWindow().categoriesModel
 
         delegate: Kirigami.Card {
+            id: categoryCard
+
+            // Entry of Categories.all: { text, icon, category }.
+            required property var modelData
+
             width: grid.cellWidth - Kirigami.Units.largeSpacing
             height: grid.cellHeight - Kirigami.Units.largeSpacing
-            
+            Accessible.name: modelData.text
+
             // Allow clicking the entire card
             onClicked: {
                 applicationWindow().currentSection = "categories";
-                applicationWindow().currentCategory = model.category;
-                
-                if (model.category === "") {
-                    applicationWindow().pageStack.push("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "", categoryName: model.text });
-                } else {
-                    applicationWindow().pageStack.push("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: model.category, categoryName: model.text });
-                }
+                applicationWindow().currentCategory = categoryCard.modelData.category;
+                applicationWindow().pageStack.push("qrc:/qml/pages/CategoryAppListPage.qml",
+                    { categoryId: categoryCard.modelData.category, categoryName: categoryCard.modelData.text });
             }
 
             contentItem: ColumnLayout {
-                anchors.fill: parent
                 spacing: Kirigami.Units.smallSpacing
 
                 Kirigami.Icon {
-                    source: model.icon
+                    source: categoryCard.modelData.icon
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: Kirigami.Units.iconSizes.huge
                     Layout.preferredHeight: Kirigami.Units.iconSizes.huge
                 }
 
                 Controls.Label {
-                    text: i18n(model.text)
+                    text: categoryCard.modelData.text
                     font.bold: true
                     Layout.alignment: Qt.AlignHCenter
+                    Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
                 }
