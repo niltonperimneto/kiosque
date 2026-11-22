@@ -212,6 +212,9 @@ impl qobject::RepoModel {
 
         crate::runtime::runtime().spawn(async move {
             let result = crate::flatpak::ui::add_repository(&name_str, &url_str).await;
+            if result.is_ok() {
+                index_new_remote(name_str.clone());
+            }
             let (success, msg) = match result {
                 Ok(_) => (true, "Repository added successfully".to_string()),
                 Err(e) => (false, e),
@@ -277,6 +280,9 @@ impl qobject::RepoModel {
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let result = crate::flatpak::ui::add_repository_file(&name, data).await;
+            if result.is_ok() {
+                index_new_remote(name.clone());
+            }
             let (success, msg) = match result {
                 Ok(_) => (true, "Repository added successfully".to_string()),
                 Err(e) => (false, e),
@@ -303,6 +309,10 @@ impl qobject::RepoModel {
 
         crate::runtime::runtime().spawn(async move {
             let result = crate::flatpak::ui::remove_repository(&name_str).await;
+            if result.is_ok() {
+                // Its apps leave search and categories.
+                crate::services::services().reload_catalog().await;
+            }
             let (success, msg) = match result {
                 Ok(_) => (true, "Repository removed successfully".to_string()),
                 Err(e) => (false, e),
@@ -318,4 +328,14 @@ impl qobject::RepoModel {
             });
         });
     }
+}
+
+/// Download a newly added repository's AppStream data in the background, so
+/// its apps appear in search and categories without a restart.
+fn index_new_remote(name: String) {
+    crate::runtime::runtime().spawn(async move {
+        crate::services::services()
+            .refresh_catalog_remote(&name)
+            .await;
+    });
 }

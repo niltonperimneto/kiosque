@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic AppStream data of a non-Flathub repository for desktop tests. -->
+<components version="0.14" origin="fixture-repo">
+  <component type="desktop-application">
+    <id>org.example.Atlas</id>
+    <name>Atlas</name>
+    <summary>Explore maps of the world</summary>
+    <description><p>Browse <em>offline</em> maps.</p></description>
+    <developer id="org.example"><name>Example Cartographers</name></developer>
+    <project_license>GPL-3.0-or-later</project_license>
+    <categories><category>Education</category><category>Geography</category></categories>
+    <keywords><keyword>cartography</keyword></keywords>
+    <url type="homepage">https://atlas.example.org</url>
+    <releases>
+      <release version="3.1" timestamp="1750000000"><description><p>Sharper coastlines.</p></description></release>
+      <release version="3.0" timestamp="1740000000"/>
+    </releases>
+    <bundle type="flatpak">app/org.example.Atlas/x86_64/stable</bundle>
+  </component>
+  <component type="desktop-application">
+    <id>org.example.Globe</id>
+    <name>Globe</name>
+    <summary>Spin a virtual globe</summary>
+    <developer id="org.example"><name>Example Cartographers</name></developer>
+    <categories><category>Education</category><category>Geography</category></categories>
+    <releases><release version="1.0" date="2025-01-02"/></releases>
+    <bundle type="flatpak">app/org.example.Globe/x86_64/stable</bundle>
+  </component>
+</components>

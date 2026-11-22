@@ -20,6 +20,7 @@ extern "C" void kiosque_test_shutdown();
 extern "C" bool kiosque_test_set_updates(const char*);
 extern "C" void kiosque_test_hold_operations(bool);
 extern "C" unsigned long long kiosque_test_operation_count();
+extern "C" const char* kiosque_test_last_install_remote();
 void qml_register_types_com_kiosque();
 
 // Registered only on the harness's private dbus-run-session bus. No desktop
@@ -75,6 +76,7 @@ public:
     }
     Q_INVOKABLE void holdOperations(bool hold) { kiosque_test_hold_operations(hold); }
     Q_INVOKABLE int operationCount() const { return int(kiosque_test_operation_count()); }
+    Q_INVOKABLE QString lastInstallRemote() const { return QString::fromUtf8(kiosque_test_last_install_remote()); }
 };
 
 class Setup : public QObject {

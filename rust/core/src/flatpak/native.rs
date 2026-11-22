@@ -532,6 +532,41 @@ impl FlatpakBackend for LibflatpakBackend {
         .await
     }
 
+    async fn remote_metadata(&self, remote: &str, scope: Scope, reference: &str) -> Result<String> {
+        crate::security::remote_name(remote).map_err(FlatpakError::Failed)?;
+        crate::security::app_ref(reference).map_err(FlatpakError::Failed)?;
+        let (remote, reference) = (remote.to_string(), reference.to_string());
+        blocking(move || {
+            let inst = installation(scope)?;
+            let cancellable = gio::Cancellable::new();
+            let full_ref = resolve_remote_ref(&inst, &remote, &reference, &cancellable)?;
+            let (kind, name, arch, branch) = super::parse_ref(&full_ref)
+                .ok_or_else(|| FlatpakError::Failed(format!("bad ref {}", full_ref)))?;
+            let kind = match kind {
+                RefKind::App => libflatpak::RefKind::App,
+                RefKind::Runtime => libflatpak::RefKind::Runtime,
+            };
+            // The summary already carries each ref's metadata; only fetch the
+            // commit when it does not.
+            let remote_ref = inst
+                .fetch_remote_ref_sync(&remote, kind, &name, Some(&arch), Some(&branch), none())
+                .map_err(gerr)?;
+            let bytes = match remote_ref.metadata() {
+                Some(bytes) => bytes,
+                None => inst
+                    .fetch_remote_metadata_sync(&remote, &remote_ref, none())
+                    .map_err(gerr)?,
+            };
+            if bytes.len() > super::MAX_METADATA_BYTES {
+                return Err(FlatpakError::Failed(
+                    "repository metadata is too large".into(),
+                ));
+            }
+            Ok(String::from_utf8_lossy(&bytes).into_owned())
+        })
+        .await
+    }
+
     fn spawn_monitor(&self, tx: broadcast::Sender<()>) {
         let spawned = std::thread::Builder::new()
             .name("kiosque-flatpak-monitor".into())

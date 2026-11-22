@@ -61,6 +61,7 @@ pub mod qobject {
         #[qproperty(QList_QVariant, reviews, READ, NOTIFY)]
         #[qproperty(bool, reviews_loading, READ, NOTIFY)]
         #[qproperty(QMap_QString_QVariant, latest_release, READ, NOTIFY)]
+        #[qproperty(QMap_QString_QVariant, origin, READ, NOTIFY)]
         type AppDetails = super::AppDetailsRust;
 
         fn set_app_id(self: Pin<&mut AppDetails>, app_id: QString);
@@ -142,6 +143,11 @@ pub struct AppDetailsRust {
     reviews: QVariantList,
     reviews_loading: bool,
     latest_release: QVariantMap,
+    /// `{name, title, scope, url}` of the source repository; empty when the
+    /// app is only known from the Flathub web API.
+    origin: QVariantMap,
+    /// The app's catalog entry when it was loaded, to reload on changes.
+    catalog_entry: Option<kiosque_core::catalog::CatalogApp>,
     /// Load request generation: completions of superseded loads are dropped.
     generation: u64,
     /// The job this object started (for `operationFinished` and early cancel).
@@ -176,6 +182,8 @@ impl Default for AppDetailsRust {
             reviews: Default::default(),
             reviews_loading: false,
             latest_release: Default::default(),
+            origin: Default::default(),
+            catalog_entry: None,
             generation: 0,
             job: None,
             watch: None,
@@ -238,16 +246,32 @@ impl qobject::AppDetails {
         self.as_mut().rust_mut().watch = Some(cancel.clone());
         let services = crate::services::services();
         let mut events = services.registry.subscribe();
+        let mut catalog_changes = kiosque_core::catalog::changes();
         let thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
+            use tokio::sync::broadcast::error::RecvError;
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => break,
                     event = events.recv() => {
-                        if matches!(event, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
+                        if matches!(event, Err(RecvError::Closed)) {
                             break;
                         }
                         if thread.queue(|object| object.sync_registry()).is_err() {
+                            break;
+                        }
+                    }
+                    change = catalog_changes.recv() => {
+                        if matches!(change, Err(RecvError::Closed)) {
+                            break;
+                        }
+                        let queued = thread.queue(|object| {
+                            let current = kiosque_core::catalog::catalog().get(&object.app_id.to_string());
+                            if !object.loading && current != object.catalog_entry {
+                                object.start_load();
+                            }
+                        });
+                        if queued.is_err() {
                             break;
                         }
                     }
@@ -310,6 +334,7 @@ impl qobject::AppDetails {
             latest_release_changed,
             Default::default()
         );
+        replace!(self, origin, origin_changed, Default::default());
         update!(self, permissions_known, permissions_known_changed, false);
         replace!(self, permissions, permissions_changed, Default::default());
         replace!(self, ratings, ratings_changed, Default::default());
@@ -328,6 +353,7 @@ impl qobject::AppDetails {
         let generation = self.generation;
         self.as_mut().clear_details();
         let app_id = self.app_id.to_string();
+        self.as_mut().rust_mut().catalog_entry = kiosque_core::catalog::catalog().get(&app_id);
         if app_id.is_empty() {
             update!(self, loading, loading_changed, false);
             update!(self, reviews_loading, reviews_loading_changed, false);
@@ -438,6 +464,12 @@ impl qobject::AppDetails {
         );
         replace!(
             self,
+            origin,
+            origin_changed,
+            util::json_to_qvariant_map(&details.origin)
+        );
+        replace!(
+            self,
             developer_apps,
             developer_apps_changed,
             apps_list(&details.developer_apps)
@@ -499,7 +531,14 @@ impl qobject::AppDetails {
             return;
         }
         klog!("AppDetails: installing \"{}\"", app_id);
-        let (remote, scope) = crate::services::services().install_target(&app_id);
+        // Install from the repository the page showed.
+        let origin = self
+            .origin
+            .get(&cxx_qt_lib::QString::from("name"))
+            .and_then(|v| v.value::<cxx_qt_lib::QString>())
+            .map(|name| name.to_string())
+            .unwrap_or_default();
+        let (remote, scope) = crate::services::services().install_target_from(&app_id, &origin);
         let title = self.name.to_string();
         self.start_job(
             Operation::Install {

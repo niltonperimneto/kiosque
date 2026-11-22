@@ -1,5 +1,6 @@
 #[macro_use]
 pub mod log;
+pub mod apps;
 pub mod cache;
 pub mod catalog;
 pub mod config;
