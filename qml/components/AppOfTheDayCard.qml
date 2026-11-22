@@ -88,6 +88,7 @@ Kirigami.Card {
                 Behavior on scale { NumberAnimation { duration: 160 } }
                 HoverHandler { id: hover }
                 RemoteImageView {
+                    imageKind: "screenshot"
                     objectName: tile.center ? "dailyScreenshot" : "dailyScreenshot" + tile.index
                     anchors.centerIn: parent
                     width: Math.min(parent.width, implicitWidth / Screen.devicePixelRatio)

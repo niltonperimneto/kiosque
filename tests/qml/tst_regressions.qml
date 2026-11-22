@@ -317,6 +317,24 @@ TestCase {
         tryCompare(popup, "visible", false)
     }
 
+    function test_screenshot_viewer_retains_source_resolution() {
+        let root = window()
+        root.pushAppDetail("org.kiosque.Screenshots")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        let popup = findChild(page, "largeScreenshotPopup")
+        popup.openWithIndex(0)
+        tryCompare(popup, "visible", true)
+        tryVerify(() => findItem(popup.contentItem, "largeScreenshotImage") !== null, 10000)
+        let image = findItem(popup.contentItem, "largeScreenshotImage")
+        tryCompare(image, "status", Image.Ready, 10000)
+        compare(image.implicitWidth, 1600)
+        compare(image.implicitHeight, 900)
+        image.parent.zoomScale = 2
+        compare(image.implicitWidth, 1600, "zoom must keep the full screenshot pixels")
+        popup.close()
+    }
+
     function test_review_mutations_refresh_the_actual_page() {
         let root = window()
         root.pushAppDetail("org.kiosque.Reviews")

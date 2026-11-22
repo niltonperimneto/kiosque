@@ -25,6 +25,7 @@ Item {
 
     RemoteImageView {
         id: img
+        imageKind: "screenshot"
         anchors.fill: parent
         visible: false
         fillMode: Image.PreserveAspectCrop

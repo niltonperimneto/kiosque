@@ -681,6 +681,7 @@ Kirigami.ScrollablePage {
 
                         Components.RemoteImageView {
                             id: screenshotImg
+                            imageKind: "screenshot"
                             anchors.fill: parent
                             anchors.margins: 1
                             remoteSource: modelData
@@ -1229,6 +1230,8 @@ Kirigami.ScrollablePage {
 
                             Components.RemoteImageView {
                                 id: zoomImage
+                                objectName: "largeScreenshotImage"
+                                imageKind: "screenshot"
                                 property real fitWidth: {
                                     if (implicitWidth <= 0 || implicitHeight <= 0) return imageFlickable.width;
                                     let imageRatio = implicitWidth / implicitHeight;
