@@ -21,9 +21,11 @@ Kiosque started when a GNOME user moved to KDE Plasma and missed the way Bazaar 
 
 Discover covers the wider Plasma software workflow. Depending on the distribution and enabled backends, it can manage native packages and system updates alongside Flatpaks, and it can find Plasma add-ons. Kiosque concentrates its storefront and library on Flatpak. That focus gives the home page room for a dedicated daily spotlight, games by release and popularity, and a collection for apps suited to phones and tablets. Keep Discover for system software and Plasma add-ons, and open Kiosque when you want to explore Flathub or tend to your Flatpak library. [KDE Discover](https://invent.kde.org/plasma/discover)
 
-### With thanks to Bazaar
+### Design inspiration and credit
 
-**Kiosque owes its starting point to Bazaar and its contributors.** Bazaar showed how a Flatpak storefront could give editorial picks room to breathe, put application artwork to work, and make managing an installed library feel like part of the same experience. Kiosque carries that influence into its screenshot-led spotlight cards and its installed library, where update actions sit alongside the apps they affect. It also reads Bazaar-style YAML for distributor curation entries and blocklists. Credit for that design and configuration precedent goes to the Bazaar project. [Bazaar upstream](https://gitlab.gnome.org/World/bazaar)
+**Bazaar was the direct inspiration for Kiosque.** Kiosque began as a way to bring Bazaar’s approach to discovering Flatpaks to KDE Plasma. Its influence is clearest on the first screen. An editorial selection gives you a place to start, artwork shows what an unfamiliar app actually looks like, and the installed library is one step away. Kiosque implements those ideas in Qt Quick and Kirigami. Credit for the storefront concept and its curation model belongs to the Bazaar project and its contributors. [Bazaar upstream](https://gitlab.gnome.org/World/bazaar)
+
+That influence also shaped what distributors can ship. Kiosque reads a subset of Bazaar’s YAML schema, including curated sections, featured carousels and app blocklists. A Plasma spin can use the same lists of app IDs to build its own front page. [Distributor configuration](rust/core/src/config.rs)
 
 ## Try Kiosque
 
@@ -44,6 +46,15 @@ Once it’s open, try **Games → New Releases**, then open a title and look at 
 - **Come back to a usable library.** Search and sort installed Flatpaks, filter to pending updates, and follow progress as operations run. For ongoing maintenance, Kiosque offers scheduled update checks through its background helper.
 
 ![Kiosque app details showing the install action, an app preview, and a description on a gradient canvas](docs/screenshots/app-details.webp)
+
+### Beyond the storefront
+
+| When you want to… | Where to go |
+| --- | --- |
+| Find an app without opening the store first | With the native KRunner integration installed, open Plasma’s runner and type at least three characters. Kiosque searches AppStream metadata already on disk for apps you can install. Selecting a match opens its detail page. |
+| Inspect a Flatpak link or file someone shared | Open an `appstream://` link in Kiosque to go straight to an app. Open a `.flatpakref` or `.flatpakrepo` file to review its source, key fingerprint and installation scope before confirming. |
+| Set up background updates | In **Settings → Updates**, choose a daily or weekly schedule and time. Enabling automatic updates requests desktop background permission. The host helper can then apply updates with the storefront closed. |
+| Manage repositories or reviews | **Settings → Repositories** lists remotes and lets you add a repository. **Review Account** handles sign-in for ratings and reviews. **Privacy** shows the pseudonymous review identity and explains what regenerating its salt means for access to earlier reviews. |
 
 ## Build from source
 
@@ -107,7 +118,7 @@ flowchart TB
         Clients["Rust HTTP clients<br/>Public HTTPS and bounded responses"]
         Cache["Moka metadata cache<br/>Disk cache and bounded image decoding"]
         Registry["Installed-state registry<br/>Installed apps, updates and job state"]
-        Queue["Transaction queue<br/>Serialized operations, progress and cancellation"]
+        Queue["Transaction queue · daemon or in-process<br/>Serialized operations, progress and cancellation"]
         Tokio --> Clients
         Tokio <-->|Metadata and image reuse| Cache
         Queue -->|Refresh installed state before completion| Registry
@@ -131,7 +142,7 @@ flowchart TB
 
     Models -->|Catalog or detail request| Tokio
     Tokio -.->|Queue current results on Qt GUI thread| Models
-    Models -->|Install, uninstall or update request| Queue
+    Models -->|Submit through transaction client| Queue
     Registry -.->|Shared state and job updates| Models
     Queue --> Backend
     Backend -.->|Progress and installation changes| Registry
@@ -147,17 +158,40 @@ Solid arrows show requests, reads, and operations. Dashed arrows show results an
 - **Bindings.** The current build uses CXX-Qt 0.10. Rust modules under `rust/src/bridge/` declare QObject types with `#[cxx_qt::bridge]` and expose Qt properties, signals, and invokable methods. `cxx-qt-build` generates the C++ side and registers those types in the `com.kiosque` QML module. Meson links the `libkiosque` static library and its generated initializer into the desktop binary and embeds the QML resources. [Rust manifest](rust/Cargo.toml) · [Bridge registration](rust/build.rs)
 - **Models and threads.** `AppListModel` implements `QAbstractListModel` in Rust, including `rowCount()`, `data()`, and `roleNames()`. QML delegates read the `name`, `summary`, `iconUrl`, and `appId` roles. Tokio does network and filesystem work in the background. The bridge queues accepted results onto Qt’s GUI thread through QObject thread handles, where the model emits updates.
 
+Kirigami’s page stack gives the storefront, search results and app details a common navigation history. Opening another app replaces the existing detail page, so following a series of recommendations does not leave a stack of detail views behind. The storefront cards share typography, hover timing and shadow defaults through a QML style singleton. The cards inherit the desktop font and use Qt’s vector text rendering to keep labels sharp as a card scales on hover. App-specific screenshots and branding provide the variation across the shelf. [Page navigation](qml/Main.qml) · [Storefront styling](qml/style/Style.qml)
+
 ### Application services, catalog, and caches
 
 `kiosque-core` owns the catalog, service clients, caches, settings, installed-state registry, transaction queue, and Flatpak backend interface. The core builds with Rust alone under its default features. The native application enables the libflatpak feature. The desktop adapter wires up production services and supports isolated fixture endpoints and a mock backend in dedicated test builds. [Architecture guide](docs/architecture.md) · [Testing guide](docs/testing.md)
 
 Flathub supplies collections, search, and AppStream metadata. The Open Desktop Ratings Service (ODRS) supplies ratings and reviews. The shared async HTTP client reuses connections, with up to four idle connections per host and a 15-second request timeout. Concurrent Moka caches keep collections for five minutes and app details, ratings, and reviews for ten. Featured content can appear from disk while a refresh runs. Review submissions invalidate that app’s cached ratings and reviews. The image loader coalesces duplicate downloads, keeps original bytes on disk, and limits decoded images in memory. [Flathub client](rust/core/src/flathub/client.rs) · [Cache policy](rust/core/src/cache.rs)
 
+#### How a detail page gets its contents
+
+Opening an app creates a page-scoped `AppDetails`. The loader first fetches the Flathub record for that ID. Once it knows the developer and categories, it can ask for other apps by that developer, similar apps and the permission summary concurrently. It converts the description to display text and selects a screenshot URL for each preview. Ratings and review text come from a separate pair of ODRS requests. A reviews outage can therefore leave a page without ratings, while a missing permission summary specifically disables its install action. [Detail loader](rust/src/bridge/detail_data.rs) · [Detail page](qml/pages/AppDetailPage.qml)
+
+Artwork has a different lifetime from metadata. Scrolling past a card and opening the same image at a larger size can reuse the downloaded bytes. The Rust image loader keys decoded frames by source and requested dimensions, resizes on blocking workers, and bounds the decoded cache to 96 MiB with a ten-minute lifetime. At the language boundary the Qt image provider wraps the pixels in a `QImage` with a cleanup callback. Qt can keep painting that image until the last reference releases the allocation. [Image loader](rust/core/src/image_cache.rs) · [Qt image provider](src/image_provider.h)
+
+#### What comes from the network and what is already on disk
+
+The storefront search field queries Flathub. Plasma’s KRunner integration looks for apps available from the machine’s configured remotes. Flatpak keeps an AppStream catalog per remote, architecture and installation. Kiosque indexes those files with their origin and scope. The runner searches that index, applies distributor blocklists, filters out installed apps and returns up to eight matches. This path works offline once Flatpak has downloaded the metadata. Choosing a match passes its app ID to the storefront as an AppStream link. [Local catalog](rust/core/src/catalog.rs) · [KRunner integration](rust/core/src/daemon/runner.rs)
+
 ### Installed state, transactions, and the update helper
 
-The storefront, detail pages, and library read a shared registry of installed apps, pending updates, and active jobs. The transaction queue serializes install, uninstall, and update operations, reports progress and cancellation, and reloads installed state before reporting completion. Native operations run libflatpak on blocking workers, use GLib’s cancellable for active work, and monitor installations for changes from other tools.
+Consider installing a title from its detail page and then switching to **Installed** while the download runs. The page can disappear without losing the operation because the job belongs to the transaction manager. The two views observe the same installed-state registry.
 
-The packaged storefront chooses the backend at build time. The native package calls libflatpak directly. The sandboxed Kiosque Flatpak sends typed requests to the matching `kiosque-update` companion on the host over D-Bus. The companion handles on-demand requests and background update work. Scheduled background operation requires the desktop portal’s permission. [Backend and companion architecture](docs/architecture.md#sandbox-and-trust-boundaries)
+1. **Choose the target.** For an already installed app, the resolver preserves its remote and user or system scope. For a new app it considers the requested remote and the local catalog, with Flathub as the default remote. The operation carries that target alongside the app ID.
+2. **Assign one job.** On first use, the GUI transaction client tries the host daemon over the session bus. If unavailable, it uses an in-process queue. The manager gives identical pending operations the same job ID and runs jobs serially. Requests for different remotes or scopes remain distinct.
+3. **Execute the operation.** Queue location and permission to change an installation are separate decisions. A native backend runs libflatpak on blocking workers. A sandbox build can only reach host Flatpak through the authenticated companion, even if the GUI has created a local queue. An unavailable companion produces a visible operation failure.
+4. **Publish progress and reconcile state.** Views observe job progress through the registry using the job ID. Cancellation reaches active native work through GLib’s cancellable. After execution the manager attempts to reload installed refs before publishing the terminal job state. Installation monitors also pick up changes made by other tools. This is how a card and an open detail page can both reflect an uninstall performed elsewhere.
+
+[Target selection and transaction manager](rust/core/src/transactions.rs) · [Installed-state registry](rust/core/src/registry.rs) · [Application service wiring](rust/src/services.rs)
+
+#### When the storefront is closed
+
+The native `kiosque-update` executable serves two uses. D-Bus activation starts it on demand to handle requests, and it exits after an idle interval. In background mode it stays available for scheduled updates. Its Rust services own scheduling and transactions, while the C++ desktop shell displays the tray menu and notifications. The tray offers **Check for Updates** and **Update All**. The command-line `--check` mode checks **and installs** pending updates in one run. [Updater entry point and options](src/update_main.cpp)
+
+Saving a time or frequency only changes the schedule. Enabling automatic updates also asks the desktop portal for background permission. The settings controller waits for the response and restores the previous preference on rejection, so the switch reflects whether Kiosque could apply the change. [Settings controller](rust/src/bridge/settings_controller.rs) · [Background integration](rust/core/src/settings.rs)
 
 ### Security boundaries
 
@@ -169,6 +203,8 @@ The hardening work changed both what the storefront accepts and what the sandbox
 | External repositories and app references | The confirmation screen displays the HTTPS origin, signing-key fingerprint, and target user installation. The operation consumes the descriptor bytes that were inspected and confirmed. |
 | App permissions and remote content | A known empty permission summary and an unavailable summary are distinct states. Installation from the detail page requires a known summary. The API transport enforces public HTTPS destinations and response limits, and the image loader caps decoded size. |
 | Sign-in and local settings | GitHub sign-in uses device authorization. GitLab sign-in uses PKCE. Bearer tokens stay in memory, and legacy settings records are migrated to remove stored tokens. Settings are written atomically with private permissions. |
+
+For example, opening a repository file starts a review before any transaction can add the remote. Kiosque retains the descriptor and shows the origin and key fingerprint derived from those bytes. Confirmation passes the retained bytes to the backend, so changing the file on disk cannot substitute a different repository after review. The native transaction restricts the operation to the confirmed origin and denies additional dependency repositories. For an external app reference it also disables automatic fetching of missing dependencies and related refs. [Sandbox and trust boundaries](docs/architecture.md#sandbox-and-trust-boundaries)
 
 CI also includes dependency audits, redacted source and history secret scanning, CodeQL, and provenance for trusted package builds. Host Flatpak handles repository transport and repository trust. [Security hardening record](docs/security-hardening.md) · [Security policy](SECURITY.md)
 
@@ -189,6 +225,8 @@ python3 scripts/test.py core
 python3 scripts/test.py services
 python3 scripts/test.py pr --backend native
 ```
+
+The split between the core and the adapter makes these checks useful at different points. The core suite can exercise transaction ordering and cancellation without loading Qt. Dedicated desktop test builds inject fixture endpoints, temporary settings and caches, and a mock Flatpak installation before creating QML objects. That lets a test exercise the same buttons, signals and model updates as the desktop app while controlling which requests succeed. [Service construction for tests](rust/src/services.rs)
 
 Real Flatpak lifecycle checks run only in disposable VMs. See the testing guide for desktop prerequisites, broker-only builds, artifact smoke tests and release qualification.
 
