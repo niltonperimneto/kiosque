@@ -25,7 +25,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--backend', choices=['native'], default='native')
     parser.add_argument('--artifact', type=Path)
-    parser.add_argument('--companion', type=Path, help='matching native RPM for the Flatpak package check')
+    parser.add_argument('--companion', type=Path, help='matching kiosque-companion RPM (Flatpak and RPM package checks)')
     args = parser.parse_args()
     for tool in ['qemu-system-x86_64', 'qemu-img', 'cloud-localds', 'ssh-keygen', 'ssh', 'scp']:
         if not shutil.which(tool):

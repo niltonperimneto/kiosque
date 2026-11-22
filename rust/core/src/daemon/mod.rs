@@ -16,17 +16,14 @@
 pub mod auth;
 pub mod client;
 pub mod runner;
+pub mod schedule;
 pub mod service;
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
-use jiff::{
-    ToSpan, Zoned,
-    civil::{Time, Weekday},
-    tz::AmbiguousOffset,
-};
+use jiff::Zoned;
 use serde::{Deserialize, Serialize};
 use zbus::Type;
 
@@ -37,10 +34,97 @@ pub const OBJECT_PATH: &str = "/org/kiosque/Kiosque/Daemon";
 pub const INTERFACE: &str = "org.kiosque.Kiosque.Daemon1";
 pub const RUNNER_PATH: &str = "/runner";
 
+/// Version of the `org.kiosque.Kiosque.Daemon1` interface, published as its
+/// `ApiVersion` property. Companions that predate the property are version 1.
+///
+/// * 2 — `ConfigureAutomaticUpdates`
+pub const API_VERSION: u32 = 2;
+/// The oldest companion this application works with.
+pub const REQUIRED_API_VERSION: u32 = 2;
+
+/// The application ID of the Kiosque Flatpak.
+pub const FLATPAK_APP_ID: &str = "org.kiosque.Kiosque";
+
+/// How to start the storefront from the host companion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoreLauncher {
+    /// A native `kiosque` next to this executable.
+    Native(std::path::PathBuf),
+    /// The Kiosque Flatpak (the companion is installed without a native GUI).
+    Flatpak,
+    /// Whatever `kiosque` is on `PATH`.
+    Path,
+}
+
+impl StoreLauncher {
+    /// Prefer a native storefront installed alongside, then the Flatpak.
+    pub fn choose(sibling: Option<std::path::PathBuf>, flatpak_installed: bool) -> Self {
+        match sibling {
+            Some(path) => StoreLauncher::Native(path),
+            None if flatpak_installed => StoreLauncher::Flatpak,
+            None => StoreLauncher::Path,
+        }
+    }
+
+    fn detect() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let sibling = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join("kiosque")))
+            .filter(|path| {
+                std::fs::metadata(path)
+                    .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            });
+        let desktop = format!("exports/share/applications/{FLATPAK_APP_ID}.desktop");
+        let flatpak_installed = crate::flatpak::installation_paths()
+            .iter()
+            .any(|(_, path)| path.join(&desktop).is_file());
+        Self::choose(sibling, flatpak_installed)
+    }
+
+    pub fn command(&self, args: &[String]) -> std::process::Command {
+        let mut command = match self {
+            StoreLauncher::Native(path) => std::process::Command::new(path),
+            StoreLauncher::Flatpak => {
+                let mut c = std::process::Command::new("flatpak");
+                c.args(["run", FLATPAK_APP_ID]);
+                c
+            }
+            StoreLauncher::Path => std::process::Command::new("kiosque"),
+        };
+        command
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        command
+    }
+}
+
+/// Start the storefront (native or Flatpak, whichever is installed),
+/// optionally with an `appstream://` link to open.
+pub fn open_store(args: &[String]) -> Result<(), String> {
+    let launcher = StoreLauncher::detect();
+    let mut child = launcher
+        .command(args)
+        .spawn()
+        .map_err(|e| format!("cannot start the store ({launcher:?}): {e}"))?;
+    // Reap the launcher in the background (flatpak run exits quickly).
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 /// How long an on-demand (D-Bus activated) daemon lingers without work.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// How often available updates are checked.
 const CHECK_INTERVAL: Duration = Duration::from_secs(4 * 60 * 60);
+/// Delay before a missed automatic update runs, so it does not compete with
+/// the rest of the session starting up.
+const STARTUP_DELAY: Duration = Duration::from_secs(5 * 60);
+/// Wait before retrying an automatic update that failed.
+const RETRY_DELAY: Duration = Duration::from_secs(60 * 60);
 
 /// D-Bus representation of a [`Job`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -162,31 +246,99 @@ pub async fn check_updates() -> crate::flatpak::Result<usize> {
 
 /// The next time automatic updates should run according to the settings.
 pub fn next_auto_update(settings: &crate::settings::AppSettings, now: &Zoned) -> Option<Zoned> {
-    if !settings.auto_update {
-        return None;
+    schedule::next_slot(settings, now)
+}
+
+/// Keep running while idle (automatic updates enabled) or exit when idle.
+pub fn set_background(background: bool) {
+    if BACKGROUND.swap(background, Ordering::SeqCst) != background {
+        klog!(
+            "daemon: background mode {}",
+            if background { "on" } else { "off" }
+        );
     }
-    let time =
-        Time::strptime("%H:%M", &settings.update_time).unwrap_or(Time::new(2, 0, 0, 0).ok()?);
-    let weekly = settings.update_frequency.eq_ignore_ascii_case("weekly");
-    (0..=7).find_map(|d| {
-        let day = now.date().checked_add(d.days()).ok()?;
-        if weekly && day.weekday() != Weekday::Monday {
-            return None;
+    touch();
+}
+
+/// Apply automatic-update settings received from a client: persist the
+/// schedule for this daemon and switch background mode accordingly, so the
+/// change takes effect without waiting for the next login.
+pub fn configure_automatic_updates(
+    enabled: bool,
+    frequency: &str,
+    time: &str,
+) -> Result<(), String> {
+    let frequency = match frequency.to_ascii_lowercase().as_str() {
+        "daily" => "Daily",
+        "weekly" => "Weekly",
+        _ => return Err("Unknown update frequency".into()),
+    };
+    if time.len() != 5 || jiff::civil::Time::strptime("%H:%M", time).is_err() {
+        return Err("Invalid update time".into());
+    }
+    let mut settings = crate::settings::load_settings();
+    if settings.auto_update != enabled
+        || settings.update_frequency != frequency
+        || settings.update_time != time
+    {
+        settings.auto_update = enabled;
+        settings.update_frequency = frequency.into();
+        settings.update_time = time.into();
+        crate::settings::save_settings(&settings)?;
+    }
+    record_schedule(&settings);
+    set_background(enabled);
+    Ok(())
+}
+
+/// Update the automatic-update state for the current settings.
+fn record_schedule(settings: &crate::settings::AppSettings) -> schedule::State {
+    let path = schedule::state_path();
+    let mut state = schedule::load(&path);
+    if state.observe(settings, jiff::Timestamp::now().as_second())
+        && let Err(e) = schedule::save(&path, &state)
+    {
+        kerr!("daemon: cannot save the automatic-update state: {}", e);
+    }
+    state
+}
+
+/// Check for updates and install them all, waiting for the result.
+async fn run_automatic_update() -> Result<(), String> {
+    check_updates().await.map_err(|e| e.to_string())?;
+    if crate::registry::registry().updates().is_empty() {
+        klog!("daemon: automatic update: nothing to update");
+        return Ok(());
+    }
+    klog!("daemon: running automatic update");
+    notify(DaemonEvent::AutoUpdate(app_update_count()));
+    let registry = crate::registry::registry();
+    let mut events = registry.subscribe();
+    let id = crate::transactions::local_manager().enqueue(
+        crate::flatpak::Operation::Update { ids: vec![] },
+        "Automatic update",
+    );
+    loop {
+        if let Some(job) = registry.job(id).filter(|job| !job.state.is_active()) {
+            return match job.state {
+                JobState::Done => Ok(()),
+                state => Err(format!("automatic update {}", state.as_str())),
+            };
         }
-        let ambiguous = now.time_zone().to_ambiguous_zoned(day.to_datetime(time));
-        // Preserve existing semantics: skip nonexistent times and choose the first fold.
-        if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
-            return None;
+        match events.recv().await {
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                return Err("registry closed".into());
+            }
+            _ => continue,
         }
-        let at = ambiguous.earlier().ok()?;
-        (&at > now).then_some(at)
-    })
+    }
 }
 
 async fn scheduler() {
-    let mut next_check = tokio::time::Instant::now();
-    let mut next_auto = next_auto_update(&crate::settings::load_settings(), &Zoned::now());
-    let mut catalog_refreshed = tokio::time::Instant::now() - Duration::from_secs(86400);
+    let started = tokio::time::Instant::now();
+    let mut next_check = started;
+    let mut retry_after: Option<tokio::time::Instant> = None;
+    let mut catalog_refreshed = started - Duration::from_secs(86400);
     loop {
         let now = tokio::time::Instant::now();
         if now >= next_check {
@@ -198,29 +350,38 @@ async fn scheduler() {
             catalog_refreshed = now;
         }
 
-        // Settings may change while we run; re-read every minute.
+        // Settings may change while we run; re-read every minute. A
+        // scheduled time that passed since the last run (also while the
+        // computer was off or asleep) is due.
         let settings = crate::settings::load_settings();
-        let computed = next_auto_update(&settings, &Zoned::now());
-        if computed.is_none() || next_auto.is_none() {
-            next_auto = computed;
+        let state = record_schedule(&settings);
+        if settings.auto_update {
+            set_background(true);
         }
-        if let Some(at) = &next_auto
-            && &Zoned::now() >= at
+        let due = schedule::is_due(&settings, &state, &Zoned::now());
+        if due
+            && now.duration_since(started) >= STARTUP_DELAY
+            && retry_after.is_none_or(|t| now >= t)
+            && !crate::transactions::local_manager().is_busy()
         {
-            if check_updates().await.is_ok() && !crate::registry::registry().updates().is_empty() {
-                klog!("daemon: running scheduled automatic update");
-                notify(DaemonEvent::AutoUpdate(app_update_count()));
-                crate::transactions::local_manager().enqueue(
-                    crate::flatpak::Operation::Update { ids: vec![] },
-                    "Automatic update",
-                );
+            match run_automatic_update().await {
+                Ok(()) => {
+                    retry_after = None;
+                    let path = schedule::state_path();
+                    let mut state = schedule::load(&path);
+                    state.last_run = Some(jiff::Timestamp::now().as_second());
+                    if let Err(e) = schedule::save(&path, &state) {
+                        kerr!("daemon: cannot save the automatic-update state: {}", e);
+                    }
+                    if let Some(next) = schedule::next_slot(&settings, &Zoned::now()) {
+                        klog!("daemon: next automatic update at {}", next);
+                    }
+                }
+                Err(e) => {
+                    kerr!("daemon: automatic update failed: {}; retrying later", e);
+                    retry_after = Some(tokio::time::Instant::now() + RETRY_DELAY);
+                }
             }
-            next_auto = next_auto_update(
-                &settings,
-                &Zoned::now()
-                    .checked_add(1.minutes())
-                    .expect("current time plus one minute"),
-            );
         }
 
         // Idle exit for on-demand instances.
@@ -302,6 +463,25 @@ pub async fn start(background: bool) -> Result<(), String> {
         crate::catalog::loaded().await;
     });
     Ok(())
+}
+
+/// True while the daemon stays alive when idle.
+pub fn is_background() -> bool {
+    BACKGROUND.load(Ordering::SeqCst)
+}
+
+/// Sandboxed autostart (`kiosque --update-companion`): hand this app's
+/// automatic-update settings to the host companion, which then keeps running
+/// and applies them. Returns a process exit code.
+pub async fn start_update_companion() -> i32 {
+    let settings = crate::settings::load_settings();
+    match client::configure_automatic_updates(&settings).await {
+        Ok(()) => 0,
+        Err(e) => {
+            kerr!("automatic updates: {}", e);
+            1
+        }
+    }
 }
 
 pub fn check_updates_now() {
@@ -412,6 +592,25 @@ mod tests {
             "2026-11-01T01:30:00-04:00[America/New_York]"
                 .parse::<Zoned>()
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn the_store_opens_natively_or_as_the_flatpak() {
+        let native = std::path::PathBuf::from("/usr/bin/kiosque");
+        assert_eq!(
+            StoreLauncher::choose(Some(native.clone()), true),
+            StoreLauncher::Native(native),
+            "a native storefront installed alongside wins"
+        );
+        assert_eq!(StoreLauncher::choose(None, true), StoreLauncher::Flatpak);
+        assert_eq!(StoreLauncher::choose(None, false), StoreLauncher::Path);
+        let command = StoreLauncher::Flatpak.command(&["appstream://org.example.App".into()]);
+        assert_eq!(command.get_program(), "flatpak");
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(
+            args,
+            ["run", "org.kiosque.Kiosque", "appstream://org.example.App"]
         );
     }
 

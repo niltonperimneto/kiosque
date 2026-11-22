@@ -6,6 +6,7 @@ use kiosque::bridge::app_shell;
 
 const USAGE: &str = "Usage: kiosque [--app ID | appstream://ID | FILE.flatpakref | FILE.flatpakrepo] [--check-ui] [--version] [--help]\n\n  \
     --check-ui  Load the packaged UI, print KIOSQUE_UI_READY and exit\n  \
+    --update-companion  Hand the automatic-update schedule to the host companion and exit\n  \
     --version   Print the version and exit\n  \
     --help      Show this help and exit\n";
 
@@ -26,6 +27,13 @@ fn main() {
                 return;
             }
             "--check-ui" => check_ui = true,
+            // Login autostart inside Flatpak: no window, no Qt.
+            "--update-companion" => {
+                std::process::exit(
+                    kiosque_core::runtime::runtime()
+                        .block_on(kiosque_core::daemon::start_update_companion()),
+                );
+            }
             _ => {}
         }
     }

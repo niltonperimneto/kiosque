@@ -113,18 +113,10 @@ async fn run(background: bool) -> i32 {
     }
 }
 
-/// Start the store next to this binary (same prefix or sandbox), falling
-/// back to `PATH`.
+/// Start the storefront: a native `kiosque` next to this binary, else the
+/// Kiosque Flatpak, else `kiosque` on `PATH`.
 fn open_store() {
-    let sibling = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("kiosque")))
-        .filter(|p| p.is_file());
-    let program = sibling.unwrap_or_else(|| "kiosque".into());
-    if let Err(e) = std::process::Command::new(&program)
-        .stdin(std::process::Stdio::null())
-        .spawn()
-    {
-        kerr!("cannot start {}: {}", program.display(), e);
+    if let Err(e) = daemon::open_store(&[]) {
+        kerr!("kiosque-update: {}", e);
     }
 }

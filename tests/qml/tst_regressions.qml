@@ -269,6 +269,63 @@ TestCase {
         page = root.pageStack.currentItem
         verify(findChild(page, "searchPromptMessage").visible)
     }
+    function test_catalog_apps_come_from_their_repository() {
+        let root = window()
+        // The local catalog answers first; Flathub results only supplement it.
+        root.openSearch("Atlas")
+        let page = root.pageStack.currentItem
+        tryCompare(page.resultsModel, "loading", false, 10000)
+        tryVerify(() => rows(page.resultsModel) === 2, 10000)
+        compare(page.resultsModel.data(page.resultsModel.index(0, 0), 259), "org.example.Atlas")
+
+        // Details, permissions and related apps come from the origin repository.
+        root.pushAppDetail("org.example.Atlas")
+        page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        compare(page.details.errorMessage, "")
+        compare(page.details.name, "Atlas")
+        compare(page.details.description, "Browse offline maps.")
+        compare(page.details.origin.name, "fixture-repo")
+        let chip = findChild(page, "originChip")
+        verify(chip.visible)
+        compare(chip.text, "From Fixture Repository (user)")
+        verify(page.details.permissionsKnown)
+        compare(page.permissionLevel, "sandboxed")
+        compare(page.details.latestRelease.version, "3.1")
+        verify(findChild(page, "releaseNotesText").text.indexOf("Sharper coastlines.") !== -1)
+        compare(page.details.developerApps.map(a => a.appId).join(","), "org.example.Globe")
+        // An app listed under "More by" is not repeated under "Similar".
+        compare(page.details.similarApps.length, 0)
+
+        // Installing uses the repository the page showed.
+        let install = findChild(page, "installRemoveButton")
+        tryVerify(() => install.enabled, 5000, JSON.stringify({ loading: page.details.loading, busy: page.details.busy,
+            installed: page.details.installed, known: page.details.permissionsKnown, error: page.details.errorMessage,
+            visible: install.visible, text: install.text }))
+        install.clicked()
+        tryCompare(page.details, "installed", true, 10000)
+        compare(BackendFixture.lastInstallRemote(), "fixture-repo")
+        page.details.uninstall()
+        tryCompare(page.details, "installed", false, 10000)
+
+        // Without repository metadata, permissions stay unknown and Install
+        // is not offered, even though the app itself is known.
+        root.pushAppDetail("org.example.Globe")
+        page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        compare(page.details.name, "Globe")
+        compare(page.permissionLevel, "unknown")
+        verify(!findChild(page, "installRemoveButton").enabled)
+        let banner = findChild(page, "permissionsUnavailableMessage")
+        verify(banner.visible)
+        verify(banner.text.indexOf("Fixture Repository") !== -1, banner.text)
+
+        // Apps known only from the Flathub web API show no origin.
+        root.pushAppDetail("org.kiosque.Fixture")
+        page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        verify(!findChild(page, "originChip").visible)
+    }
     function test_navigation_surfaces_follow_window_width() {
         let root = window()
         let tabs = findChild(root, "navigationTabBar")

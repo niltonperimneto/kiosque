@@ -114,6 +114,14 @@ mod backend_fixture {
         fn operation_count(&self) -> i64 {
             crate::services::kiosque_test_operation_count() as i64
         }
+        /// The remote of the most recent mock install ("" if none).
+        #[qslot(qml_name = "lastInstallRemote")]
+        fn last_install_remote(&self) -> String {
+            let remote = crate::services::kiosque_test_last_install_remote();
+            unsafe { std::ffi::CStr::from_ptr(remote) }
+                .to_string_lossy()
+                .into_owned()
+        }
     }
 }
 qml_element!(

@@ -4,7 +4,6 @@
 use std::time::Duration;
 
 use kiosque_core::entries::AppEntry;
-use kiosque_core::flathub::client::FlathubClient;
 use kiosque_core::flathub::types::FlathubApp;
 
 /// Delay before a search request is sent; newer keystrokes restart it.
@@ -91,10 +90,22 @@ pub fn entry(app: FlathubApp) -> AppEntry {
     }
 }
 
-/// Fetch the entries for `source`. An empty search yields no results
-/// without a request.
-pub async fn fetch(client: &FlathubClient, source: &AppSource) -> Result<Vec<AppEntry>, String> {
+/// Fetch the entries for `source`. Search and categories come from the local
+/// AppStream catalog of every repository, supplemented by Flathub (see
+/// [`kiosque_core::apps`]); the other collections are Flathub's. Blocked apps
+/// are dropped everywhere. An empty search yields no results without a
+/// request.
+pub async fn fetch(
+    sources: kiosque_core::apps::Sources<'_>,
+    source: &AppSource,
+) -> Result<Vec<AppEntry>, String> {
+    let client = sources.flathub;
     let apps = match source {
+        AppSource::Search(q) if q.is_empty() => return Ok(vec![]),
+        AppSource::Search(q) => return entries(kiosque_core::apps::search(sources, q).await),
+        AppSource::Category(category) => {
+            return entries(kiosque_core::apps::category(sources, category).await);
+        }
         AppSource::Popular => client.fetch_popular().await,
         AppSource::Mobile => client.fetch_mobile().await,
         AppSource::CategorySorted(category, sort) if sort == "newest" => {
@@ -108,184 +119,34 @@ pub async fn fetch(client: &FlathubClient, source: &AppSource) -> Result<Vec<App
             client.fetch_category_sorted(category, sort).await
         }
         AppSource::New => client.fetch_recently_added().await,
-        AppSource::Updated => client.fetch_recently_updated().await,
-        AppSource::Search(q) if q.is_empty() => return Ok(vec![]),
-        AppSource::Search(q) => client.search(q).await,
-        AppSource::Category(category) => {
-            let api_category = category
-                .split_once('-')
-                .map_or(category.as_str(), |(p, _)| p);
-            client.fetch_category(api_category).await.map(|apps| {
-                apps.into_iter()
-                    .filter(|app| match category.split_once('-') {
-                        Some((prefix, sub_id)) => matches_subcategory(app, prefix, sub_id),
-                        None => true,
-                    })
-                    .collect()
-            })
-        }
+        // Offline, the catalog's newest releases stand in for Flathub's list.
+        AppSource::Updated => match client.fetch_recently_updated().await {
+            Err(e) if !sources.catalog.is_empty() => {
+                kiosque_core::kerr!("recently updated: {}; using the catalog", e);
+                Ok(sources
+                    .catalog
+                    .recently_updated(30)
+                    .iter()
+                    .map(|app| app.to_flathub_app())
+                    .collect())
+            }
+            result => result,
+        },
     }
     .map_err(|e| e.to_string())?;
-    Ok(apps.into_iter().map(entry).collect())
+    Ok(apps
+        .into_iter()
+        .filter(|app| !sources.blocklist.is_blocked(&app.app_id))
+        .map(entry)
+        .collect())
 }
 
-/// Decide whether `app` belongs in the `<prefix>-<sub_id>` subcategory, e.g.
-/// `Game-Emulator` or `Graphics-Vector`. Flathub only tags apps with broad
-/// top-level categories, so the finer subcategory split is derived here from the
-/// app's `sub_categories` plus a few name/summary keyword heuristics for games.
-/// Unknown prefixes/sub-ids fall through to `true` (keep the app).
-pub fn matches_subcategory(app: &FlathubApp, prefix: &str, sub_id: &str) -> bool {
-    match prefix {
-        "Game" => {
-            let name_lower = app.name.to_lowercase();
-            let summary_lower = app
-                .summary
-                .as_ref()
-                .map(|s| s.to_lowercase())
-                .unwrap_or_default();
-            let is_emulator = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("emulator"));
-
-            let is_launcher = (app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("packagemanager"))
-                || name_lower.contains("launcher")
-                || name_lower.contains("client")
-                || summary_lower.contains("launcher"))
-                && !is_emulator;
-
-            let tool_keywords = [
-                "tool", "compat", "patcher", "config", "manager", "overlay", "hud", "backup",
-                "setup",
-            ];
-            let is_tool = (app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("utility"))
-                || tool_keywords.iter().any(|kw| name_lower.contains(kw))
-                || tool_keywords.iter().any(|kw| summary_lower.contains(kw)))
-                && !is_emulator
-                && !is_launcher;
-
-            match sub_id {
-                "Emulator" => is_emulator,
-                "Launcher" => is_launcher,
-                "Tool" => is_tool,
-                "Game" => !is_emulator && !is_launcher && !is_tool,
-                _ => true,
-            }
-        }
-        "AudioVideo" => {
-            let is_player = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("player"));
-            let is_recorder = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("recorder"));
-            let is_editing = app.sub_categories.iter().any(|s| {
-                s.eq_ignore_ascii_case("audiovideoediting")
-                    || s.eq_ignore_ascii_case("midi")
-                    || s.eq_ignore_ascii_case("sequencer")
-                    || s.eq_ignore_ascii_case("mixer")
-            });
-
-            match sub_id {
-                "Player" => is_player,
-                "Recorder" => is_recorder,
-                "Editing" => is_editing,
-                "All" => !is_player && !is_recorder && !is_editing,
-                _ => true,
-            }
-        }
-        "Development" => {
-            let is_ide = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("ide") || s.eq_ignore_ascii_case("guidedesigner"));
-            let is_debugger = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("debugger") || s.eq_ignore_ascii_case("profiler"));
-            let is_web = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("webdevelopment"));
-
-            match sub_id {
-                "IDE" => is_ide,
-                "Debugger" => is_debugger,
-                "Web" => is_web,
-                "All" => !is_ide && !is_debugger && !is_web,
-                _ => true,
-            }
-        }
-        "Graphics" => {
-            let is_3d = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("3dgraphics"));
-            let is_vector = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("vectorgraphics"));
-            let is_raster = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("rastergraphics"));
-            let is_photography = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("photography"));
-            let is_viewer = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("viewer"));
-
-            match sub_id {
-                "3D" => is_3d,
-                "Vector" => is_vector,
-                "Raster" => is_raster,
-                "Photography" => is_photography,
-                "Viewer" => is_viewer,
-                "All" => !is_3d && !is_vector && !is_raster && !is_photography && !is_viewer,
-                _ => true,
-            }
-        }
-        "Office" => {
-            let is_word = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("wordprocessor"));
-            let is_spreadsheet = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("spreadsheet"));
-            let is_presentation = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("presentation"));
-            let is_finance = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("finance"));
-
-            match sub_id {
-                "WordProcessor" => is_word,
-                "Spreadsheet" => is_spreadsheet,
-                "Presentation" => is_presentation,
-                "Finance" => is_finance,
-                "All" => !is_word && !is_spreadsheet && !is_presentation && !is_finance,
-                _ => true,
-            }
-        }
-        _ => true,
-    }
+fn entries(result: Result<Vec<FlathubApp>, String>) -> Result<Vec<AppEntry>, String> {
+    result.map(|apps| apps.into_iter().map(entry).collect())
 }
+
+/// The `<Prefix>-<SubId>` subcategory filter shared with the catalog policy.
+pub use kiosque_core::apps::matches_subcategory;
 
 #[cfg(test)]
 mod tests {

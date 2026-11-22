@@ -19,6 +19,8 @@ Run suites from the repository root with `python3 scripts/test.py <suite>`. Comm
 
 Use `--backend native` (default) or `--backend broker` for desktop suites. Each desktop configuration has its own Meson build directory. Meson tests can also be selected with `meson test -C build/tests-native --suite qt --print-errorlogs` after starting the fixture server through the shared runner.
 
+The QML suite imports `org.kde.ki18n` at runtime. Use KI18n 6.21 or newer and install its QML module if your distribution packages it separately. The runtime also needs Qt’s SVG image plugin to load the packaged logo.
+
 The desktop CI base is pinned by OCI digest. `tests/Containerfile` provides the corresponding developer environment. Install desktop dependencies in a disposable Fedora environment:
 
 ```sh
@@ -43,7 +45,8 @@ System tests are ignored by ordinary Cargo runs and selected explicitly by the V
 
 ```sh
 python3 scripts/test.py system --backend native
-python3 tests/system/vm.py --artifact /absolute/path/kiosque.flatpak --companion /absolute/path/kiosque.rpm
+python3 tests/system/vm.py --artifact /absolute/path/kiosque.flatpak --companion /absolute/path/kiosque-companion.rpm
+python3 tests/system/vm.py --artifact /absolute/path/kiosque.rpm --companion /absolute/path/kiosque-companion.rpm
 ```
 
 Lifecycle guest provisioning uses the pinned Fedora release repositories with weak dependencies disabled; it may download packages. Artifact guests use the updates repository too, matching the libraries used by packaging jobs. Fixture export itself can also be validated in a temporary container without installing applications. The actual lifecycle test uses only a local, signed repository containing a tiny synthetic runtime/application and two app revisions. User and system installations are explicitly redirected below the fixture root and checked before operations. No test runs a real install/uninstall against developer host installations. Package qualification may download the declared KDE runtime inside the guest. All artifact launches run in a private network namespace after dependency setup, so production API requests cannot reach live services.
@@ -60,7 +63,7 @@ The `kiosque --check-ui` diagnostic loads the actual packaged QML and checks its
 
 Preserve the first failure, source revision, backend selection and environment versions. Inspect `.test-results/` and the Meson logs; a compile failure, unavailable socket and behavior assertion are different failures. Do not retry away a failure. Reproduce its smallest suite, add a behavioral regression, then rerun affected boundaries.
 
-No coverage percentage or screenshot-equality gate is imposed. Sanitizers, performance baselines, broader distribution/desktop matrices, and dedicated accessibility audits are follow-up qualification. The Flatpak package smoke test probes installed state before and after installing the matching attested companion RPM. Daemon disconnect/reconnect during an active transaction needs separate qualification.
+No coverage percentage or screenshot-equality gate is imposed. Sanitizers, performance baselines, broader distribution/desktop matrices, and dedicated accessibility audits are follow-up qualification. The Flatpak package smoke test probes installed state before and after installing the matching attested `kiosque-companion` RPM. The storefront RPM is qualified together with its companion, and must be the only package that installs a launcher. Daemon disconnect/reconnect during an active transaction needs separate qualification.
 
 ## Security qualification
 

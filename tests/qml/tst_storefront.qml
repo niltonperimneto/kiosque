@@ -77,7 +77,12 @@ TestCase {
         tryCompare(third, "status", Image.Ready)
         let previousX = second.parent.x
         mouseMove(light, 100, 80)
-        tryVerify(function() { return Math.abs(light.lightX - 100) < 2 })
+        // Hovering lifts the whole card like the other feature surfaces...
+        tryCompare(card, "hovered", true)
+        tryVerify(function() { return card.scale > 1.0 })
+        // ...the spotlight follows the pointer (allowing for that lift)...
+        tryVerify(function() { return Math.abs(light.lightX - 100) < light.width * 0.03 })
+        // ...and the collage drifts with it.
         tryVerify(function() { return Math.abs(second.parent.x - previousX) > 1 })
         if (TestSupport.artifactDir !== "")
             grabImage(card).save(TestSupport.artifactDir + "/daily-spotlight.png")
