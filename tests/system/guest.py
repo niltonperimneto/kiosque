@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--backend', choices=['native'], required=True)
     parser.add_argument('--artifact', type=Path)
-    parser.add_argument('--companion', type=Path, help='matching native RPM for the Flatpak package check')
+    parser.add_argument('--companion', type=Path, help='matching kiosque-companion RPM (Flatpak and RPM package checks)')
     args = parser.parse_args()
     if subprocess.check_output(['systemd-detect-virt', '--vm'], text=True).strip() not in ('qemu', 'kvm'):
         raise RuntimeError('system contracts require a disposable QEMU VM')

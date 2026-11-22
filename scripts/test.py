@@ -213,7 +213,7 @@ def main():
     parser.add_argument('suite', choices=['guidance', 'security', 'lint', 'core', 'services', 'qt', 'qml', 'pr', 'system', 'packages'])
     parser.add_argument('--backend', choices=['native', 'broker'], default='native')
     parser.add_argument('--artifact', type=Path)
-    parser.add_argument('--companion', type=Path, help='matching native RPM for the Flatpak package check')
+    parser.add_argument('--companion', type=Path, help='matching kiosque-companion RPM (Flatpak and RPM package checks)')
     args = parser.parse_args()
     RESULTS = RESULTS / f'{args.suite}-{args.backend}' / f'{time.time_ns()}-{os.getpid()}'
     os.environ.setdefault('CARGO_BUILD_JOBS', '2')

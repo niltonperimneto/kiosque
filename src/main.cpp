@@ -24,6 +24,9 @@ void qml_register_types_com_kiosque();
 // remote and scope).
 extern "C" void kiosque_gui_init();
 extern "C" int kiosque_check_backend();
+// Exported by kiosque-core: hand the automatic-update schedule to the host
+// companion (the Flatpak build's login autostart). Returns an exit code.
+extern "C" int kiosque_start_update_companion();
 
 namespace {
 
@@ -88,6 +91,13 @@ void parseLaunchArgument(const QString &arg, LaunchTarget &target)
 
 int main(int argc, char *argv[])
 {
+    // Login autostart inside Flatpak: no window, no Qt GUI.
+    for (int i = 1; i < argc; ++i) {
+        if (qstrcmp(argv[i], "--update-companion") == 0) {
+            return kiosque_start_update_companion();
+        }
+    }
+
     QGuiApplication app(argc, argv);
     QCommandLineParser parser;
     parser.addHelpOption();

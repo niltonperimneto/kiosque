@@ -52,12 +52,19 @@ def main(artifact, companion):
             app = ['flatpak', 'run', '--user', 'org.kiosque.Kiosque', '--check-ui']
             helper = ['flatpak', 'run', '--user', '--command=kiosque-update', 'org.kiosque.Kiosque', '--help']
         elif artifact.suffix == '.rpm':
-            with subprocess.Popen(['rpm2cpio', artifact], stdout=subprocess.PIPE) as archive:
-                extraction = subprocess.run(['cpio', '-id', '--no-absolute-filenames'], stdin=archive.stdout,
-                                            cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                archive.stdout.close()
-                if extraction.returncode or archive.wait():
-                    raise RuntimeError('RPM extraction failed')
+            # The storefront package requires kiosque-companion (updater,
+            # translations); qualify the pair as it is installed.
+            if companion is None or not companion.is_file():
+                raise RuntimeError('RPM qualification requires the matching kiosque-companion RPM via --companion')
+            for package in (artifact, companion):
+                with subprocess.Popen(['rpm2cpio', package], stdout=subprocess.PIPE) as archive:
+                    extraction = subprocess.run(['cpio', '-id', '--no-absolute-filenames'], stdin=archive.stdout,
+                                                cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    archive.stdout.close()
+                    if extraction.returncode or archive.wait():
+                        raise RuntimeError(f'RPM extraction failed: {package.name}')
+            if list(root.rglob('applications/*.desktop')) != [root / 'usr/share/applications/org.kiosque.Kiosque.desktop']:
+                raise RuntimeError('exactly one launcher, from the storefront package, is expected')
             app = [root / 'usr/bin/kiosque', '--check-ui']
             helper = [root / 'usr/bin/kiosque-update', '--help']
         elif artifact.suffix.lower() == '.appimage':
@@ -73,7 +80,7 @@ def main(artifact, companion):
         launch = ['unshare', '--net', '--', *as_user, 'xvfb-run', '-a', 'dbus-run-session', '--']
         if artifact.suffix == '.flatpak':
             if companion is None or not companion.is_file():
-                raise RuntimeError('Flatpak qualification requires the matching native RPM via --companion')
+                raise RuntimeError('Flatpak qualification requires the matching kiosque-companion RPM via --companion')
             probe = [*launch, *app[:-1], '--check-backend']
             output = run(probe, env=env, expected=1)
             if 'KIOSQUE_BACKEND_ERROR host-companion:' not in output:

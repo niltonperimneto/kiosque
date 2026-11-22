@@ -41,7 +41,8 @@ System tests are ignored by ordinary Cargo runs and selected explicitly by the V
 
 ```sh
 python3 scripts/test.py system --backend native
-python3 tests/system/vm.py --artifact /absolute/path/kiosque.flatpak --companion /absolute/path/kiosque.rpm
+python3 tests/system/vm.py --artifact /absolute/path/kiosque.flatpak --companion /absolute/path/kiosque-companion.rpm
+python3 tests/system/vm.py --artifact /absolute/path/kiosque.rpm --companion /absolute/path/kiosque-companion.rpm
 ```
 
 Lifecycle guest provisioning uses the pinned Fedora release repositories with weak dependencies disabled; it may download packages. Artifact guests use the updates repository too, matching the libraries used by packaging jobs. Fixture export itself can also be validated in a temporary container without installing applications. The actual lifecycle test uses only a local, signed repository containing a tiny synthetic runtime/application and two app revisions. User and system installations are explicitly redirected below the fixture root and checked before operations. No test runs a real install/uninstall against developer host installations. Package qualification may download the declared KDE runtime inside the guest. All artifact launches run in a private network namespace after dependency setup, so production API requests cannot reach live services.
@@ -58,7 +59,7 @@ The `kiosque --check-ui` diagnostic loads the actual packaged QML and checks its
 
 Preserve the first failure, source revision, backend selection and environment versions. Inspect `.test-results/` and the Meson logs; a compile failure, unavailable socket and behavior assertion are different failures. Do not retry away a failure. Reproduce its smallest suite, add a behavioral regression, then rerun affected boundaries.
 
-No coverage percentage or screenshot-equality gate is imposed. Sanitizers, performance baselines, broader distribution/desktop matrices, and dedicated accessibility audits are follow-up qualification. The Flatpak package smoke test probes installed state before and after installing the matching attested companion RPM. Daemon disconnect/reconnect during an active transaction needs separate qualification.
+No coverage percentage or screenshot-equality gate is imposed. Sanitizers, performance baselines, broader distribution/desktop matrices, and dedicated accessibility audits are follow-up qualification. The Flatpak package smoke test probes installed state before and after installing the matching attested `kiosque-companion` RPM. The storefront RPM is qualified together with its companion, and must be the only package that installs a launcher. Daemon disconnect/reconnect during an active transaction needs separate qualification.
 
 ## Security qualification
 
