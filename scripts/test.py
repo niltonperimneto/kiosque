@@ -86,6 +86,7 @@ def guidance():
                 if not target.exists():
                     raise RuntimeError(f'broken link in {document}: {link}')
     no_cpp()
+    run([sys.executable, ROOT / "scripts/update_pot.py", "--check"])
     run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests/runner', '-v'])
     print(f'Validated {len(documents)} guidance documents and six project skills.')
 
@@ -105,6 +106,37 @@ def no_cpp():
         raise RuntimeError('C/C++ sources are not allowed: ' + ', '.join(sorted(listed)))
 
 
+def security():
+    require('python3', 'tar', 'git')
+    tools = RESULTS / 'security-tools'
+    tools.mkdir(parents=True, exist_ok=True)
+    archive = tools / 'cargo-audit.tgz'
+    run(['python3', 'scripts/download_build_tool.py', 'cargo-audit', archive])
+    run(['tar', '-xzf', archive, '-C', tools, '--strip-components=1'])
+    run(['python3', 'scripts/dependency_sbom.py', ROOT / 'rust/Cargo.lock', RESULTS / 'rust-dependencies.spdx.json'])
+    run([tools / 'cargo-audit', 'audit', '--file', ROOT / 'rust/Cargo.lock', '--json', '--deny', 'warnings'], timeout=600)
+    secrets = tools / 'gitleaks.tgz'
+    run(['python3', 'scripts/download_build_tool.py', 'gitleaks', secrets])
+    run(['tar', '-xzf', secrets, '-C', tools])
+    # Scan only repository sources, including uncommitted work; never tool homes,
+    # ignored build outputs or symlinks into private locations.
+    paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=ROOT).split(b'\0')
+    with tempfile.TemporaryDirectory(prefix='kiosque-secret-scan-') as directory:
+        snapshot = Path(directory)
+        for raw in paths:
+            if not raw:
+                continue
+            relative = Path(os.fsdecode(raw))
+            source = ROOT / relative
+            excluded = {'.git', '.agents', '.codex', '.aws', '.cache', '.test-results'}
+            if not excluded.intersection(relative.parts) and source.is_file() and not source.is_symlink() and source.resolve().is_relative_to(ROOT):
+                destination = snapshot / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+        run([tools / 'gitleaks', 'dir', snapshot, '--redact=100', '--no-banner', '--report-format', 'json', '--report-path', RESULTS / 'secrets-worktree.json'])
+    run([tools / 'gitleaks', 'git', ROOT, '--log-opts=--all', '--redact=100', '--no-banner', '--report-format', 'json', '--report-path', RESULTS / 'secrets-history.json'])
+
+
 def core():
     cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--lib')
     cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--doc')
@@ -112,7 +144,7 @@ def core():
 
 
 def services():
-    cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--test', 'services', '--test', 'processes')
+    cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--test', 'services')
 
 
 def lint():
@@ -150,10 +182,10 @@ def desktop(suite, backend):
     require('meson', 'ninja', 'dbus-run-session', 'xvfb-run')
     require_qmake()
     if suite == 'qt':
-        features = ['--no-default-features'] if backend == 'cli' else []
+        features = ['--no-default-features'] if backend == 'broker' else []
         cargo('clippy', '--locked', '-p', 'kiosque', *features, '--features', 'test-util', '--all-targets', '--', '-D', 'warnings')
         cargo('test', '--locked', '-p', 'kiosque', *features, '--lib')
-    directory = ROOT / 'build' / f'tests-{backend}'
+    directory = Path(os.environ.get('KIOSQUE_TEST_BUILD_DIR', ROOT / 'build' / f'tests-{backend}'))
     setup = ['meson', 'setup', directory]
     if (directory / 'meson-private/coredata.dat').exists():
         setup.append('--reconfigure')
@@ -207,9 +239,10 @@ def environment_record(suite, backend):
 def main():
     global RESULTS
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('suite', choices=['guidance', 'lint', 'core', 'services', 'qt', 'qml', 'pr', 'system', 'packages'])
-    parser.add_argument('--backend', choices=['native', 'cli'], default='native')
+    parser.add_argument('suite', choices=['guidance', 'security', 'lint', 'core', 'services', 'qt', 'qml', 'pr', 'system', 'packages'])
+    parser.add_argument('--backend', choices=['native', 'broker'], default='native')
     parser.add_argument('--artifact', type=Path)
+    parser.add_argument('--companion', type=Path)
     args = parser.parse_args()
     RESULTS = RESULTS / f'{args.suite}-{args.backend}' / f'{time.time_ns()}-{os.getpid()}'
     os.environ.setdefault('CARGO_BUILD_JOBS', '2')
@@ -227,7 +260,10 @@ def main():
         elif args.suite == 'packages':
             if not args.artifact or not args.artifact.is_file():
                 raise RuntimeError('packages requires --artifact pointing to a built artifact')
-            run([sys.executable, ROOT / 'tests/system/package_smoke.py', args.artifact.resolve()], timeout=900)
+            command = [sys.executable, ROOT / 'tests/system/package_smoke.py', args.artifact.resolve()]
+            if args.companion:
+                command.append(args.companion.resolve())
+            run(command, timeout=900)
         else:
             globals()[args.suite]()
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:

@@ -1,17 +1,6 @@
-//! Flatpak backend abstraction.
-//!
-//! Every Flatpak operation in Kiosque goes through the [`FlatpakBackend`] trait.
-//! Two implementations exist:
-//!
-//! * [`native::LibflatpakBackend`] (feature `libflatpak`, the default) uses
-//!   libflatpak directly: real `FlatpakTransaction` progress, `GCancellable`
-//!   based cancellation and `FlatpakInstallation` file monitors.
-//! * [`cli::CliBackend`] shells out to the `flatpak` binary. It is used when
-//!   libflatpak is unavailable (feature disabled or initialisation failed).
-//!
-//! A [`mock::MockBackend`] is available to unit tests.
+//! Host operations use libflatpak. Sandboxed applications access the host companion.
 
-pub mod cli;
+pub mod broker;
 #[cfg(any(test, feature = "test-util"))]
 pub mod mock;
 #[cfg(feature = "libflatpak")]
@@ -49,14 +38,6 @@ impl Scope {
             "user" => Some(Scope::User),
             "system" | "default" => Some(Scope::System),
             _ => None,
-        }
-    }
-
-    /// The `flatpak` CLI flag selecting this installation.
-    pub fn cli_flag(self) -> &'static str {
-        match self {
-            Scope::User => "--user",
-            Scope::System => "--system",
         }
     }
 }
@@ -120,6 +101,9 @@ pub struct RemoteInfo {
 /// Where a new remote comes from.
 #[derive(Debug, Clone)]
 pub enum RemoteSource {
+    /// Only dedicated test binaries can access signed local fixture repositories.
+    #[cfg(feature = "test-util")]
+    LocalFixture { data: Vec<u8>, root: PathBuf },
     /// Either a plain repo URL or a URL to a `.flatpakrepo` file.
     Url(String),
     /// The contents of a `.flatpakrepo` file.
@@ -189,7 +173,7 @@ pub type Result<T> = std::result::Result<T, FlatpakError>;
 #[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait FlatpakBackend: Send + Sync {
-    /// Short identifier used in logs ("libflatpak", "cli", "mock").
+    /// Short identifier used in logs ("libflatpak", "host-companion", "mock").
     fn name(&self) -> &'static str;
 
     async fn list_installed(&self) -> Result<Vec<InstalledApp>>;
@@ -230,32 +214,29 @@ pub trait FlatpakBackend: Send + Sync {
 
 static BACKEND: OnceLock<Arc<dyn FlatpakBackend>> = OnceLock::new();
 
-/// The process-wide backend: libflatpak when available, CLI otherwise.
+/// The process-wide backend: libflatpak on the host, the companion inside Flatpak.
 pub fn backend() -> Arc<dyn FlatpakBackend> {
     BACKEND
         .get_or_init(|| {
-            let b = select_backend();
+            let b = select_backend(in_sandbox());
             klog!("flatpak backend: {}", b.name());
             b
         })
         .clone()
 }
 
-fn select_backend() -> Arc<dyn FlatpakBackend> {
-    if std::env::var_os("KIOSQUE_FLATPAK_BACKEND").is_some_and(|v| v == "cli") {
-        return Arc::new(cli::CliBackend::new());
+fn select_backend(sandbox: bool) -> Arc<dyn FlatpakBackend> {
+    if sandbox {
+        return Arc::new(broker::BrokerBackend);
     }
     #[cfg(feature = "libflatpak")]
     {
-        match native::LibflatpakBackend::new() {
-            Ok(b) => return Arc::new(b),
-            Err(e) => kerr!(
-                "libflatpak unavailable ({}), falling back to the flatpak CLI",
-                e
-            ),
-        }
+        Arc::new(native::LibflatpakBackend)
     }
-    Arc::new(cli::CliBackend::new())
+    #[cfg(not(feature = "libflatpak"))]
+    {
+        Arc::new(broker::OutsideSandbox)
+    }
 }
 
 // ── Installation-change notifications ───────────────────────────────────────
@@ -371,6 +352,46 @@ pub fn keyfile_value(data: &[u8], key: &str) -> Option<String> {
     })
 }
 
+/// What a `.flatpakref` or `.flatpakrepo` file asks for, shown to the user
+/// before anything is installed or added.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KeyfileSummary {
+    /// `Title=`, falling back to `Name=`.
+    pub title: String,
+    /// `Name=` (application id; empty for `.flatpakrepo`).
+    pub name: String,
+    /// `Url=`: the repository the file points at.
+    pub url: String,
+    /// `Branch=` (empty when absent).
+    pub branch: String,
+    /// `IsRuntime=true`.
+    pub is_runtime: bool,
+    /// `SuggestRemoteName=` (empty when absent).
+    pub suggested_remote_name: String,
+}
+
+/// Summarize a `.flatpakref`/`.flatpakrepo` keyfile. Control characters are
+/// stripped so a crafted file cannot spoof the confirmation text.
+pub fn summarize_keyfile(data: &[u8]) -> KeyfileSummary {
+    let get = |key: &str| {
+        keyfile_value(data, key)
+            .map(|v| v.chars().filter(|c| !c.is_control()).collect::<String>())
+            .unwrap_or_default()
+    };
+    let name = get("Name");
+    let title = Some(get("Title"))
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| name.clone());
+    KeyfileSummary {
+        title,
+        name,
+        url: get("Url"),
+        branch: get("Branch"),
+        is_runtime: get("IsRuntime").eq_ignore_ascii_case("true"),
+        suggested_remote_name: get("SuggestRemoteName"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,5 +420,47 @@ mod tests {
         let data = b"[Flatpak Ref]\nName=org.foo.Bar\nBranch=stable\n";
         assert_eq!(keyfile_value(data, "Name").as_deref(), Some("org.foo.Bar"));
         assert_eq!(keyfile_value(data, "Url"), None);
+    }
+
+    #[test]
+    fn keyfile_summary_prefers_title_and_strips_control_characters() {
+        let data = b"[Flatpak Ref]\nName=org.foo.Bar\nTitle=Foo\x1b[2J Bar\nUrl=https://example.org/repo/\nBranch=stable\nIsRuntime=False\n";
+        let summary = summarize_keyfile(data);
+        assert_eq!(summary.title, "Foo[2J Bar");
+        assert_eq!(summary.name, "org.foo.Bar");
+        assert_eq!(summary.url, "https://example.org/repo/");
+        assert_eq!(summary.branch, "stable");
+        assert!(!summary.is_runtime);
+
+        let repo = b"[Flatpak Repo]\nUrl=https://example.org/repo/\nSuggestRemoteName=example\n";
+        let summary = summarize_keyfile(repo);
+        assert_eq!(summary.title, "");
+        assert_eq!(summary.suggested_remote_name, "example");
+        assert!(summarize_keyfile(b"[Flatpak Ref]\nName=a.b.C\nIsRuntime=true\n").is_runtime);
+    }
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn backend_matches_the_process_environment() {
+        assert_eq!(select_backend(true).name(), "host-companion");
+        let host = select_backend(false);
+        #[cfg(feature = "libflatpak")]
+        assert_eq!(host.name(), "libflatpak");
+        #[cfg(not(feature = "libflatpak"))]
+        {
+            assert!(
+                host.list_installed()
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("sandbox")
+            );
+            assert!(host.list_updates().await.is_err());
+            assert_ne!(crate::daemon::run_update_once(&*host).await, 0);
+        }
     }
 }

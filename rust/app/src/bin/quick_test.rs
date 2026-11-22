@@ -57,6 +57,7 @@ fn main() {
     kiosque_core::l10n::init();
     kiosque::bridge::register_types();
     support::TestSupport::register();
+    let _portal = kiosque::test_support::register().expect("isolated background portal");
 
     let source_dir = std::env::var("KIOSQUE_QML_TEST_DIR")
         .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/qml").into());

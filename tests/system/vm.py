@@ -23,8 +23,9 @@ def run(command, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--backend', choices=['native', 'cli'], default='native')
+    parser.add_argument('--backend', choices=['native'], default='native')
     parser.add_argument('--artifact', type=Path)
+    parser.add_argument('--companion', type=Path, help='matching native RPM for the Flatpak package check')
     args = parser.parse_args()
     for tool in ['qemu-system-x86_64', 'qemu-img', 'cloud-localds', 'ssh-keygen', 'ssh', 'scp']:
         if not shutil.which(tool):
@@ -93,10 +94,14 @@ ssh_pwauth: false
                 run(['scp', *common, '-P', str(port), archive, 'root@127.0.0.1:/tmp/source.tar.gz'])
                 if args.artifact:
                     run(['scp', *common, '-P', str(port), args.artifact.resolve(), 'root@127.0.0.1:/tmp/'])
+                if args.companion:
+                    run(['scp', *common, '-P', str(port), args.companion.resolve(), 'root@127.0.0.1:/tmp/companion.rpm'])
                 command = f'mkdir -p /work; tar -xzf /tmp/source.tar.gz -C /work; cd /work; python3 tests/system/guest.py --backend {args.backend}'
                 if args.artifact:
                     import shlex
                     command += ' --artifact ' + shlex.quote('/tmp/' + args.artifact.name)
+                if args.companion:
+                    command += ' --companion /tmp/companion.rpm'
                 try:
                     result = subprocess.run([*ssh, command], timeout=3000)
                 finally:

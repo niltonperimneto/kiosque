@@ -2,6 +2,10 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum FlathubError {
+    #[error("{0}")]
+    Security(String),
+    #[error("Invalid API request: {0}")]
+    InvalidRequest(String),
     #[error("HTTP request failed: {0}")]
     Request(#[from] reqwest::Error),
 
@@ -13,7 +17,4 @@ pub enum FlathubError {
 
     #[error("Not Found (404)")]
     NotFound,
-
-    #[error("response larger than {max} bytes")]
-    TooLarge { max: usize },
 }

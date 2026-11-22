@@ -11,6 +11,8 @@ pub mod ffi {
         ///
         /// # Safety
         /// `argv` must hold `argc` valid C strings; all pointers must outlive the call.
+        #[allow(clippy::missing_safety_doc)]
+        // cxx does not retain this doc on its generated wrapper.
         unsafe fn quick_test_main(
             argc: i32,
             argv: *mut *mut c_char,

@@ -23,7 +23,7 @@ Kiosque was created to fill this gap: to build a Bazaar-equivalent storefront fo
 
 ### 2. High-Performance Rust Backend (`libkiosque`)
 - **Async Runtime**: Standardized on a multi-threaded `tokio` async runtime, offloading all expensive network calls, file system caching, and subprocess operations from the main GUI thread.
-- **Type-Safe Serialization**: Utilizes `serde` and `serde_json` to parse high-payload JSON responses from Flathub APIs and local Flatpak CLI utilities into structured Rust representations.
+- **Type-Safe Serialization**: Utilizes `serde` and `serde_json` to parse high-payload JSON responses from Flathub APIs into structured Rust representations.
 - **D-Bus Integration**: Leverages `zbus` for IPC, monitoring system tray notifications, background process states, and flatpak portal events natively under GNOME and KDE Plasma.
 
 ### 3. Flathub API Client & ODRS Integration
@@ -39,7 +39,7 @@ To minimize redundant network transactions and maintain a highly responsive UI, 
 
 ### 5. Flatpak Backends and Transactions
 - **Native backend by default**: Uses libflatpak for installation queries, transaction progress, cancellation, and installation monitoring.
-- **CLI fallback**: Runs non-blocking subprocesses and parses stable tab-separated `--columns` output. The Flatpak package selects this backend to route commands through the host.
+- **Sandbox backend**: The packaged storefront requests typed operations from the native companion over D-Bus.
 - **Shared state**: A registry and serialized transaction queue keep application views consistent and support explicit cancellation and worker shutdown.
 - **Testable core**: Domain and service code lives in `kiosque-core`, which builds without Qt/KDE development libraries when its optional native feature is disabled.
 
@@ -72,7 +72,7 @@ graph TD
     subgraph Backend ["Rust Backend Core (libkiosque)"]
         Cache[("AppCache (Moka Cache)")]
         Flathub["Flathub API Client (reqwest)"]
-        FlatpakCLI["Native / CLI Flatpak Backends"]
+        FlatpakBackend["Native / Broker Flatpak Backends"]
         Tokio["Tokio Async Runtime"]
     end
 
@@ -97,10 +97,10 @@ graph TD
     
     Tokio -->|Query / Mutate| Cache
     Tokio -->|HTTP Calls| Flathub
-    Tokio -->|Spawn Subprocesses| FlatpakCLI
+    Tokio -->|Run operations| FlatpakBackend
     
     Flathub <-->|JSON over HTTPS| FlathubAPI
-    FlatpakCLI <-->|CLI Commands| FlatpakSystem
+    FlatpakBackend <-->|libflatpak| FlatpakSystem
 
     %% Style Classes for Modern Theme
     classDef frontend fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px,color:#0A3C83;
@@ -110,7 +110,7 @@ graph TD
 
     class UI,Models,Ctrl frontend;
     class CXX_Bridge,Rust_Bridge bridge;
-    class Tokio,Cache,Flathub,FlatpakCLI backend;
+    class Tokio,Cache,Flathub,FlatpakBackend backend;
     class FlathubAPI,FlatpakSystem system;
 
     %% Subgraph Styling (GitHub Light/Dark theme safe via transparent tints)
@@ -125,44 +125,18 @@ graph TD
 #### 1. Frontend Layer (QML & Kirigami)
 The frontend is built using QML and styled with KDE's Kirigami framework. Views like `ShopfrontPage.qml` and `AppDetailPage.qml` are declared in QML. Instead of loading raw files, the QML UI binds to structured models (`AppListModel`, `InstalledModel`) and singular controllers (`StoreController`) defined in Rust and registered as native QML types.
 
-#### 2. The `cxx-qt` Bridge Layer
-Rather than writing unsafe manual JNI/C-FFI code, Kiosque integrates Qt6 and Rust using `cxx-qt`.
-- **Rust QObject Representation**: Structs like `StoreControllerRust` are annotated with `#[cxx_qt::bridge]` and `#[qobject]`. The macro automatically generates matching C++ classes and handles standard Qt operations.
-- **Model Bridging**: Rust models like `AppListModel` inherit from `QAbstractListModel` (annotated with `#[base = QAbstractListModel]`). Overrides for `data()`, `rowCount()`, and `roleNames()` are written in Rust, mapping custom data structures to Qt's index-role system (e.g. `NAME_ROLE`, `ICON_URL_ROLE`, `APP_ID_ROLE`).
-- **Thread Safety & Thread Posting**: Since Qt runs on a single main GUI thread and Tokio tasks execute across a background pool, `cxx-qt` provides `cxx_qt::Threading`. Rust tasks capture a thread-safe handle to the QObject, perform async work, and then post closures back to the Qt event loop, allowing property changes and signals to fire safely on the GUI thread.
+#### 2. Qt bridge adapters
 
-#### 3. Rust Backend Core (`libkiosque`)
-- **Caching Mechanism**: The `AppCache` leverages concurrent, asynchronous caches from the `moka` crate. This enables lock-free read access and concurrent write operations, avoiding the contention of manual locking mechanisms like `RwLock` while still maintaining thread-safe TTL (Time-To-Live) evictions.
-- **Network Stack**: Built on async `reqwest`. Features connection reuse to optimize network round-trips to the Flathub API.
-- **Process Orchestration**: Local Flatpak commands are run using asynchronous process spawns. Standard output is captured and parsed without blocking other operations.
+The `rust/app` crate registers `com.kiosque` QML models and controllers with `qtbridge` (pinned to 0.4.1). Async service results return through `QThreadHandle`; each QObject owns its subscription lifetime. The QML surface preserves the current storefront, settings, reviews, tasks, and update flows. `rust/updater` provides the standalone Rust companion shell.
 
----
+Meson drives Cargo and installs the binaries, resources, translations and native companion integration. Qt's private development headers are required to build qtbridge; generated C++ glue remains inside Cargo's target directory.
 
 ## Detailed Data Flow Example: Searching for an Application
 
 1. **User Action**: The user types a query into the Search field in `ShopfrontPage.qml`.
 2. **QML Invocation**: QML invokes `search(query)` on the registered `AppListModel` instance.
-3. **Bridge Redirection**: The `cxx-qt` bridge forwards the call to the Rust implementation: `fn search(self: Pin<&mut AppListModel>, query: QString)`.
-4. **Model State Transition**:
-   - The model sets its `loading` property to `true`.
-   - The model clears existing items and resets itself via `beginResetModel` / `endResetModel` posted to the GUI thread.
-5. **Background Task Spawning**: Rust gets a thread-safe queue handler (`self.grab_values_from_cxx()`) and spawns an asynchronous task on the Tokio runtime:
-   ```rust
-   tokio::spawn(async move {
-       let client = FlathubClient::new();
-       match client.search(&query_string).await {
-           Ok(results) => {
-               // Map flathub results to AppEntry models
-               // Post a closure back to the Qt event loop to update model items and set loading = false
-           }
-           Err(err) => {
-               // Post error signals back to the GUI thread
-           }
-       }
-   });
-   ```
-6. **Network Request**: The search request runs via `reqwest` to `https://flathub.org/api/v2/search`.
-7. **GUI Update**: The Tokio thread receives the search response, parses it, and uses the bridge context to run `beginResetModel()`, populate the Rust vector list of `AppEntry` models, call `endResetModel()`, and set `loading` to `false` on the GUI thread. The QML list view automatically animates and displays the new search results.
+3. **Bridge adapter**: the qtbridge `search(query: String)` slot advances the model's request generation and starts a debounced request using the injected Flathub client.
+4. **GUI update**: a `QThreadHandle` posts the result to the Qt event loop. Superseded responses are rejected; current entries replace the list through qtbridge's reset API and finish the loading state. Destruction drops late callbacks and stops registry subscriptions.
 
 ---
 
@@ -171,13 +145,13 @@ Rather than writing unsafe manual JNI/C-FFI code, Kiosque integrates Qt6 and Rus
 To build and run Kiosque from source, ensure you have the following dependencies:
 
 - **Compiler**: GCC/Clang with C++17 support, and the current stable Rust toolchain (`cargo` and `rustc`, with Rust 2024 edition support)
-- **Build System**: Meson (version 1.1+), Ninja, and a supported linker such as mold for cxx-qt initializer exports
+- **Build System**: Meson (version 1.4+), Ninja, and a supported linker such as mold
 - **System Libraries**:
   - Qt6 (Core, Gui, Qml, Quick, QuickControls2, DBus, Widgets)
   - KF6 Kirigami (KDE Frameworks 6 UI component system)
   - KF6 I18n & I18nQml (KDE Frameworks 6 translation support)
   - `dbus-1` (D-Bus message bus system library)
-  - libflatpak development libraries for the default native backend (`-Dflatpak_backend=cli` selects the CLI-only build)
+  - libflatpak development libraries for the default native backend (`-Dflatpak_backend=broker` selects the sandbox build)
 
 ---
 
@@ -225,4 +199,4 @@ python3 scripts/test.py services
 python3 scripts/test.py pr --backend native
 ```
 
-Real Flatpak lifecycle checks run only in disposable VMs. See the testing guide for desktop prerequisites, CLI-only builds, artifact smoke tests and release qualification.
+Real Flatpak lifecycle checks run only in disposable VMs. See the testing guide for desktop prerequisites, broker-only builds, artifact smoke tests and release qualification.

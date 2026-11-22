@@ -22,6 +22,7 @@ const COLLECTION: &str = include_str!("../../../tests/fixtures/http/collection.j
 struct Server {
     url: String,
     hits: Arc<AtomicUsize>,
+    requests: Arc<std::sync::Mutex<Vec<String>>>,
     task: tokio::task::JoinHandle<()>,
 }
 impl Drop for Server {
@@ -31,25 +32,43 @@ impl Drop for Server {
 }
 impl Server {
     async fn new(status: u16, body: String, delay: Duration) -> Self {
+        Self::new_bytes(status, body.into_bytes(), delay).await
+    }
+    async fn new_bytes(status: u16, body: Vec<u8>, delay: Duration) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let hits = Arc::new(AtomicUsize::new(0));
         let count = hits.clone();
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = requests.clone();
         let task = tokio::spawn(async move {
             loop {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let mut request = vec![0; 8192];
-                let _ = stream.read(&mut request).await.unwrap();
+                let len = stream.read(&mut request).await.unwrap();
+                recorded.lock().unwrap().push(
+                    String::from_utf8_lossy(&request[..len])
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .to_string(),
+                );
                 count.fetch_add(1, Ordering::SeqCst);
                 tokio::time::sleep(delay).await;
                 let response = format!(
-                    "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     body.len()
                 );
                 let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.write_all(&body).await;
             }
         });
-        Self { url, hits, task }
+        Self {
+            url,
+            hits,
+            requests,
+            task,
+        }
     }
     fn client(&self, cache: AppCache) -> FlathubClient {
         FlathubClient::with_dependencies(
@@ -207,16 +226,299 @@ async fn concurrent_disk_writers_leave_a_complete_record() {
 }
 
 #[tokio::test]
-async fn capped_downloads_refuse_oversized_bodies() {
-    let server = Server::new(200, "x".repeat(4096), Duration::ZERO).await;
-    let http = HttpClient::new(reqwest::Client::builder().no_proxy().build().unwrap());
-    let url = format!("{}/image.png", server.url);
-    match http.fetch_bytes_capped(&url, 1024).await {
-        Err(FlathubError::TooLarge { max: 1024 }) => {}
-        other => panic!("expected TooLarge, got {:?}", other.map(|b| b.len())),
-    }
-    assert_eq!(
-        http.fetch_bytes_capped(&url, 4096).await.unwrap().len(),
-        4096
+async fn storefront_collections_use_injected_endpoints_and_separate_caches() {
+    let server = Server::new(200, COLLECTION.into(), Duration::ZERO).await;
+    let client = server.client(AppCache::new());
+    client.fetch_mobile().await.unwrap();
+    client
+        .fetch_category_sorted("Game", "trending")
+        .await
+        .unwrap();
+    client
+        .fetch_category_sorted("Game", "installs_last_month")
+        .await
+        .unwrap();
+    client.fetch_mobile().await.unwrap();
+    client
+        .fetch_category_sorted("Game", "trending")
+        .await
+        .unwrap();
+    assert!(
+        client
+            .fetch_category_sorted("Game", "invalid")
+            .await
+            .is_err()
     );
+    assert_eq!(server.hits.load(Ordering::SeqCst), 3);
+    let requests = server.requests.lock().unwrap();
+    assert!(requests[0].contains("/collection/mobile "));
+    assert!(requests[1].contains("/collection/category/Game?sort_by=trending&page=1&per_page=30 "));
+    assert!(requests[2].contains("sort_by=installs_last_month"));
+}
+
+fn image_fixture() -> Vec<u8> {
+    let frame = image::RgbaImage::from_pixel(8, 4, image::Rgba([200, 10, 20, 128]));
+    let mut out = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(frame)
+        .write_to(&mut out, image::ImageFormat::Png)
+        .unwrap();
+    out.into_inner()
+}
+fn image_transport() -> HttpClient {
+    HttpClient::new(reqwest::Client::builder().no_proxy().build().unwrap())
+}
+fn image_id(url: &str) -> String {
+    kiosque_core::image_cache::image_url(url)
+        .strip_prefix("image://kiosque/")
+        .unwrap()
+        .into()
+}
+
+#[tokio::test]
+async fn image_requests_deduplicate_downloads_and_reuse_decoded_frames() {
+    use kiosque_core::image_cache::ImageLoader;
+    let server = Server::new_bytes(200, image_fixture(), Duration::from_millis(10)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let loader = ImageLoader::new(image_transport(), dir.path());
+    let id = image_id(&server.url);
+    let (a, b, c) = tokio::join!(
+        loader.load(&id, 4, 4),
+        loader.load(&id, 4, 4),
+        loader.load(&id, 2, -1)
+    );
+    let (a, b, c) = (a.unwrap(), b.unwrap(), c.unwrap());
+    assert!(Arc::ptr_eq(&a, &b));
+    assert_eq!(a.dimensions(), (4, 2));
+    assert_eq!(c.dimensions(), (2, 1));
+    assert_eq!(a.get_pixel(0, 0)[3], 128);
+    assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+    assert!(Arc::ptr_eq(&a, &loader.load(&id, 4, 4).await.unwrap()));
+    assert_eq!(loader.load(&id, -1, 1).await.unwrap().dimensions(), (2, 1));
+    assert_eq!(
+        loader.load(&id, 100, 100).await.unwrap().dimensions(),
+        (8, 4)
+    );
+}
+
+#[tokio::test]
+async fn image_loaders_are_isolated_recover_corruption_and_do_not_cache_errors() {
+    use kiosque_core::image_cache::{ImageLoader, cache_path_for};
+    let server = Server::new_bytes(200, image_fixture(), Duration::ZERO).await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(cache_path_for(dir.path(), &server.url), b"corrupt").unwrap();
+    let loader = ImageLoader::new(image_transport(), dir.path());
+    let id = image_id(&server.url);
+    loader.load(&id, 2, 2).await.unwrap();
+    assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+    let other = tempfile::tempdir().unwrap();
+    ImageLoader::new(image_transport(), other.path())
+        .load(&id, 2, 2)
+        .await
+        .unwrap();
+    assert_eq!(server.hits.load(Ordering::SeqCst), 2);
+    let broken = Server::new_bytes(200, b"broken".to_vec(), Duration::ZERO).await;
+    let id = image_id(&broken.url);
+    assert!(loader.load(&id, 2, 2).await.is_err());
+    assert!(loader.load(&id, 2, 2).await.is_err());
+    assert_eq!(broken.hits.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn local_images_invalidate_on_changes_and_decoded_cache_can_expire() {
+    use kiosque_core::image_cache::ImageLoader;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("local image.png");
+    std::fs::write(&path, image_fixture()).unwrap();
+    let id = image_id(reqwest::Url::from_file_path(&path).unwrap().as_str());
+    let loader = ImageLoader::new(image_transport(), dir.path().join("cache"));
+    let old = loader.load(&id, 2, 2).await.unwrap();
+    let other = image::RgbaImage::from_pixel(4, 8, image::Rgba([0, 255, 0, 255]));
+    other.save(&path).unwrap();
+    let changed = loader.load(&id, 2, 2).await.unwrap();
+    assert_eq!(changed.dimensions(), (1, 2));
+    assert!(!Arc::ptr_eq(&old, &changed));
+    let expired = ImageLoader::with_cache_policy(
+        image_transport(),
+        dir.path().join("expired"),
+        96,
+        Duration::ZERO,
+    );
+    let a = expired.load(&id, 2, 2).await.unwrap();
+    let b = expired.load(&id, 2, 2).await.unwrap();
+    assert!(!Arc::ptr_eq(&a, &b));
+}
+
+#[tokio::test]
+async fn featured_schema_invalidates_old_entries_without_affecting_other_caches() {
+    let root = tempfile::tempdir().unwrap();
+    let disk = DiskCache::new(root.path());
+    let entries = vec![kiosque_core::entries::FeaturedEntry {
+        name: "Daily".into(),
+        is_app_of_the_day: true,
+        screenshot_urls: vec![
+            "https://example.invalid/first.png".into(),
+            "https://example.invalid/second.png".into(),
+        ],
+        ..Default::default()
+    }];
+    disk.save_at("featured", 2, 10, &entries).await.unwrap();
+    assert!(
+        disk.load::<Vec<kiosque_core::entries::FeaturedEntry>>("featured", 3)
+            .await
+            .is_none()
+    );
+    disk.save_at("featured", 3, 20, &entries).await.unwrap();
+    assert_eq!(
+        disk.load::<Vec<kiosque_core::entries::FeaturedEntry>>("featured", 3)
+            .await
+            .unwrap(),
+        (20, entries)
+    );
+}
+
+#[test]
+fn branding_and_screenshot_metadata_have_safe_defaults() {
+    use kiosque_core::flathub::types::AppDetails;
+    let missing: AppDetails =
+        serde_json::from_value(serde_json::json!({"id":"a","name":"A"})).unwrap();
+    assert_eq!(missing.brand_colors(), (None, None));
+    assert_eq!(missing.best_screenshot_url(), None);
+    let rich: AppDetails = serde_json::from_value(serde_json::json!({"id":"a","name":"A",
+        "branding":[{"type":"primary","scheme_preference":"light","value":"#123456"}],
+        "screenshots":[{"sizes":[{"src":"small", "width":"100"},{"src":"large", "width":900}]}]
+    }))
+    .unwrap();
+    assert_eq!(rich.brand_colors(), (Some("#123456".into()), None));
+    assert_eq!(rich.best_screenshot_url(), Some("large".into()));
+    // Flathub sends explicit nulls for absent lists and strings (seen live for
+    // org.videolan.VLC, org.mozilla.firefox and org.inkscape.Inkscape).
+    let nulls: AppDetails = serde_json::from_value(serde_json::json!({"id":"a","name":"A",
+        "summary":null,"branding":null,"categories":null,
+        "screenshots":[{"sizes":null},{"sizes":[{"src":null,"width":null}]}]
+    }))
+    .unwrap();
+    assert_eq!(nulls.brand_colors(), (None, None));
+    assert_eq!(nulls.summary, "");
+    assert!(nulls.categories.is_empty());
+    assert_eq!(nulls.best_screenshot_url(), None);
+    let hits: kiosque_core::flathub::types::FlathubResponse = serde_json::from_value(
+        serde_json::json!({"hits":[{"app_id":"a","name":null,"sub_categories":null}]}),
+    )
+    .unwrap();
+    assert_eq!(hits.hits[0].name, "");
+    assert!(hits.hits[0].sub_categories.is_empty());
+}
+
+#[tokio::test]
+async fn decoded_frame_budget_evicts_frames_and_transport_failures_remain_retryable() {
+    use kiosque_core::image_cache::ImageLoader;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("frame.png");
+    std::fs::write(&path, image_fixture()).unwrap();
+    let id = image_id(reqwest::Url::from_file_path(path).unwrap().as_str());
+    let loader = ImageLoader::with_cache_policy(
+        image_transport(),
+        dir.path().join("cache"),
+        0,
+        Duration::from_secs(600),
+    );
+    let first = loader.load(&id, 4, 4).await.unwrap();
+    let second = loader.load(&id, 4, 4).await.unwrap();
+    assert!(!Arc::ptr_eq(&first, &second));
+    let server = Server::new(503, "unavailable".into(), Duration::ZERO).await;
+    let id = image_id(&server.url);
+    assert!(loader.load(&id, 4, 4).await.is_err());
+    assert!(loader.load(&id, 4, 4).await.is_err());
+    assert_eq!(server.hits.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn oversized_http_responses_are_rejected_before_parsing() {
+    let server = Server::new(200, "a".repeat(1024), Duration::ZERO).await;
+    let http = HttpClient::new(reqwest::Client::builder().no_proxy().build().unwrap());
+    assert!(http.fetch_bytes_limited(&server.url, 32).await.is_err());
+    assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+    // The production client must reject loopback without making a request.
+    assert!(
+        HttpClient::default()
+            .fetch_bytes_limited(&server.url, 32)
+            .await
+            .is_err()
+    );
+    assert_eq!(server.hits.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn chunked_responses_cannot_bypass_the_byte_budget() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = [0u8; 4096];
+        assert!(socket.read(&mut request).await.unwrap() > 0);
+        socket.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n10\r\naaaaaaaaaaaaaaaa\r\n10\r\nbbbbbbbbbbbbbbbb\r\n0\r\n\r\n").await.unwrap();
+    });
+    let http = HttpClient::new(reqwest::Client::builder().no_proxy().build().unwrap());
+    assert!(http.fetch_bytes_limited(&url, 20).await.is_err());
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn a_private_bus_rejects_non_application_callers_before_mutation() {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let root = tempfile::tempdir().unwrap();
+    let socket = format!("unix:path={}/bus", root.path().display());
+    let mut bus = tokio::process::Command::new("dbus-daemon")
+        .args([
+            "--session",
+            "--nofork",
+            "--nopidfile",
+            "--print-address=1",
+            &format!("--address={socket}"),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("dbus-daemon is required for authorization tests");
+    let mut lines = BufReader::new(bus.stdout.take().unwrap()).lines();
+    let address = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let server = zbus::connection::Builder::address(address.as_str())
+        .name("org.kiosque.Kiosque.Daemon")
+        .serve_at(
+            kiosque_core::daemon::OBJECT_PATH,
+            kiosque_core::daemon::service::Service,
+        )
+        .build()
+        .await
+        .unwrap();
+    let client = zbus::connection::Builder::address(address.as_str())
+        .build()
+        .await
+        .unwrap();
+    let proxy = kiosque_core::daemon::client::DaemonProxy::new(&client)
+        .await
+        .unwrap();
+    let error = proxy.read_installed().await.unwrap_err().to_string();
+    assert!(error.contains("AccessDenied"), "{error}");
+    let error = proxy.ping().await.unwrap_err().to_string();
+    assert!(error.contains("AccessDenied"), "{error}");
+    let error = proxy
+        .install("--command=sh", "evil", "user", "attack")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("AccessDenied"), "{error}");
+    let error = proxy
+        .add_repository("evil", b"not a descriptor", "user")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("AccessDenied"), "{error}");
+    drop(server);
+    bus.kill().await.unwrap();
+    bus.wait().await.unwrap();
 }

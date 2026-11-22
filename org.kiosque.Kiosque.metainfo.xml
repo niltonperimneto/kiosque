@@ -46,7 +46,7 @@
   <releases>
     <release version="1.0.0" date="2026-11-14">
       <description>
-        <p>Rust and QML only: Qt Bridge for Rust front end, Rust update notifier, sanitized image cache and bundled libflatpak in the Flatpak.</p>
+        <p>Rust and QML only: Qt Bridge for Rust front end, Rust update notifier, sanitized image cache and a native host companion for Flatpak operations.</p>
       </description>
     </release>
   </releases>

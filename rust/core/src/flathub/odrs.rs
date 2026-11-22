@@ -129,11 +129,6 @@ impl OdrsClient {
         format!("{}/{}", self.base_url, path)
     }
 
-    /// Drop cached ratings/reviews of `app_id` so the next fetch is fresh.
-    pub async fn invalidate(&self, app_id: &str) {
-        self.cache.invalidate_odrs(app_id).await;
-    }
-
     /// Fetch aggregate ratings for an app from ODRS.
     pub async fn fetch_ratings(&self, app_id: &str) -> Result<OdrsRatings, FlathubError> {
         let cache = &self.cache;
@@ -255,13 +250,14 @@ impl OdrsClient {
         let resp = client.post(url).json(&payload).send().await?;
 
         let status = resp.status();
-        let body = resp.text().await?;
+        let _body = super::client::read_limited(resp, 64 * 1024).await?;
         if !status.is_success() {
             return Err(FlathubError::Http {
                 status: status.as_u16(),
-                message: super::client::preview(&body, 200),
+                message: "Review request rejected by server".into(),
             });
         }
+        self.cache.invalidate_reviews(app_id).await;
         Ok(())
     }
 
@@ -278,13 +274,14 @@ impl OdrsClient {
         let resp = client.post(url).json(&payload).send().await?;
 
         let status = resp.status();
-        let body = resp.text().await?;
+        let _body = super::client::read_limited(resp, 64 * 1024).await?;
         if !status.is_success() {
             return Err(FlathubError::Http {
                 status: status.as_u16(),
-                message: super::client::preview(&body, 200),
+                message: "Review request rejected by server".into(),
             });
         }
+        self.cache.invalidate_all_reviews();
         Ok(())
     }
 
@@ -301,13 +298,14 @@ impl OdrsClient {
         let resp = client.post(url).json(&payload).send().await?;
 
         let status = resp.status();
-        let body = resp.text().await?;
+        let _body = super::client::read_limited(resp, 64 * 1024).await?;
         if !status.is_success() {
             return Err(FlathubError::Http {
                 status: status.as_u16(),
-                message: super::client::preview(&body, 200),
+                message: "Review request rejected by server".into(),
             });
         }
+        self.cache.invalidate_all_reviews();
         Ok(())
     }
 
@@ -324,13 +322,14 @@ impl OdrsClient {
         let resp = client.post(url).json(&payload).send().await?;
 
         let status = resp.status();
-        let body = resp.text().await?;
+        let _body = super::client::read_limited(resp, 64 * 1024).await?;
         if !status.is_success() {
             return Err(FlathubError::Http {
                 status: status.as_u16(),
-                message: super::client::preview(&body, 200),
+                message: "Review request rejected by server".into(),
             });
         }
+        self.cache.invalidate_all_reviews();
         Ok(())
     }
 
@@ -347,13 +346,14 @@ impl OdrsClient {
         let resp = client.post(url).json(&payload).send().await?;
 
         let status = resp.status();
-        let body = resp.text().await?;
+        let _body = super::client::read_limited(resp, 64 * 1024).await?;
         if !status.is_success() {
             return Err(FlathubError::Http {
                 status: status.as_u16(),
-                message: super::client::preview(&body, 200),
+                message: "Review request rejected by server".into(),
             });
         }
+        self.cache.invalidate_all_reviews();
         Ok(())
     }
 }

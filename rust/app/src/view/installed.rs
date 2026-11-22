@@ -157,22 +157,7 @@ impl InstalledView {
 }
 
 /// Human-readable size for an installed size in bytes.
-pub fn format_size(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["kB", "MB", "GB", "TB"];
-    if bytes < 1000 {
-        return format!("{bytes} B");
-    }
-    let mut value = bytes as f64;
-    let mut unit = "B";
-    for u in UNITS {
-        value /= 1000.0;
-        unit = u;
-        if value < 1000.0 {
-            break;
-        }
-    }
-    format!("{value:.1} {unit}")
-}
+pub use kiosque_core::entries::format_size;
 
 pub fn parse_size_to_bytes(size_str: &str) -> u64 {
     let size_str = size_str.trim().to_lowercase();
@@ -225,8 +210,16 @@ pub fn sort_items_helper(items: &mut [InstalledEntry], criterion: &str, ascendin
                 if ascending { res } else { res.reverse() }
             }
             "size" => {
-                let size_a = parse_size_to_bytes(&a.size);
-                let size_b = parse_size_to_bytes(&b.size);
+                let size_a = if a.size_bytes > 0 {
+                    a.size_bytes
+                } else {
+                    parse_size_to_bytes(&a.size)
+                };
+                let size_b = if b.size_bytes > 0 {
+                    b.size_bytes
+                } else {
+                    parse_size_to_bytes(&b.size)
+                };
                 let res = size_a.cmp(&size_b);
                 if ascending { res } else { res.reverse() }
             }

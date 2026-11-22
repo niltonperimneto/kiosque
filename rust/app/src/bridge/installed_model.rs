@@ -7,14 +7,14 @@
 
 use std::sync::Arc;
 
-use qtbridge::{QModelItem, qobject};
+use qtbridge::qobject;
 use tokio_util::sync::CancellationToken;
 
 use crate::view::installed::{InstalledEntry, InstalledView};
 
 pub use object::InstalledModel;
 
-#[derive(Debug, Default, Clone, PartialEq, QModelItem)]
+#[derive(Debug, Default, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct InstalledItem {
     pub name: String,
@@ -56,6 +56,11 @@ mod object {
         pub(super) view: InstalledView,
         pub(super) rows: Vec<InstalledItem>,
         pub(super) loading: bool,
+        pub(super) installed_error: String,
+        pub(super) updates_error: String,
+        pub(super) uninstall_error: String,
+        pub(super) uninstall_control: Option<Arc<crate::bridge::util::JobControl>>,
+        pub(super) update_control: Option<Arc<crate::bridge::util::JobControl>>,
         pub(super) count: i32,
         pub(super) uninstalling_app_id: String,
         pub(super) uninstall_progress: f64,
@@ -102,6 +107,55 @@ mod object {
     }
 
     impl InstalledModel {
+        qproperty!(
+            "installed_error",
+            Read = get_installed_error,
+            Notify = installed_error_changed
+        );
+        fn get_installed_error(&self) -> String {
+            self.installed_error.clone()
+        }
+        #[qsignal(qml_name = "installed_errorChanged")]
+        pub fn installed_error_changed(&mut self);
+        qproperty!(
+            "updates_error",
+            Read = get_updates_error,
+            Write = set_updates_error,
+            Notify = updates_error_changed
+        );
+        fn get_updates_error(&self) -> String {
+            self.updates_error.clone()
+        }
+        pub fn set_updates_error(&mut self, error: String) {
+            if self.updates_error != error {
+                self.updates_error = error;
+                self.updates_error_changed();
+            }
+        }
+        qproperty!(
+            "uninstall_error",
+            Read = get_uninstall_error,
+            Notify = uninstall_error_changed
+        );
+        fn get_uninstall_error(&self) -> String {
+            self.uninstall_error.clone()
+        }
+        #[qsignal(qml_name = "updates_errorChanged")]
+        pub fn updates_error_changed(&mut self);
+        #[qsignal(qml_name = "uninstall_errorChanged")]
+        pub fn uninstall_error_changed(&mut self);
+        #[qslot(qml_name = "cancelUninstall")]
+        fn cancel_uninstall(&mut self) {
+            if let Some(c) = &self.uninstall_control {
+                c.cancel();
+            }
+        }
+        #[qslot(qml_name = "cancelUpdate")]
+        fn cancel_update(&mut self) {
+            if let Some(c) = &self.update_control {
+                c.cancel();
+            }
+        }
         qproperty!("loading", Read = get_loading, Notify = loading_changed);
         qproperty!("count", Read = get_count, Notify = count_changed);
         qproperty!(
@@ -180,27 +234,27 @@ mod object {
             self.show_runtimes
         }
 
-        #[qsignal]
+        #[qsignal(qml_name = "loadingChanged")]
         pub fn loading_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "countChanged")]
         pub fn count_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "uninstalling_app_idChanged")]
         pub fn uninstalling_app_id_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "uninstall_progressChanged")]
         pub fn uninstall_progress_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "checking_updatesChanged")]
         pub fn checking_updates_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "updatingChanged")]
         pub fn updating_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "update_progressChanged")]
         pub fn update_progress_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "update_status_textChanged")]
         pub fn update_status_text_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "updates_available_countChanged")]
         pub fn updates_available_count_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "updates_checked_countChanged")]
         pub fn updates_checked_count_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "show_runtimesChanged")]
         pub fn show_runtimes_changed(&mut self);
 
         /// Reload installed refs; the model follows the registry afterwards.
@@ -210,11 +264,10 @@ mod object {
             self.ensure_watch();
             let handle = self.get_thread_handle();
             crate::bridge::spawn(async move {
-                if let Err(e) = ops::reload_installed().await {
-                    kerr!("InstalledModel::refresh: {}", e);
-                }
+                let error = ops::reload_installed().await.err().unwrap_or_default();
                 handle.invoke_mut(|m| {
                     m.sync_registry();
+                    m.set_installed_error(error);
                     m.set_loading(false);
                 });
             });
@@ -229,11 +282,10 @@ mod object {
             self.ensure_watch();
             let handle = self.get_thread_handle();
             crate::bridge::spawn(async move {
-                if let Err(e) = ops::reload_updates().await {
-                    kerr!("InstalledModel::check_for_updates: {}", e);
-                }
+                let error = ops::reload_updates().await.err().unwrap_or_default();
                 handle.invoke_mut(|m| {
                     m.sync_registry();
+                    m.set_updates_error(error);
                     m.set_checking_updates(false);
                 });
             });
@@ -300,53 +352,70 @@ mod object {
                 return;
             }
             self.set_update_progress(0.0);
-            self.set_update_status_text(kiosque_core::l10n::i18n("Preparing update…", &[]));
+            self.set_update_status_text(kiosque_core::l10n::i18n("Initializing update…", &[]));
             self.set_updating(true);
-            let handle = Arc::new(self.get_thread_handle());
-            let progress = handle.clone();
-            crate::bridge::spawn(async move {
-                let result = ops::update(&ids, move |p| {
-                    progress.invoke_mut(move |m| {
-                        m.set_update_progress(p.fraction.max(0.0));
-                        if !p.status.is_empty() {
-                            m.set_update_status_text(p.status);
-                        }
-                    });
-                })
-                .await;
-                handle.invoke_mut(move |m| {
-                    if let Err(e) = result {
-                        kerr!("InstalledModel::update_selected_apps: {}", e);
-                    }
+            self.set_updates_error(String::new());
+            let control = crate::bridge::util::JobControl::new();
+            self.update_control = Some(control.clone());
+            crate::bridge::util::run_job(
+                self.get_thread_handle(),
+                kiosque_core::flatpak::Operation::Update { ids },
+                "Update".into(),
+                control,
+                |m, fraction, status| {
+                    m.set_update_progress(fraction);
+                    m.set_update_status_text(status);
+                },
+                |m, result| {
+                    m.update_control = None;
+                    m.sync_registry();
+                    let error = match result {
+                        crate::bridge::util::JobOutcome::Done => String::new(),
+                        crate::bridge::util::JobOutcome::Failed(e) => e,
+                        crate::bridge::util::JobOutcome::Cancelled => String::new(),
+                    };
+                    m.set_updates_error(error);
                     m.set_update_progress(0.0);
                     m.set_update_status_text(String::new());
                     m.set_updating(false);
-                });
-            });
+                },
+            );
         }
-
         #[qslot(qml_name = "uninstallApp")]
         fn uninstall_app(&mut self, index: i32) {
+            if !self.uninstalling_app_id.is_empty() {
+                return;
+            }
             let Some(id) = self.app_id_at(index) else {
                 return;
             };
-            self.set_uninstall_progress(0.0);
+            self.set_uninstall_error(String::new());
+            self.set_uninstall_progress(-1.0);
             self.set_uninstalling_app_id(id.clone());
-            let handle = Arc::new(self.get_thread_handle());
-            let progress = handle.clone();
-            crate::bridge::spawn(async move {
-                let result = ops::uninstall(&id, move |p| {
-                    progress.invoke_mut(move |m| m.set_uninstall_progress(p.fraction.max(0.0)));
-                })
-                .await;
-                handle.invoke_mut(move |m| {
-                    if let Err(e) = result {
-                        kerr!("InstalledModel::uninstall_app: {}", e);
-                    }
+            let control = crate::bridge::util::JobControl::new();
+            self.uninstall_control = Some(control.clone());
+            crate::bridge::util::run_job(
+                self.get_thread_handle(),
+                kiosque_core::flatpak::Operation::Uninstall {
+                    id: id.clone(),
+                    scope: None,
+                },
+                id,
+                control,
+                |m, fraction, _| m.set_uninstall_progress(fraction),
+                |m, result| {
+                    m.uninstall_control = None;
+                    m.sync_registry();
+                    let error = match result {
+                        crate::bridge::util::JobOutcome::Done => String::new(),
+                        crate::bridge::util::JobOutcome::Failed(e) => e,
+                        crate::bridge::util::JobOutcome::Cancelled => String::new(),
+                    };
+                    m.set_uninstall_error(error);
                     m.set_uninstall_progress(0.0);
                     m.set_uninstalling_app_id(String::new());
-                });
-            });
+                },
+            );
         }
 
         #[qslot(qml_name = "launchApp")]
@@ -418,6 +487,8 @@ mod object {
 }
 
 notify_setters!(InstalledModel {
+    set_installed_error: installed_error: String => installed_error_changed,
+    set_uninstall_error: uninstall_error: String => uninstall_error_changed,
     set_loading: loading: bool => loading_changed,
     set_count: count: i32 => count_changed,
     set_uninstalling_app_id: uninstalling_app_id: String => uninstalling_app_id_changed,
@@ -432,3 +503,77 @@ notify_setters!(InstalledModel {
 });
 
 qml_element!(InstalledModel, "InstalledModel");
+
+// Keep the existing Qt.UserRole numbers as well as the QML role names.
+impl qtbridge::QModelItem for InstalledItem {
+    type T0 = String;
+    type T1 = String;
+    type T2 = String;
+    type T3 = String;
+    type T4 = String;
+    type T5 = bool;
+    type T6 = bool;
+    type T7 = bool;
+    type T8 = String;
+    type T9 = ();
+    type T10 = ();
+    type T11 = ();
+    type T12 = ();
+    type T13 = ();
+    type T14 = ();
+    fn get0(&self) -> Option<&String> {
+        Some(&self.name)
+    }
+    fn get1(&self) -> Option<&String> {
+        Some(&self.appId)
+    }
+    fn get2(&self) -> Option<&String> {
+        Some(&self.version)
+    }
+    fn get3(&self) -> Option<&String> {
+        Some(&self.size)
+    }
+    fn get4(&self) -> Option<&String> {
+        Some(&self.origin)
+    }
+    fn get5(&self) -> Option<&bool> {
+        Some(&self.hasUpdate)
+    }
+    fn get6(&self) -> Option<&bool> {
+        Some(&self.isChecked)
+    }
+    fn get7(&self) -> Option<&bool> {
+        Some(&self.isRuntime)
+    }
+    fn get8(&self) -> Option<&String> {
+        Some(&self.sectionGroup)
+    }
+    fn role_names() -> std::collections::HashMap<i32, String> {
+        [
+            (256, "name".into()),
+            (257, "appId".into()),
+            (258, "version".into()),
+            (259, "size".into()),
+            (260, "origin".into()),
+            (261, "hasUpdate".into()),
+            (262, "isChecked".into()),
+            (264, "isRuntime".into()),
+            (263, "sectionGroup".into()),
+        ]
+        .into()
+    }
+    fn get_role(&self, role: i32) -> qtbridge::qtbridge_type_lib::QVariant {
+        match role {
+            256 => qtbridge::QVariantConvertible::to_qvariant(&self.name),
+            257 => qtbridge::QVariantConvertible::to_qvariant(&self.appId),
+            258 => qtbridge::QVariantConvertible::to_qvariant(&self.version),
+            259 => qtbridge::QVariantConvertible::to_qvariant(&self.size),
+            260 => qtbridge::QVariantConvertible::to_qvariant(&self.origin),
+            261 => qtbridge::QVariantConvertible::to_qvariant(&self.hasUpdate),
+            262 => qtbridge::QVariantConvertible::to_qvariant(&self.isChecked),
+            264 => qtbridge::QVariantConvertible::to_qvariant(&self.isRuntime),
+            263 => qtbridge::QVariantConvertible::to_qvariant(&self.sectionGroup),
+            _ => Default::default(),
+        }
+    }
+}

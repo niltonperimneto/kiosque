@@ -2,7 +2,7 @@
 //!
 //! QML sets `url` and `kind` (`icon:<px>`, `screenshot`, `avatar`) and binds
 //! an `Image.source` to the read-only `source`, which is either empty or a
-//! `file://` URL of a PNG written by `kiosque_core::image_cache`. A cache hit
+//! `file://` URL of a PNG written by `kiosque_core::sanitized_image`. A cache hit
 //! is applied synchronously; otherwise the loader runs and `source` follows.
 
 use qtbridge::qobject;
@@ -11,7 +11,7 @@ pub use object::RemoteImage;
 
 #[qobject(Base = QParserStatus, NoQmlElement)]
 mod object {
-    use kiosque_core::image_cache::ImageKind;
+    use kiosque_core::sanitized_image::ImageKind;
     use qtbridge::{QParserStatus, QmlObject};
 
     #[derive(Default)]

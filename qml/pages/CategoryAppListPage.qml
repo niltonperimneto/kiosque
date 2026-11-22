@@ -14,9 +14,11 @@ Kirigami.ScrollablePage {
     property string categoryId: ""
     property string categoryName: ""
     
-    title: L10n.i18n(categoryName, [])
+    title: categoryName !== "" ? categoryName : applicationWindow().categories.displayName(categoryId)
 
     property string searchQuery: ""
+    // Its title search field handles Ctrl+F (see Main.qml).
+    readonly property bool hasOwnSearch: true
     property bool hasVisibleApps: {
         if (searchQuery.length === 0) return true;
         for (let i = 0; i < appGrid.children.length; i++) {
@@ -36,14 +38,6 @@ Kirigami.ScrollablePage {
         onTextChanged: page.searchQuery = text
     }
     
-    actions: [
-        Kirigami.Action {
-            icon.name: "window-close"
-            text: L10n.i18n("Close", [])
-            visible: applicationWindow().pageStack.depth > 1
-            onTriggered: applicationWindow().pageStack.pop()
-        }
-    ]
     
     // Independent model for this page to not conflict with global state
     property AppListModel categoryModel: AppListModel {}
@@ -54,11 +48,15 @@ Kirigami.ScrollablePage {
         loadData();
     }
     
+    function reload() {
+        loadData();
+    }
+
     function loadData() {
         if (categoryId === "") {
-            categoryModel.load("popular", "");
+            categoryModel.refresh();
         } else {
-            categoryModel.load("category", categoryId);
+            categoryModel.loadCategory(categoryId);
         }
     }
 
@@ -89,7 +87,7 @@ Kirigami.ScrollablePage {
                 spacing: Kirigami.Units.smallSpacing
                 
                 delegate: Controls.Button {
-                    text: L10n.i18n(modelData.text, [])
+                    text: modelData.text
                     icon.name: modelData.icon
                     flat: !highlighted
                     highlighted: {
@@ -124,13 +122,34 @@ Kirigami.ScrollablePage {
             visible: running
         }
 
+        // Error state
+        Kirigami.PlaceholderMessage {
+            objectName: "categoryErrorMessage"
+            Layout.fillWidth: true
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 8
+            visible: !page.categoryModel.loading && appGridRepeater.count === 0
+                     && page.categoryModel.error_message !== ""
+            type: Kirigami.PlaceholderMessage.Type.Actionable
+            icon.name: "network-disconnect"
+            text: L10n.i18n("Could Not Load Applications", [])
+            explanation: page.categoryModel.error_message
+            helpfulAction: Kirigami.Action {
+                icon.name: "view-refresh"
+                text: L10n.i18n("Try Again", [])
+                onTriggered: page.loadData()
+            }
+        }
+
         // Empty state
         Kirigami.PlaceholderMessage {
+            objectName: "categoryEmptyMessage"
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 8
             icon.name: "edit-find"
             text: L10n.i18n("No Applications Found", [])
-            visible: !page.categoryModel.loading && (appGridRepeater.count === 0 || !page.hasVisibleApps)
+            explanation: page.searchQuery.length > 0 ? L10n.i18n("No application in this category matches “%1”.", [page.searchQuery]) : ""
+            visible: !page.categoryModel.loading && page.categoryModel.error_message === ""
+                     && (appGridRepeater.count === 0 || !page.hasVisibleApps)
         }
 
         // App grid
@@ -149,7 +168,6 @@ Kirigami.ScrollablePage {
             Repeater {
                 id: appGridRepeater
                 model: page.categoryModel
-                onCountChanged: console.log("Category Repeater count changed to", count)
                 delegate: Item {
                     id: delegateWrapper
                     
@@ -167,12 +185,12 @@ Kirigami.ScrollablePage {
                     Layout.preferredHeight: isMatch ? Kirigami.Units.gridUnit * 12 : 0
                     visible: isMatch
 
-                    Components.AppCard {
+                    Components.StorefrontAppCard {
                         anchors.fill: parent
-                        appId: delegateWrapper.appId
-                        name: delegateWrapper.name
-                        summary: delegateWrapper.summary
+                        appName: delegateWrapper.name
+                        appSummary: delegateWrapper.summary
                         iconUrl: delegateWrapper.iconUrl
+                        onClicked: applicationWindow().pushAppDetail(delegateWrapper.appId)
                     }
                 }
             }

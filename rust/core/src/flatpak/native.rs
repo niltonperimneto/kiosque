@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use gio::glib;
 use gio::prelude::*;
 use libflatpak::prelude::*;
 use libflatpak::{Installation, InstalledRef, Remote, Transaction};
@@ -28,16 +29,6 @@ use super::{
 
 pub struct LibflatpakBackend;
 
-impl LibflatpakBackend {
-    pub fn new() -> std::result::Result<Self, String> {
-        let insts = installations();
-        if insts.is_empty() {
-            return Err("no Flatpak installation could be opened".into());
-        }
-        Ok(Self)
-    }
-}
-
 fn none() -> Option<&'static gio::Cancellable> {
     gio::Cancellable::NONE
 }
@@ -50,49 +41,50 @@ fn gerr(e: glib::Error) -> FlatpakError {
     }
 }
 
-fn open(scope: Scope) -> std::result::Result<Installation, glib::Error> {
+fn installation(scope: Scope) -> Result<Installation> {
+    let variable = match scope {
+        Scope::User => "FLATPAK_USER_DIR",
+        Scope::System => "FLATPAK_SYSTEM_DIR",
+    };
+    if let Some(path) = std::env::var_os(variable) {
+        // libflatpak can construct a lazy installation even for an invalid path.
+        match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.is_dir() => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => {
+                return Err(FlatpakError::Failed(format!(
+                    "{variable} is not an accessible installation directory"
+                )));
+            }
+        }
+        return Installation::for_path(&gio::File::for_path(path), scope == Scope::User, none())
+            .map_err(gerr);
+    }
     match scope {
-        Scope::System if std::env::var_os("FLATPAK_SYSTEM_DIR").is_some() => {
-            let path = super::installation_paths()
-                .into_iter()
-                .find(|(s, _)| *s == Scope::System)
-                .unwrap()
-                .1;
-            Installation::for_path(&gio::File::for_path(path), false, none())
-        }
         Scope::System => Installation::new_system(none()),
-        Scope::User if super::in_sandbox() || std::env::var_os("FLATPAK_USER_DIR").is_some() => {
-            let path = super::installation_paths()
-                .into_iter()
-                .find(|(s, _)| *s == Scope::User)
-                .map(|(_, p)| p)
-                .expect("user installation path");
-            Installation::for_path(&gio::File::for_path(path), true, none())
-        }
         Scope::User => Installation::new_user(none()),
     }
+    .map_err(gerr)
 }
 
 /// All installations that could be opened, user first.
-fn installations() -> Vec<(Scope, Installation)> {
-    [Scope::User, Scope::System]
+fn installations() -> Result<Vec<(Scope, Installation)>> {
+    let available: Vec<_> = [Scope::User, Scope::System]
         .into_iter()
-        .filter_map(|s| match open(s) {
+        .filter_map(|s| match installation(s) {
             Ok(i) => Some((s, i)),
             Err(e) => {
-                kerr!(
-                    "libflatpak: cannot open {} installation: {}",
-                    s.as_str(),
-                    e.message()
-                );
+                kerr!("libflatpak: cannot open {} installation: {}", s.as_str(), e);
                 None
             }
         })
-        .collect()
-}
-
-fn installation(scope: Scope) -> Result<Installation> {
-    open(scope).map_err(gerr)
+        .collect();
+    if available.is_empty() {
+        return Err(FlatpakError::Failed(
+            "No Flatpak installation could be opened".into(),
+        ));
+    }
+    Ok(available)
 }
 
 async fn blocking<T, F>(f: F) -> Result<T>
@@ -138,7 +130,7 @@ fn installed_from(r: &InstalledRef, scope: Scope) -> InstalledApp {
 
 /// Find the installation (and full ref) an id is installed in.
 fn find_installed(id: &str, scope: Option<Scope>) -> Result<(Installation, String)> {
-    for (sc, inst) in installations() {
+    for (sc, inst) in installations()? {
         if scope.is_some_and(|want| want != sc) {
             continue;
         }
@@ -211,6 +203,7 @@ fn run_transaction(
     tracker: Arc<Tracker>,
     cancellable: &gio::Cancellable,
     keep_going: bool,
+    allowed_origin: Option<String>,
 ) -> Result<()> {
     let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
 
@@ -236,9 +229,15 @@ fn run_transaction(
     }
     {
         let tracker = tracker.clone();
-        txn.connect_operation_done(move |_, op, _, _| {
+        // A removal has no resulting commit. The libflatpak 0.7 typed
+        // trampoline unconditionally borrows that nullable C string.
+        txn.connect("operation-done", false, move |args| {
+            let op = args[1]
+                .get::<libflatpak::TransactionOperation>()
+                .expect("operation-done operation");
             tracker.report(1.0, String::new(), s(op.get_ref()));
             tracker.index.fetch_add(1, Ordering::SeqCst);
+            None
         });
     }
     {
@@ -256,8 +255,12 @@ fn run_transaction(
             keep_going
         });
     }
-    // Accept remotes referenced by .flatpakref files (RuntimeRepo).
-    txn.connect_add_new_remote(|_, _, _, _, _| true);
+    // Never accept an unreviewed dependency repository.
+    txn.connect_add_new_remote(move |_, _, _, _, url| {
+        crate::security::https_url(url)
+            .ok()
+            .is_some_and(|url| allowed_origin.as_deref() == Some(url.as_str()))
+    });
 
     let res = txn.run(Some(cancellable));
     if cancellable.is_cancelled() {
@@ -286,6 +289,7 @@ fn new_transaction(inst: &Installation, cancellable: &gio::Cancellable) -> Resul
 }
 
 fn run_blocking(op: Operation, sink: ProgressSink, cancellable: gio::Cancellable) -> Result<()> {
+    crate::security::operation(&op, "").map_err(FlatpakError::Failed)?;
     let tracker = Arc::new(Tracker {
         sink,
         index: AtomicUsize::new(0),
@@ -300,25 +304,29 @@ fn run_blocking(op: Operation, sink: ProgressSink, cancellable: gio::Cancellable
             let full_ref = resolve_remote_ref(&inst, &remote, &id, &cancellable)?;
             let txn = new_transaction(&inst, &cancellable)?;
             txn.add_install(&remote, &full_ref, &[]).map_err(gerr)?;
-            run_transaction(&txn, tracker, &cancellable, false)
+            run_transaction(&txn, tracker, &cancellable, false, None)
         }
         Operation::InstallRefFile { data, scope } => {
+            let summary = crate::security::ref_file(&data).map_err(FlatpakError::Failed)?;
             let inst = installation(scope)?;
             let txn = new_transaction(&inst, &cancellable)?;
+            txn.set_disable_dependencies(true);
+            txn.set_disable_related(true);
+            // Only the origin shown in the confirmation may be added.
             txn.add_install_flatpakref(&glib::Bytes::from_owned(data))
                 .map_err(gerr)?;
-            run_transaction(&txn, tracker, &cancellable, false)
+            run_transaction(&txn, tracker, &cancellable, false, Some(summary.origin))
         }
         Operation::Uninstall { id, scope } => {
             let (inst, full_ref) = find_installed(&id, scope)?;
             let txn = new_transaction(&inst, &cancellable)?;
             txn.add_uninstall(&full_ref).map_err(gerr)?;
-            run_transaction(&txn, tracker, &cancellable, false)
+            run_transaction(&txn, tracker, &cancellable, false, None)
         }
         Operation::Update { ids } => {
             // One transaction per installation that has something to update.
             let mut plans = vec![];
-            for (_, inst) in installations() {
+            for (_, inst) in installations()? {
                 let refs = inst
                     .list_installed_refs_for_update(Some(&cancellable))
                     .map_err(gerr)?;
@@ -345,7 +353,7 @@ fn run_blocking(op: Operation, sink: ProgressSink, cancellable: gio::Cancellable
                 for r in &refs {
                     txn.add_update(r, &[], None).map_err(gerr)?;
                 }
-                match run_transaction(&txn, tracker.clone(), &cancellable, true) {
+                match run_transaction(&txn, tracker.clone(), &cancellable, true, None) {
                     Err(FlatpakError::Cancelled) => return Err(FlatpakError::Cancelled),
                     Err(FlatpakError::Failed(e)) => errors.push(e),
                     Ok(()) => {}
@@ -369,7 +377,7 @@ impl FlatpakBackend for LibflatpakBackend {
     async fn list_installed(&self) -> Result<Vec<InstalledApp>> {
         blocking(|| {
             let mut out = vec![];
-            for (scope, inst) in installations() {
+            for (scope, inst) in installations()? {
                 let refs = inst.list_installed_refs(none()).map_err(gerr)?;
                 out.extend(refs.iter().map(|r| installed_from(r, scope)));
             }
@@ -381,18 +389,8 @@ impl FlatpakBackend for LibflatpakBackend {
     async fn list_updates(&self) -> Result<Vec<UpdateInfo>> {
         blocking(|| {
             let mut out = vec![];
-            for (scope, inst) in installations() {
-                let refs = match inst.list_installed_refs_for_update(none()) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        kerr!(
-                            "libflatpak: update check for {} installation failed: {}",
-                            scope.as_str(),
-                            e.message()
-                        );
-                        continue;
-                    }
-                };
+            for (scope, inst) in installations()? {
+                let refs = inst.list_installed_refs_for_update(none()).map_err(gerr)?;
                 out.extend(refs.iter().map(|r| {
                     let app = installed_from(r, scope);
                     UpdateInfo {
@@ -414,7 +412,7 @@ impl FlatpakBackend for LibflatpakBackend {
     async fn list_remotes(&self) -> Result<Vec<RemoteInfo>> {
         blocking(|| {
             let mut out = vec![];
-            for (scope, inst) in installations() {
+            for (scope, inst) in installations()? {
                 let remotes = inst.list_remotes(none()).map_err(gerr)?;
                 out.extend(remotes.iter().map(|r| RemoteInfo {
                     name: s(r.name()),
@@ -432,33 +430,33 @@ impl FlatpakBackend for LibflatpakBackend {
     }
 
     async fn add_remote(&self, name: &str, source: RemoteSource, scope: Scope) -> Result<()> {
-        // .flatpakrepo URLs are downloaded here so the blocking part stays offline.
-        let data = match source {
-            RemoteSource::FlatpakRepo(d) => Some(d),
-            RemoteSource::Url(u) if u.ends_with(".flatpakrepo") => Some(
-                crate::flathub::client::HttpClient::default()
-                    .fetch_bytes_capped(&u, 1024 * 1024)
-                    .await
-                    .map_err(|e| {
-                        FlatpakError::Failed(format!("failed to download {}: {}", u, e))
-                    })?,
-            ),
-            RemoteSource::Url(u) => {
-                let name = name.to_string();
-                return blocking(move || {
-                    let inst = installation(scope)?;
-                    let remote = Remote::new(&name);
-                    remote.set_url(&u);
-                    inst.add_remote(&remote, true, none()).map_err(gerr)
-                })
-                .await;
+        crate::security::remote_name(name).map_err(FlatpakError::Failed)?;
+        let fixture = false;
+        #[cfg(feature = "test-util")]
+        let (source, fixture) = match source {
+            RemoteSource::LocalFixture { data, root } => {
+                crate::security::repo_fixture(&data, &root).map_err(FlatpakError::Failed)?;
+                (RemoteSource::FlatpakRepo(data), true)
             }
+            other => (other, fixture),
         };
+        let data = match source {
+            #[cfg(feature = "test-util")]
+            RemoteSource::LocalFixture { .. } => unreachable!("normalized fixture source"),
+            RemoteSource::FlatpakRepo(data) => data,
+            RemoteSource::Url(url) => crate::flathub::client::HttpClient::default()
+                .fetch_bytes_limited(&url, crate::security::MAX_REF_BYTES)
+                .await
+                .map_err(|e| FlatpakError::Failed(e.to_string()))?,
+        };
+        if !fixture {
+            crate::security::repo_file(&data).map_err(FlatpakError::Failed)?;
+        }
         let name = name.to_string();
-        let data = data.unwrap_or_default();
         blocking(move || {
             let inst = installation(scope)?;
             let remote = Remote::from_file(&name, &glib::Bytes::from_owned(data)).map_err(gerr)?;
+            remote.set_gpg_verify(true);
             inst.add_remote(&remote, true, none()).map_err(gerr)
         })
         .await
@@ -468,7 +466,7 @@ impl FlatpakBackend for LibflatpakBackend {
         let name = name.to_string();
         blocking(move || {
             let mut last = None;
-            for (sc, inst) in installations() {
+            for (sc, inst) in installations()? {
                 if scope.is_some_and(|want| want != sc) {
                     continue;
                 }
@@ -513,9 +511,6 @@ impl FlatpakBackend for LibflatpakBackend {
     }
 
     async fn launch(&self, id: &str) -> Result<()> {
-        if super::in_sandbox() {
-            return super::cli::CliBackend::new().launch(id).await;
-        }
         let id = id.to_string();
         blocking(move || {
             let (inst, full_ref) = find_installed(&id, None)?;
@@ -544,7 +539,7 @@ impl FlatpakBackend for LibflatpakBackend {
                 let ctx = glib::MainContext::new();
                 let res = ctx.with_thread_default(|| {
                     let mut monitors = vec![];
-                    for (scope, inst) in installations() {
+                    for (scope, inst) in installations().unwrap_or_default() {
                         match inst.create_monitor(none()) {
                             Ok(m) => {
                                 let tx = tx.clone();

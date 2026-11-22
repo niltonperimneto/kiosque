@@ -20,8 +20,10 @@ Kirigami.ShadowedRectangle {
     property string userHash: ""
     property int karmaUp: 0
     property int karmaDown: 0
-    // The page's AppDetails; review actions go through it.
-    property var details: null
+
+    // The owning page's AppDetails; review actions are routed through it so
+    // results are reported back to that page only.
+    property var controller: null
 
     radius: 8
     color: Kirigami.Theme.backgroundColor
@@ -65,6 +67,7 @@ Kirigami.ShadowedRectangle {
 
                 Controls.Label {
                     text: root.userName !== "" ? root.userName : L10n.i18n("Anonymous", [])
+                    textFormat: Text.PlainText
                     font.bold: true
                     Layout.fillWidth: true
                 }
@@ -89,7 +92,7 @@ Kirigami.ShadowedRectangle {
                 Controls.Label {
                     id: versionLabel
                     anchors.centerIn: parent
-                    text: L10n.i18n("v%1", [String(root.version)])
+                    text: L10n.i18n("v%1", [root.version])
                     font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
                     color: Kirigami.Theme.textColor
                     opacity: 0.8
@@ -114,6 +117,7 @@ Kirigami.ShadowedRectangle {
 
         Controls.Label {
             text: root.summary
+            textFormat: Text.PlainText
             font.bold: true
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
@@ -123,6 +127,7 @@ Kirigami.ShadowedRectangle {
 
         Controls.Label {
             text: root.description
+            textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
             opacity: 0.9
@@ -143,7 +148,7 @@ Kirigami.ShadowedRectangle {
                 text: root.karmaUp > 0 ? root.karmaUp : ""
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
-                onClicked: root.details.upvoteReview(root.reviewId)
+                onClicked: if (root.controller) root.controller.upvoteReview(root.reviewId)
                 Controls.ToolTip.text: L10n.i18n("Helpful", [])
                 Controls.ToolTip.visible: hovered
             }
@@ -155,7 +160,7 @@ Kirigami.ShadowedRectangle {
                 text: root.karmaDown > 0 ? root.karmaDown : ""
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
-                onClicked: root.details.downvoteReview(root.reviewId)
+                onClicked: if (root.controller) root.controller.downvoteReview(root.reviewId)
                 Controls.ToolTip.text: L10n.i18n("Unhelpful", [])
                 Controls.ToolTip.visible: hovered
             }
@@ -166,7 +171,7 @@ Kirigami.ShadowedRectangle {
                 icon.name: "flag"
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
-                onClicked: root.details.dismissReview(root.reviewId)
+                onClicked: if (root.controller) root.controller.dismissReview(root.reviewId)
                 Controls.ToolTip.text: L10n.i18n("Report Review", [])
                 Controls.ToolTip.visible: hovered
             }
@@ -192,7 +197,7 @@ Kirigami.ShadowedRectangle {
         id: deleteConfirmDialog
         title: L10n.i18n("Delete Review?", [])
         standardButtons: Kirigami.Dialog.Yes | Kirigami.Dialog.No
-        onAccepted: root.details.removeReview(root.reviewId)
+        onAccepted: if (root.controller) root.controller.removeReview(root.reviewId)
         
         Controls.Label {
             text: L10n.i18n("Are you sure you want to permanently delete your review?", [])

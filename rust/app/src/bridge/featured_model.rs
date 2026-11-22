@@ -1,14 +1,14 @@
 //! `FeaturedModel`: the shopfront hero carousel.
 
 use kiosque_core::entries::FeaturedEntry;
-use qtbridge::{QModelItem, qobject};
+use qtbridge::qobject;
 
 pub use object::FeaturedModel;
 
 /// Seconds a cached featured list is shown without refetching.
 const FEATURED_TTL: u64 = 300;
 
-#[derive(Debug, Default, Clone, PartialEq, QModelItem)]
+#[derive(Debug, Default, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct FeaturedItem {
     pub name: String,
@@ -17,6 +17,9 @@ pub struct FeaturedItem {
     pub appId: String,
     pub description: String,
     pub developer: String,
+    pub screenshotUrl: String,
+    pub brandColorLight: String,
+    pub brandColorDark: String,
 }
 
 impl From<FeaturedEntry> for FeaturedItem {
@@ -28,6 +31,9 @@ impl From<FeaturedEntry> for FeaturedItem {
             appId: e.app_id,
             description: e.description,
             developer: e.developer,
+            screenshotUrl: e.screenshot_url,
+            brandColorLight: e.brand_color_light,
+            brandColorDark: e.brand_color_dark,
         }
     }
 }
@@ -45,6 +51,7 @@ mod object {
         pub(super) loading: bool,
         pub(super) count: i32,
         pub(super) generation: u64,
+        pub(super) aotd_json: String,
     }
 
     impl QListModel for FeaturedModel {
@@ -63,6 +70,12 @@ mod object {
     }
 
     impl FeaturedModel {
+        qproperty!("aotd_json", Read = get_aotd, Notify = aotd_changed);
+        fn get_aotd(&self) -> String {
+            self.aotd_json.clone()
+        }
+        #[qsignal]
+        pub fn aotd_changed(&mut self);
         qproperty!("loading", Read = loading_value, Notify = loading_changed);
         qproperty!("count", Read = count_value, Notify = count_changed);
 
@@ -73,9 +86,9 @@ mod object {
             self.count
         }
 
-        #[qsignal]
+        #[qsignal(qml_name = "loadingChanged")]
         pub fn loading_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "countChanged")]
         pub fn count_changed(&mut self);
 
         /// Show the cached list at once, then refresh it if it is stale.
@@ -95,7 +108,7 @@ mod object {
                     }
                 }
                 let distro = kiosque_core::config::distro_id();
-                let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+                let day = jiff::Zoned::now().strftime("%Y-%m-%d").to_string();
                 let items = crate::view::featured::fetch(
                     &crate::services::services().flathub,
                     &distro,
@@ -115,7 +128,17 @@ mod object {
             if generation != self.generation {
                 return;
             }
-            let items: Vec<FeaturedItem> = entries.into_iter().map(FeaturedItem::from).collect();
+            let daily = entries.iter().find(|e| e.is_app_of_the_day);
+            let aotd=daily.map(|e|serde_json::json!({"appId":e.app_id,"name":e.name,"summary":e.summary,"developer":e.developer,"iconUrl":e.icon_url,"screenshotUrl":e.screenshot_url,"screenshots":e.screenshot_urls})).unwrap_or_else(||serde_json::json!({})).to_string();
+            if self.aotd_json != aotd {
+                self.aotd_json = aotd;
+                self.aotd_changed();
+            }
+            let items: Vec<FeaturedItem> = entries
+                .into_iter()
+                .filter(|e| !e.is_app_of_the_day)
+                .map(FeaturedItem::from)
+                .collect();
             if items != self.items {
                 let count = items.len() as i32;
                 self.pending = Some(items);
@@ -135,3 +158,77 @@ notify_setters!(FeaturedModel {
 });
 
 qml_element!(FeaturedModel, "FeaturedModel");
+
+// Keep the existing Qt.UserRole numbers as well as the QML role names.
+impl qtbridge::QModelItem for FeaturedItem {
+    type T0 = String;
+    type T1 = String;
+    type T2 = String;
+    type T3 = String;
+    type T4 = String;
+    type T5 = String;
+    type T6 = String;
+    type T7 = String;
+    type T8 = String;
+    type T9 = ();
+    type T10 = ();
+    type T11 = ();
+    type T12 = ();
+    type T13 = ();
+    type T14 = ();
+    fn get0(&self) -> Option<&String> {
+        Some(&self.name)
+    }
+    fn get1(&self) -> Option<&String> {
+        Some(&self.summary)
+    }
+    fn get2(&self) -> Option<&String> {
+        Some(&self.iconUrl)
+    }
+    fn get3(&self) -> Option<&String> {
+        Some(&self.appId)
+    }
+    fn get4(&self) -> Option<&String> {
+        Some(&self.description)
+    }
+    fn get5(&self) -> Option<&String> {
+        Some(&self.developer)
+    }
+    fn get6(&self) -> Option<&String> {
+        Some(&self.screenshotUrl)
+    }
+    fn get7(&self) -> Option<&String> {
+        Some(&self.brandColorLight)
+    }
+    fn get8(&self) -> Option<&String> {
+        Some(&self.brandColorDark)
+    }
+    fn role_names() -> std::collections::HashMap<i32, String> {
+        [
+            (256, "name".into()),
+            (257, "summary".into()),
+            (258, "iconUrl".into()),
+            (259, "appId".into()),
+            (260, "description".into()),
+            (261, "developer".into()),
+            (262, "screenshotUrl".into()),
+            (263, "brandColorLight".into()),
+            (264, "brandColorDark".into()),
+        ]
+        .into()
+    }
+    fn get_role(&self, role: i32) -> qtbridge::qtbridge_type_lib::QVariant {
+        match role {
+            256 => qtbridge::QVariantConvertible::to_qvariant(&self.name),
+            257 => qtbridge::QVariantConvertible::to_qvariant(&self.summary),
+            258 => qtbridge::QVariantConvertible::to_qvariant(&self.iconUrl),
+            259 => qtbridge::QVariantConvertible::to_qvariant(&self.appId),
+            260 => qtbridge::QVariantConvertible::to_qvariant(&self.description),
+            261 => qtbridge::QVariantConvertible::to_qvariant(&self.developer),
+            262 => qtbridge::QVariantConvertible::to_qvariant(&self.screenshotUrl),
+            263 => qtbridge::QVariantConvertible::to_qvariant(&self.brandColorLight),
+            264 => qtbridge::QVariantConvertible::to_qvariant(&self.brandColorDark),
+            _ => Default::default(),
+        }
+    }
+}

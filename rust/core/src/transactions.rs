@@ -26,7 +26,7 @@ struct Queued {
 pub struct TransactionManager {
     backend: Arc<dyn FlatpakBackend>,
     registry: Arc<Registry>,
-    queue: mpsc::UnboundedSender<Queued>,
+    queue: mpsc::Sender<Queued>,
     tokens: Mutex<HashMap<u64, CancellationToken>>,
     next_id: AtomicU64,
     stopping: CancellationToken,
@@ -47,7 +47,7 @@ fn kind_of(op: &Operation) -> JobKind {
 impl TransactionManager {
     /// Create a manager and start its worker on the shared runtime.
     pub fn new(backend: Arc<dyn FlatpakBackend>, registry: Arc<Registry>) -> Arc<Self> {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(crate::security::MAX_OPERATIONS);
         let mgr = Arc::new(Self {
             backend,
             registry,
@@ -103,6 +103,16 @@ impl TransactionManager {
     /// Queue `op`. If an identical operation is already queued or running,
     /// its id is returned instead of queueing a duplicate.
     pub fn enqueue(&self, op: Operation, title: &str) -> u64 {
+        self.try_enqueue(op, title).unwrap_or_else(|error| {
+            kerr!("Transaction rejected: {}", error);
+            0
+        })
+    }
+
+    /// Bounded submission for every external/UI caller. A rejected operation
+    /// has no job id and never reaches a backend.
+    pub fn try_enqueue(&self, op: Operation, title: &str) -> Result<u64, String> {
+        crate::security::operation(&op, title)?;
         let _submission = self.submission.lock().unwrap();
         let kind = kind_of(&op);
         let app_ids = op.app_ids();
@@ -113,9 +123,12 @@ impl TransactionManager {
             .iter()
             .find(|(_, existing)| **existing == op)
         {
-            return existing;
+            return Ok(existing);
         }
 
+        if self.operations.lock().unwrap().len() >= crate::security::MAX_OPERATIONS {
+            return Err("Transaction queue is full; wait for existing operations".into());
+        }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let token = CancellationToken::new();
         self.tokens.lock().unwrap().insert(id, token.clone());
@@ -140,9 +153,15 @@ impl TransactionManager {
                 self.finish(job);
             }
         } else {
-            let _ = self.queue.send(Queued { id, op, token });
+            if self.queue.try_send(Queued { id, op, token }).is_err() {
+                if let Some(mut job) = self.registry.job(id) {
+                    job.state = JobState::Failed("Transaction queue is unavailable".into());
+                    self.finish(job);
+                }
+                return Err("Transaction queue is unavailable".into());
+            }
         }
-        id
+        Ok(id)
     }
 
     /// Cancel a queued or running job. Returns false if it is unknown or
@@ -254,7 +273,7 @@ pub enum Transactions {
 impl Transactions {
     pub async fn enqueue(&self, op: Operation, title: &str) -> Result<u64, String> {
         match self {
-            Transactions::Local(m) => Ok(m.enqueue(op, title)),
+            Transactions::Local(m) => m.try_enqueue(op, title),
             Transactions::Remote(c) => c.enqueue(op, title).await,
         }
     }
@@ -505,5 +524,26 @@ mod lifecycle_tests {
             registry.job(after_shutdown).unwrap().state,
             JobState::Cancelled
         );
+    }
+    #[tokio::test]
+    async fn untrusted_submissions_are_bounded_before_backend_execution() {
+        let mock = Arc::new(crate::flatpak::mock::MockBackend::default());
+        *mock.gate.lock().unwrap() = Some(Arc::new(tokio::sync::Semaphore::new(0)));
+        let op = |id: &str| Operation::Uninstall {
+            id: id.into(),
+            scope: Some(Scope::User),
+        };
+        let reg = Arc::new(Registry::default());
+        let manager = TransactionManager::new(mock.clone(), reg.clone());
+        for index in 0..crate::security::MAX_OPERATIONS {
+            manager
+                .try_enqueue(op(&format!("app{index}")), "bounded")
+                .unwrap();
+        }
+        assert!(manager.try_enqueue(op("overflow"), "").is_err());
+        assert!(manager.try_enqueue(op("--command=sh"), "").is_err());
+        assert_eq!(reg.jobs().len(), crate::security::MAX_OPERATIONS);
+        manager.shutdown().await;
+        assert!(reg.jobs().iter().all(|job| !job.state.is_active()));
     }
 }

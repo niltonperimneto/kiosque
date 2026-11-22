@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 
 /// QML-loadable files; guidance documents and editor files stay out of qrc.
 fn wanted(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|x| x == "qml" || x == "js" || x == "svg" || x == "png")
+    path.file_name().is_some_and(|x| x == "qmldir")
+        || path
+            .extension()
+            .is_some_and(|x| x == "qml" || x == "js" || x == "svg" || x == "png")
 }
 
 fn copy_tree(src: &Path, dst: &Path) {

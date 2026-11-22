@@ -1,778 +1,388 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Kiosque Contributors
+
 import QtQuick
+import org.kde.ki18n
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import com.kiosque
 import org.kde.kirigamiaddons.components as KirigamiAddons
-import QtCore
+import org.kde.kirigamiaddons.formcard as FormCard
 
-Kirigami.ScrollablePage {
+// Settings in the standard KDE FormCard layout: one scrolling page with a
+// card per topic, like other Plasma applications.
+FormCard.FormCardPage {
     id: page
+
+    // KDE Addons resolve these functions in their creation context.
+    KI18nContext { id: kdeTranslations; translationDomain: "kiosque" }
+    function i18nd() { return kdeTranslations.i18nd.apply(kdeTranslations, arguments); }
+    function i18ndc() { return kdeTranslations.i18ndc.apply(kdeTranslations, arguments); }
+    function i18ndp() { return kdeTranslations.i18ndp.apply(kdeTranslations, arguments); }
+    function i18ndcp() { return kdeTranslations.i18ndcp.apply(kdeTranslations, arguments); }
+    RemoteImage { id: userAvatar; url: SettingsController.oauth_avatar_url; kind: "avatar" }
+    objectName: "settingsPage"
     title: L10n.i18n("Settings", [])
 
-    leftPadding: Kirigami.Units.largeSpacing * 2
-    rightPadding: Kirigami.Units.largeSpacing * 2
-    topPadding: Kirigami.Units.largeSpacing * 1.5
-    bottomPadding: Kirigami.Units.largeSpacing * 2
+    // Set once the controls reflect the stored settings, so the initial
+    // binding updates never write settings back.
+    property bool readyForSaving: false
+    property string settingsError: ""
 
-    actions: [
-        Kirigami.Action {
-            icon.name: "window-close"
-            text: L10n.i18n("Close", [])
-            visible: applicationWindow().pageStack.depth > 1
-            onTriggered: applicationWindow().pageStack.pop()
-        }
-    ]
-
-    Settings {
-        id: localSettings
-        category: "SettingsPage"
-        property bool showAdvanced: false
-    }
 
     Component.onCompleted: {
         SettingsController.loadSettings()
         RepoModel.refresh()
-    }
-
-    ColumnLayout {
-        spacing: Kirigami.Units.largeSpacing * 2
-        width: parent.width
-
-        // ── Settings Header ────────────────────────────────────────────────
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
-            Layout.alignment: Qt.AlignHCenter
-            
-            ColumnLayout {
-                spacing: Kirigami.Units.smallSpacing
-                Layout.fillWidth: true
-                
-                Kirigami.Heading {
-                    text: L10n.i18n("Preferences", [])
-                    level: 2
-                }
-                Controls.Label {
-                    text: L10n.i18n("Configure updates, authentication, and flatpak repositories", [])
-                    color: Kirigami.Theme.disabledTextColor
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.95
-                }
-            }
-            
-            Controls.Switch {
-                id: advancedToggle
-                text: L10n.i18n("Advanced Settings", [])
-                checked: localSettings.showAdvanced
-                onCheckedChanged: localSettings.showAdvanced = checked
-                Layout.alignment: Qt.AlignVCenter
-            }
-        }
-
-        // ── Automatic Updates Card ─────────────────────────────────────────
-        Controls.Pane {
-            Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
-            Layout.alignment: Qt.AlignHCenter
-            padding: Kirigami.Units.largeSpacing * 1.5
-
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
-
-            contentItem: ColumnLayout {
-                spacing: Kirigami.Units.largeSpacing
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-                    Kirigami.Icon {
-                        source: "system-software-update"
-                        width: Kirigami.Units.iconSizes.medium
-                        height: width
-                        color: Kirigami.Theme.highlightColor
-                        isMask: true
-                    }
-                    Kirigami.Heading {
-                        text: L10n.i18n("Automatic Updates", [])
-                        level: 3
-                        Layout.fillWidth: true
-                    }
-                }
-
-                Kirigami.Separator { Layout.fillWidth: true }
-
-                Kirigami.FormLayout {
-                    Layout.fillWidth: true
-
-                    Controls.Switch {
-                        id: autoUpdateSwitch
-                        Kirigami.FormData.label: L10n.i18n("Enable Automatic Updates:", [])
-                        checked: SettingsController.auto_update
-                        onCheckedChanged: saveSettings()
-                    }
-
-                    Controls.ComboBox {
-                        id: frequencyCombo
-                        Kirigami.FormData.label: L10n.i18n("Frequency:", [])
-                        model: [L10n.i18n("Daily", []), L10n.i18n("Weekly", [])]
-                        currentIndex: SettingsController.update_frequency.toLowerCase() === "weekly" ? 1 : 0
-                        enabled: autoUpdateSwitch.checked
-                        visible: advancedToggle.checked
-                        onCurrentIndexChanged: saveSettings()
-                    }
-
-                    Controls.TextField {
-                        id: timeField
-                        Kirigami.FormData.label: L10n.i18n("Time (HH:MM):", [])
-                        text: SettingsController.update_time
-                        placeholderText: "02:00"
-                        enabled: autoUpdateSwitch.checked
-                        visible: advancedToggle.checked
-                        validator: RegularExpressionValidator { regularExpression: /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/ }
-                        onTextChanged: {
-                            if (acceptableInput) {
-                                saveSettings()
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Repositories Card ──────────────────────────────────────────────
-        Controls.Pane {
-            visible: advancedToggle.checked
-            Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
-            Layout.alignment: Qt.AlignHCenter
-            padding: Kirigami.Units.largeSpacing * 1.5
-
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
-
-            contentItem: ColumnLayout {
-                spacing: Kirigami.Units.largeSpacing
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-                    Kirigami.Icon {
-                        source: "folder-download"
-                        width: Kirigami.Units.iconSizes.medium
-                        height: width
-                        color: Kirigami.Theme.highlightColor
-                        isMask: true
-                    }
-                    Kirigami.Heading {
-                        text: L10n.i18n("Repositories", [])
-                        level: 3
-                        Layout.fillWidth: true
-                    }
-                    Controls.Button {
-                        text: page.width < Kirigami.Units.gridUnit * 28 ? "" : L10n.i18n("Add Repository", [])
-                        icon.name: "list-add"
-                        onClicked: addRepoDialog.open()
-
-                        Controls.ToolTip {
-                            text: L10n.i18n("Add Repository", [])
-                            visible: parent.hovered && page.width < Kirigami.Units.gridUnit * 28
-                        }
-                    }
-                }
-
-                Kirigami.Separator { Layout.fillWidth: true }
-
-                ListView {
-                    id: repoList
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: contentHeight
-                    interactive: false
-                    model: RepoModel
-                    clip: true
-                    
-                    delegate: Column {
-                        width: repoList.width
-                        spacing: 0
-
-                        Kirigami.SwipeListItem {
-                            width: parent.width
-                            contentItem: ColumnLayout {
-                                spacing: Kirigami.Units.smallSpacing
-
-                                Kirigami.Heading {
-                                    level: 4
-                                    text: model.title !== "" ? model.title : model.name
-                                    Layout.fillWidth: true
-                                }
-
-                                Controls.Label {
-                                    text: model.url
-                                    color: Kirigami.Theme.disabledTextColor
-                                    Layout.fillWidth: true
-                                    elide: Text.ElideRight
-                                }
-                            }
-
-                            actions: [
-                                Kirigami.Action {
-                                    text: L10n.i18n("Remove", [])
-                                    icon.name: "edit-delete"
-                                    onTriggered: {
-                                        RepoModel.removeRemote(model.name)
-                                    }
-                                }
-                            ]
-                        }
-
-                        Kirigami.Separator {
-                            width: parent.width
-                            visible: index < repoList.count - 1
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── ODRS Accounts Card ──────────────────────────────────────────────
-        Controls.Pane {
-            Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
-            Layout.alignment: Qt.AlignHCenter
-            padding: Kirigami.Units.largeSpacing * 1.5
-
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
-
-            contentItem: ColumnLayout {
-                spacing: Kirigami.Units.largeSpacing
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-                    Kirigami.Icon {
-                        source: "user"
-                        width: Kirigami.Units.iconSizes.medium
-                        height: width
-                        color: Kirigami.Theme.highlightColor
-                        isMask: true
-                    }
-                    Kirigami.Heading {
-                        text: L10n.i18n("ODRS Review Account", [])
-                        level: 3
-                        Layout.fillWidth: true
-                    }
-                }
-
-                Kirigami.Separator { Layout.fillWidth: true }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.largeSpacing
-
-                    // Case 1: Authenticated State
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Kirigami.Units.largeSpacing
-                        visible: SettingsController.is_authenticated
-
-                        Item {
-                            id: settingsAvatarContainer
-                            Layout.preferredWidth: Kirigami.Units.iconSizes.huge + 8
-                            Layout.preferredHeight: Layout.preferredWidth
-                            Layout.alignment: Qt.AlignVCenter
-
-                            Kirigami.ShadowedRectangle {
-                                anchors.fill: parent
-                                radius: width / 2
-                                color: "transparent"
-
-                                border.width: 1.5
-                                border.color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.4)
-
-                                shadow.size: 8
-                                shadow.color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.25)
-                                shadow.yOffset: 2
-                            }
-
-                            KirigamiAddons.Avatar {
-                                id: settingsUserAvatar
-                                anchors.centerIn: parent
-                                width: parent.width - 8
-                                height: width
-                                source: settingsAvatarImage.source
-                                name: SettingsController.oauth_username
-
-                                RemoteImage {
-                                    id: settingsAvatarImage
-                                    url: SettingsController.oauth_avatar_url
-                                    kind: "avatar"
-                                }
-                            }
-                        }
-
-                        ColumnLayout {
-                            spacing: Kirigami.Units.smallSpacing
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignVCenter
-
-                            Kirigami.Heading {
-                                level: 3
-                                text: SettingsController.oauth_username
-                                Layout.fillWidth: true
-                            }
-
-                            Controls.Label {
-                                text: L10n.i18n("Logged in via %1", []).arg(
-                                    SettingsController.oauth_provider === "github" ? "GitHub" :
-                                    SettingsController.oauth_provider === "gitlab" ? "GitLab" :
-                                    SettingsController.oauth_provider === "gnome_gitlab" ? "GNOME GitLab" :
-                                    SettingsController.oauth_provider === "kde_gitlab" ? "KDE GitLab" : SettingsController.oauth_provider
-                                )
-                                color: Kirigami.Theme.disabledTextColor
-                                Layout.fillWidth: true
-                            }
-                        }
-
-                        Controls.Button {
-                            text: L10n.i18n("Log Out", [])
-                            icon.name: "log-out"
-                            Layout.alignment: Qt.AlignVCenter
-                            onClicked: SettingsController.logout()
-                        }
-                    }
-
-                    // Case 2: Unauthenticated State
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: Kirigami.Units.largeSpacing
-                        visible: !SettingsController.is_authenticated
-
-                        Controls.Label {
-                            text: L10n.i18n("To write reviews and submit application ratings, you must authenticate using an open-source development provider. Reviews are submitted pseudonymously using a secure privacy hash.", [])
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                            color: Kirigami.Theme.textColor
-                        }
-
-                        Flow {
-                            Layout.fillWidth: true
-                            spacing: Kirigami.Units.mediumSpacing
-
-                            Controls.Button {
-                                text: "GitHub"
-                                icon.name: "git-brand"
-                                onClicked: SettingsController.login("github")
-                            }
-
-                            Controls.Button {
-                                text: "GitLab"
-                                icon.name: "git-brand"
-                                onClicked: SettingsController.login("gitlab")
-                            }
-
-                            Controls.Button {
-                                text: "KDE GitLab"
-                                icon.name: "kde"
-                                onClicked: SettingsController.login("kde_gitlab")
-                            }
-
-                            Controls.Button {
-                                text: "GNOME GitLab"
-                                icon.name: "gnome"
-                                onClicked: SettingsController.login("gnome_gitlab")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Privacy & Security Card ─────────────────────────────────────────
-        Controls.Pane {
-            visible: advancedToggle.checked
-            Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
-            Layout.alignment: Qt.AlignHCenter
-            padding: Kirigami.Units.largeSpacing * 1.5
-
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
-
-            contentItem: ColumnLayout {
-                spacing: Kirigami.Units.largeSpacing
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-                    Kirigami.Icon {
-                        source: "security-high-symbolic"
-                        width: Kirigami.Units.iconSizes.medium
-                        height: width
-                        color: Kirigami.Theme.highlightColor
-                        isMask: true
-                    }
-                    Kirigami.Heading {
-                        text: L10n.i18n("Privacy & Security", [])
-                        level: 3
-                        Layout.fillWidth: true
-                    }
-                }
-
-                Kirigami.Separator { Layout.fillWidth: true }
-
-                Kirigami.FormLayout {
-                    Layout.fillWidth: true
-
-                    RowLayout {
-                        Kirigami.FormData.label: L10n.i18n("Privacy User Hash:", [])
-                        Layout.fillWidth: true
-                        spacing: Kirigami.Units.smallSpacing
-
-                        Controls.TextField {
-                            id: hashField
-                            text: SettingsController.odrs_user_hash
-                            readOnly: true
-                            Layout.fillWidth: true
-                            font.family: "monospace"
-                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
-                            
-                            Controls.Button {
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.bottom: parent.bottom
-                                icon.name: "edit-copy"
-                                flat: true
-                                Controls.ToolTip {
-                                    text: L10n.i18n("Copy user hash to clipboard", [])
-                                    visible: parent.hovered
-                                }
-                                onClicked: {
-                                    hashField.selectAll()
-                                    hashField.copy()
-                                    hashField.deselect()
-                                }
-                            }
-                        }
-                    }
-
-                    Controls.Label {
-                        Layout.fillWidth: true
-                        text: L10n.i18n("This hash is computed from your login identity combined with a secure local salt. It is used pseudonymously by ODRS so you can manage your reviews without disclosing your IP address or credentials.", [])
-                        wrapMode: Text.WordWrap
-                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
-                        color: Kirigami.Theme.disabledTextColor
-                    }
-
-                    RowLayout {
-                        Kirigami.FormData.label: L10n.i18n("Privacy Actions:", [])
-                        spacing: Kirigami.Units.mediumSpacing
-
-                        Controls.Button {
-                            text: L10n.i18n("Regenerate Salt", [])
-                            icon.name: "view-refresh"
-                            onClicked: regenerateSaltDialog.open()
-                        }
-
-                        Controls.Button {
-                            text: L10n.i18n("Clear Cache", [])
-                            icon.name: "edit-clear"
-                            onClicked: SettingsController.clearCache()
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── About Card ─────────────────────────────────────────────────────
-        Controls.Pane {
-            Layout.fillWidth: true
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 40
-            Layout.alignment: Qt.AlignHCenter
-            padding: Kirigami.Units.largeSpacing * 1.5
-
-            background: Kirigami.ShadowedRectangle {
-                radius: 12
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.1)
-                border.width: 1
-                shadow.size: 10
-                shadow.color: Qt.rgba(0, 0, 0, 0.05)
-            }
-
-            contentItem: ColumnLayout {
-                spacing: Kirigami.Units.largeSpacing
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-                    Kirigami.Icon {
-                        source: "help-about-symbolic"
-                        width: Kirigami.Units.iconSizes.medium
-                        height: width
-                        color: Kirigami.Theme.highlightColor
-                        isMask: true
-                    }
-                    Kirigami.Heading {
-                        text: L10n.i18n("About Kiosque", [])
-                        level: 3
-                        Layout.fillWidth: true
-                    }
-                }
-
-                Kirigami.Separator { Layout.fillWidth: true }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.largeSpacing
-
-                    Image {
-                        source: "qrc:/qml/images/logo.svg"
-                        Layout.preferredWidth: Kirigami.Units.iconSizes.large * 1.5
-                        Layout.preferredHeight: Kirigami.Units.iconSizes.large * 1.5
-                        sourceSize.width: Kirigami.Units.iconSizes.large * 1.5
-                        sourceSize.height: Kirigami.Units.iconSizes.large * 1.5
-                        fillMode: Image.PreserveAspectFit
-                        smooth: true
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: Kirigami.Units.smallSpacing
-
-                        Controls.Label {
-                            text: "Kiosque"
-                            font.bold: true
-                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.1
-                        }
-
-                        Controls.Label {
-                            text: L10n.i18n("Version %1", []).arg(Qt.application.version)
-                            color: Kirigami.Theme.disabledTextColor
-                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
-                        }
-                    }
-
-                    Controls.Button {
-                        text: L10n.i18n("More Information…", [])
-                        icon.name: "help-about-symbolic"
-                        onClicked: aboutDialog.open()
-                        Layout.alignment: Qt.AlignVCenter
-                    }
-                }
-            }
-        }
+        readyForSaving = true
     }
 
     function saveSettings() {
-        if (!autoUpdateSwitch.checked || timeField.acceptableInput) {
+        if (readyForSaving && !SettingsController.saving_settings && timeField.acceptableInput) {
+            settingsError = ""
             SettingsController.saveSettings(
                 autoUpdateSwitch.checked,
-                frequencyCombo.currentText,
+                frequencyCombo.currentIndex === 1 ? "Weekly" : "Daily",
                 timeField.text
             )
         }
     }
 
-    // Add Repository Dialog
-    Kirigami.Dialog {
-        id: addRepoDialog
-        title: L10n.i18n("Add Repository", [])
-        standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+    function providerName(provider) {
+        switch (provider) {
+        case "github": return "GitHub"
+        case "gitlab": return "GitLab"
+        case "gnome_gitlab": return "GNOME GitLab"
+        case "kde_gitlab": return "KDE GitLab"
+        default: return provider
+        }
+    }
 
-        onAccepted: {
-            if (repoNameField.text !== "" && repoUrlField.text !== "") {
-                RepoModel.addRemote(repoNameField.text, repoUrlField.text)
-                repoNameField.text = ""
-                repoUrlField.text = ""
-            }
+    Kirigami.InlineMessage {
+        objectName: "settingsErrorMessage"
+        Layout.fillWidth: true
+        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+        Layout.alignment: Qt.AlignHCenter
+        Layout.topMargin: Kirigami.Units.largeSpacing
+        type: Kirigami.MessageType.Error
+        text: page.settingsError
+        visible: text !== ""
+    }
+
+    Kirigami.InlineMessage {
+        objectName: "loginProgressMessage"
+        Layout.fillWidth: true
+        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+        Layout.alignment: Qt.AlignHCenter
+        Layout.topMargin: Kirigami.Units.largeSpacing
+        type: Kirigami.MessageType.Information
+        visible: SettingsController.login_in_progress
+        text: SettingsController.login_user_code !== ""
+            ? L10n.i18n("Enter code %1 at %2 to sign in.", [SettingsController.login_user_code, SettingsController.login_verification_url])
+            : L10n.i18n("Complete sign-in in your browser.", [])
+        actions: Kirigami.Action {
+            text: L10n.i18n("Cancel sign-in", [])
+            onTriggered: SettingsController.cancelLogin()
+        }
+    }
+
+    // ── Updates ─────────────────────────────────────────────────────────
+    FormCard.FormHeader {
+        title: L10n.i18n("Automatic Updates", [])
+    }
+
+    FormCard.FormCard {
+        objectName: "updatesCard"
+
+        FormCard.FormSwitchDelegate {
+            id: autoUpdateSwitch
+            objectName: "autoUpdateSwitch"
+            text: L10n.i18n("Update applications automatically", [])
+            description: L10n.i18n("Kiosque checks for and installs updates in the background, even when it is closed.", [])
+            checked: SettingsController.auto_update
+            enabled: !SettingsController.saving_settings
+            onToggled: page.saveSettings()
         }
 
-        ColumnLayout {
-            spacing: Kirigami.Units.smallSpacing
-            
-            Controls.TextField {
-                id: repoNameField
-                placeholderText: L10n.i18n("Name (e.g. flathub)", [])
-                Layout.fillWidth: true
-            }
+        FormCard.FormDelegateSeparator { above: autoUpdateSwitch; below: frequencyCombo }
 
-            Controls.TextField {
-                id: repoUrlField
-                placeholderText: L10n.i18n("URL (e.g. https://dl.flathub.org/repo/flathub.flatpakrepo)", [])
-                Layout.fillWidth: true
+        FormCard.FormComboBoxDelegate {
+            id: frequencyCombo
+            objectName: "updateFrequencyCombo"
+            text: L10n.i18n("Frequency", [])
+            model: [L10n.i18n("Daily", []), L10n.i18n("Weekly", [])]
+            currentIndex: SettingsController.update_frequency.toLowerCase() === "weekly" ? 1 : 0
+            enabled: autoUpdateSwitch.checked && !SettingsController.saving_settings
+            onActivated: page.saveSettings()
+        }
+
+        FormCard.FormDelegateSeparator { above: frequencyCombo; below: timeField }
+
+        FormCard.FormTextFieldDelegate {
+            id: timeField
+            objectName: "updateTimeField"
+            label: L10n.i18n("Time of day (HH:MM)", [])
+            text: SettingsController.update_time
+            placeholderText: "02:00"
+            inputMethodHints: Qt.ImhTime
+            enabled: autoUpdateSwitch.checked && !SettingsController.saving_settings
+            validator: RegularExpressionValidator { regularExpression: /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/ }
+            statusMessage: acceptableInput || text === "" ? "" : L10n.i18n("Use 24-hour time, for example 02:00.", [])
+            status: Kirigami.MessageType.Error
+            onEditingFinished: {
+                if (acceptableInput) {
+                    page.saveSettings()
+                }
             }
         }
     }
 
-    // Regenerate Salt Confirm Dialog
-    Kirigami.Dialog {
-        id: regenerateSaltDialog
-        title: L10n.i18n("Regenerate Privacy Salt?", [])
-        standardButtons: Kirigami.Dialog.Yes | Kirigami.Dialog.No
-        
-        onAccepted: {
-            SettingsController.regenerateSalt()
+    // ── Repositories ────────────────────────────────────────────────────
+    FormCard.FormHeader {
+        title: L10n.i18n("Repositories", [])
+    }
+
+    FormCard.FormCard {
+        objectName: "repositoriesCard"
+
+        Repeater {
+            id: repoRepeater
+            model: RepoModel
+
+            delegate: FormCard.FormTextDelegate {
+                id: repoDelegate
+
+                required property int index
+                required property string name
+                required property string title
+                required property string url
+
+                text: title !== "" ? title : name
+                description: url
+                descriptionItem.elide: Text.ElideMiddle
+                leading: Kirigami.Icon {
+                    source: "folder-download-symbolic"
+                    implicitWidth: Kirigami.Units.iconSizes.smallMedium
+                    implicitHeight: implicitWidth
+                }
+                trailing: Controls.ToolButton {
+                    objectName: "removeRepository_" + repoDelegate.name
+                    icon.name: "edit-delete-remove"
+                    text: L10n.i18n("Remove %1", [repoDelegate.text])
+                    display: Controls.AbstractButton.IconOnly
+                    Accessible.name: text
+                    Controls.ToolTip.text: text
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    onClicked: RepoModel.removeRemote(repoDelegate.name)
+                }
+            }
         }
 
-        Controls.Label {
-            text: L10n.i18n("Regenerating your local cryptographic salt will immediately assign you a completely new pseudonymous identity on the ODRS review server. Your existing reviews and votes will still exist, but they will be permanently unlinked from this machine and you will no longer be able to modify or delete them. Are you sure you want to proceed?", [])
-            wrapMode: Text.WordWrap
-            width: Kirigami.Units.gridUnit * 25
+        FormCard.FormTextDelegate {
+            visible: repoRepeater.count === 0
+            text: RepoModel.loading ? L10n.i18n("Loading repositories…", []) : L10n.i18n("No repositories configured", [])
+            description: RepoModel.loading ? "" : L10n.i18n("Add a repository such as Flathub to browse and install applications.", [])
         }
+
+        FormCard.FormDelegateSeparator { below: addRepositoryButton }
+
+        FormCard.FormButtonDelegate {
+            id: addRepositoryButton
+            objectName: "addRepositoryButton"
+            icon.name: "list-add"
+            text: L10n.i18n("Add Repository…", [])
+            onClicked: applicationWindow().openAddRepository()
+        }
+    }
+
+    // ── Review account ──────────────────────────────────────────────────
+    FormCard.FormHeader {
+        title: L10n.i18n("Review Account", [])
+    }
+
+    FormCard.FormCard {
+        objectName: "accountCard"
+
+        FormCard.FormTextDelegate {
+            visible: SettingsController.is_authenticated
+            text: SettingsController.oauth_username
+            description: L10n.i18n("Signed in with %1", [page.providerName(SettingsController.oauth_provider)])
+            leading: KirigamiAddons.Avatar {
+                implicitWidth: Kirigami.Units.iconSizes.medium
+                implicitHeight: implicitWidth
+                source: userAvatar.source
+                name: SettingsController.oauth_username
+            }
+        }
+
+        FormCard.FormButtonDelegate {
+            visible: SettingsController.is_authenticated
+            icon.name: "system-log-out"
+            text: L10n.i18n("Sign Out", [])
+            onClicked: SettingsController.logout()
+        }
+
+        FormCard.FormTextDelegate {
+            visible: !SettingsController.is_authenticated
+            text: L10n.i18n("Not signed in", [])
+            description: L10n.i18n("Sign in to rate applications and write reviews.", [])
+        }
+
+        // Breeze has no brand icons for these providers except KDE.
+        Repeater {
+            model: SettingsController.is_authenticated ? [] : [
+                { provider: "github", icon: "user-identity" },
+                { provider: "gitlab", icon: "user-identity" },
+                { provider: "kde_gitlab", icon: "kde" },
+                { provider: "gnome_gitlab", icon: "user-identity" }
+            ]
+
+            delegate: FormCard.FormButtonDelegate {
+                required property var modelData
+                objectName: "signIn_" + modelData.provider
+                icon.name: modelData.icon
+                text: L10n.i18n("Sign in with %1", [page.providerName(modelData.provider)])
+                enabled: !SettingsController.login_in_progress
+                onClicked: SettingsController.login(modelData.provider)
+            }
+        }
+    }
+
+    // ── Privacy ─────────────────────────────────────────────────────────
+    FormCard.FormHeader {
+        title: L10n.i18n("Privacy", [])
+    }
+
+    FormCard.FormCard {
+        objectName: "privacyCard"
+
+        FormCard.FormTextDelegate {
+            id: hashDelegate
+            text: L10n.i18n("Review identity", [])
+            description: SettingsController.odrs_user_hash
+            descriptionItem.font.family: "monospace"
+            descriptionItem.wrapMode: Text.WrapAnywhere
+            trailing: Controls.ToolButton {
+                icon.name: "edit-copy"
+                text: L10n.i18n("Copy review identity", [])
+                display: Controls.AbstractButton.IconOnly
+                Accessible.name: text
+                Controls.ToolTip.text: text
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                onClicked: {
+                    clipboardHelper.text = SettingsController.odrs_user_hash
+                    clipboardHelper.selectAll()
+                    clipboardHelper.copy()
+                    clipboardHelper.text = ""
+                    applicationWindow().showPassiveNotification(L10n.i18n("Copied to clipboard", []))
+                }
+            }
+        }
+
+        FormCard.FormTextDelegate {
+            description: L10n.i18n("This pseudonymous identifier is derived from a local secret. The ODRS review server uses it to let you manage your reviews without your IP address or credentials.", [])
+        }
+
+        FormCard.FormDelegateSeparator {}
+
+        FormCard.FormButtonDelegate {
+            icon.name: "view-refresh"
+            text: L10n.i18n("Regenerate Review Identity…", [])
+            description: L10n.i18n("Unlinks your existing reviews from this computer", [])
+            onClicked: regenerateSaltDialog.open()
+        }
+
+        FormCard.FormDelegateSeparator {}
+
+        FormCard.FormButtonDelegate {
+            icon.name: "edit-clear"
+            text: L10n.i18n("Clear Cache", [])
+            description: L10n.i18n("Removes downloaded catalog data and images", [])
+            onClicked: {
+                SettingsController.clearCache()
+                applicationWindow().showPassiveNotification(L10n.i18n("Cache cleared", []))
+            }
+        }
+    }
+
+    // ── About ───────────────────────────────────────────────────────────
+    FormCard.FormHeader {
+        title: L10n.i18n("About", [])
+    }
+
+    FormCard.FormCard {
+        objectName: "aboutCard"
+        Layout.bottomMargin: Kirigami.Units.gridUnit
+
+        FormCard.FormButtonDelegate {
+            objectName: "aboutKiosqueButton"
+            icon.name: "help-about"
+            text: L10n.i18n("About Kiosque", [])
+            description: Qt.application.version !== "" ? L10n.i18n("Version %1", [Qt.application.version]) : ""
+            onClicked: applicationWindow().pageStack.push("qrc:/qml/pages/AboutPage.qml")
+        }
+    }
+
+    // Off-screen helper for clipboard access from QML.
+    TextEdit {
+        id: clipboardHelper
+        visible: false
+    }
+
+    Kirigami.PromptDialog {
+        id: regenerateSaltDialog
+        title: L10n.i18n("Regenerate Review Identity?", [])
+        subtitle: L10n.i18n("You will get a new pseudonymous identity on the ODRS review server. Your existing reviews and votes remain, but they are permanently unlinked from this computer and you can no longer edit or delete them.", [])
+        standardButtons: Kirigami.Dialog.NoButton
+        customFooterActions: [
+            Kirigami.Action {
+                text: L10n.i18n("Regenerate", [])
+                icon.name: "view-refresh"
+                onTriggered: {
+                    SettingsController.regenerateSalt()
+                    regenerateSaltDialog.close()
+                }
+            },
+            Kirigami.Action {
+                text: L10n.i18n("Cancel", [])
+                icon.name: "dialog-cancel"
+                onTriggered: regenerateSaltDialog.close()
+            }
+        ]
+    }
+
+    Kirigami.PromptDialog {
+        id: loginErrorDialog
+        objectName: "loginErrorDialog"
+        property string errorMessage: ""
+        title: L10n.i18n("Sign-in Failed", [])
+        subtitle: errorMessage !== ""
+            ? L10n.i18n("Could not complete sign-in: %1", [errorMessage])
+            : L10n.i18n("Could not complete sign-in. Check your network connection and try again.", [])
+        standardButtons: Kirigami.Dialog.Close
     }
 
     Connections {
         target: SettingsController
+        function onSettingsSaved(success, error) {
+            page.settingsError = success ? "" : L10n.i18n("Could not apply update settings: %1", [error])
+            if (!success) {
+                // Restore the binding after a user toggle rejected by the portal.
+                autoUpdateSwitch.checked = Qt.binding(function() { return SettingsController.auto_update })
+            }
+        }
+        // FormTextFieldDelegate writes its text back on creation, replacing the
+        // binding; reapply stored values unless the user is editing the field.
+        function onUpdate_timeChanged() {
+            if (!timeField.fieldActiveFocus) {
+                timeField.text = SettingsController.update_time
+            }
+        }
         function onLoginFailed(error) {
-            loginErrorDialog.errorMessage = error;
-            loginErrorDialog.open();
-        }
-    }
-
-    // Login Error Dialog
-    Kirigami.Dialog {
-        id: loginErrorDialog
-        title: L10n.i18n("Login Failed", [])
-        standardButtons: Kirigami.Dialog.Close
-        
-        property string errorMessage: ""
-
-        ColumnLayout {
-            spacing: Kirigami.Units.mediumSpacing
-            width: Kirigami.Units.gridUnit * 20
-
-            Kirigami.Icon {
-                source: "dialog-warning"
-                width: Kirigami.Units.iconSizes.huge
-                height: width
-                color: Kirigami.Theme.negativeTextColor
-                Layout.alignment: Qt.AlignHCenter
-            }
-
-            Controls.Label {
-                text: L10n.i18n("Could not complete OAuth login. Please check your network connection or the credentials configuration.", [])
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-            }
-
-            Controls.Label {
-                text: loginErrorDialog.errorMessage
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-                font.family: "monospace"
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
-                color: Kirigami.Theme.negativeTextColor
-                horizontalAlignment: Text.AlignHCenter
-            }
-        }
-    }
-
-    // ── About dialog ────────────────────────────────────────────────────
-    Controls.Dialog {
-        id: aboutDialog
-        anchors.centerIn: parent
-        title: L10n.i18n("About Kiosque", [])
-        standardButtons: Controls.Dialog.Close
-        modal: true
-
-        contentItem: ColumnLayout {
-            spacing: Kirigami.Units.largeSpacing
-
-            Image {
-                id: aboutLogo
-                source: "qrc:/qml/images/logo.svg"
-                Layout.preferredWidth: Kirigami.Units.iconSizes.huge * 1.5
-                Layout.preferredHeight: Kirigami.Units.iconSizes.huge * 1.5
-                sourceSize.width: 512
-                sourceSize.height: 512
-                fillMode: Image.PreserveAspectFit
-                smooth: true
-                mipmap: true
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: Kirigami.Units.largeSpacing
-            }
-
-            Kirigami.Heading {
-                text: "Kiosque"
-                level: 1
-                Layout.alignment: Qt.AlignHCenter
-            }
-
-            Controls.Label {
-                text: L10n.i18n("Version %1", [String(Qt.application.version)])
-                font.weight: Font.DemiBold
-                color: Kirigami.Theme.highlightColor
-                Layout.alignment: Qt.AlignHCenter
-                Layout.bottomMargin: Kirigami.Units.largeSpacing
-            }
-
-            Controls.Label {
-                text: L10n.i18n("A beautiful, fast, and modern Flatpak storefront for the KDE Plasma desktop, inspired by GNOME's software curation aesthetics.", [])
-                wrapMode: Text.WordWrap
-                horizontalAlignment: Text.AlignHCenter
-                Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 22
-            }
-
-            Controls.Label {
-                text: L10n.i18n("Kiosque was built to bring a curation-focused storefront to the Qt/KDE ecosystem, showcasing applications in their best light. It integrates a high-performance Rust backend with a modern Qt6/Kirigami frontend.", [])
-                wrapMode: Text.WordWrap
-                horizontalAlignment: Text.AlignHCenter
-                color: Kirigami.Theme.disabledTextColor
-                font: Kirigami.Theme.smallFont
-                Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 22
-                Layout.topMargin: Kirigami.Units.smallSpacing
-            }
-
-            Kirigami.Separator {
-                Layout.fillWidth: true
-                Layout.topMargin: Kirigami.Units.largeSpacing
-                Layout.bottomMargin: Kirigami.Units.largeSpacing
-            }
-
-            RowLayout {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: Kirigami.Units.largeSpacing
-
-                Controls.Button {
-                    icon.name: "code-context"
-                    text: L10n.i18n("Source Code", [])
-                    flat: true
-                    onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque")
-                }
-                Controls.Button {
-                    icon.name: "tools-report-bug"
-                    text: L10n.i18n("Report Bug", [])
-                    flat: true
-                    onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque/issues")
-                }
-            }
+            loginErrorDialog.errorMessage = error
+            loginErrorDialog.open()
         }
     }
 }

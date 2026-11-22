@@ -9,7 +9,7 @@ spec.loader.exec_module(runner)
 
 class RoutingTests(unittest.TestCase):
     def test_backend_changes_include_real_contracts(self):
-        self.assertTrue({'core', 'services', 'system'} <= set(runner.selected_suites(['rust/core/src/flatpak/cli.rs'])))
+        self.assertTrue({'core', 'services', 'system'} <= set(runner.selected_suites(['rust/core/src/flatpak/native.rs'])))
 
     def test_qml_changes_require_real_bridge(self):
         self.assertTrue({'qt', 'qml'} <= set(runner.selected_suites(['qml/pages/InstalledPage.qml'])))

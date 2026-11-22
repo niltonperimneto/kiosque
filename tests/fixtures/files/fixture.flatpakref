@@ -1,0 +1,7 @@
+[Flatpak Ref]
+Title=Ref Fixture
+Name=org.kiosque.RefFixture
+Branch=stable
+Url=https://example.org/kiosque-fixture/
+IsRuntime=false
+GPGKey=dGVzdA==

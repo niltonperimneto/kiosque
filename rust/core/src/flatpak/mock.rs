@@ -16,6 +16,7 @@ use super::{
 pub struct MockBackend {
     pub installed: Mutex<Vec<InstalledApp>>,
     pub updates: Mutex<Vec<UpdateInfo>>,
+    pub list_updates_error: Mutex<Option<String>>,
     pub remotes: Mutex<Vec<RemoteInfo>>,
     /// Every operation passed to `run`, in order.
     pub ran: Mutex<Vec<Operation>>,
@@ -47,6 +48,9 @@ impl FlatpakBackend for MockBackend {
     }
 
     async fn list_updates(&self) -> Result<Vec<UpdateInfo>> {
+        if let Some(error) = self.list_updates_error.lock().unwrap().clone() {
+            return Err(FlatpakError::Failed(error));
+        }
         Ok(self.updates.lock().unwrap().clone())
     }
 
@@ -56,6 +60,12 @@ impl FlatpakBackend for MockBackend {
 
     async fn add_remote(&self, name: &str, source: RemoteSource, scope: Scope) -> Result<()> {
         let url = match source {
+            #[cfg(feature = "test-util")]
+            RemoteSource::LocalFixture { .. } => {
+                return Err(FlatpakError::Failed(
+                    "Local fixture source is unsupported".into(),
+                ));
+            }
             RemoteSource::Url(u) => u,
             RemoteSource::FlatpakRepo(d) => super::keyfile_value(&d, "Url").unwrap_or_default(),
         };

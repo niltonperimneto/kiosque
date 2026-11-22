@@ -16,6 +16,13 @@ use crate::registry::Registry;
     default_path = "/org/kiosque/Kiosque/Daemon"
 )]
 pub trait Daemon {
+    fn read_installed(&self) -> zbus::Result<String>;
+    fn read_updates(&self) -> zbus::Result<String>;
+    fn read_remotes(&self) -> zbus::Result<String>;
+    fn add_repository(&self, name: &str, data: &[u8], scope: &str) -> zbus::Result<()>;
+    fn remove_repository(&self, name: &str, scope: &str) -> zbus::Result<()>;
+    fn launch_app(&self, id: &str) -> zbus::Result<()>;
+    fn refresh_metadata(&self, name: &str, scope: &str) -> zbus::Result<()>;
     fn ping(&self) -> zbus::Result<u32>;
     fn install(&self, app_id: &str, remote: &str, scope: &str, title: &str) -> zbus::Result<u64>;
     fn install_ref_file(&self, data: &[u8], scope: &str, title: &str) -> zbus::Result<u64>;
@@ -31,6 +38,13 @@ pub trait Daemon {
 
 pub struct DaemonClient {
     proxy: DaemonProxy<'static>,
+    forwarding: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for DaemonClient {
+    fn drop(&mut self) {
+        self.forwarding.abort();
+    }
 }
 
 impl DaemonClient {
@@ -56,17 +70,33 @@ impl DaemonClient {
         for job in proxy.get_jobs().await.unwrap_or_default() {
             registry.set_job(job.into());
         }
-        tokio::spawn(async move {
-            while let Some(sig) = stream.next().await {
-                if let Ok(args) = sig.args() {
-                    registry.set_job(args.job.clone().into());
+        let monitor = proxy.clone();
+        let forwarding = tokio::spawn(async move {
+            let mut health = tokio::time::interval(Duration::from_secs(15));
+            loop {
+                tokio::select! {
+                    signal = stream.next() => match signal {
+                        Some(signal) => if let Ok(args) = signal.args() { registry.set_job(args.job.clone().into()); },
+                        None => break,
+                    },
+                    _ = health.tick() => {
+                        if !matches!(tokio::time::timeout(Duration::from_secs(5), monitor.ping()).await, Ok(Ok(1))) { break; }
+                    }
+                }
+            }
+            for mut job in registry.jobs() {
+                if job.state.is_active() {
+                    job.state =
+                        crate::registry::JobState::Failed("Host companion disconnected".into());
+                    registry.set_job(job);
                 }
             }
         });
-        Ok(Self { proxy })
+        Ok(Self { proxy, forwarding })
     }
 
     pub async fn enqueue(&self, op: Operation, title: &str) -> Result<u64, String> {
+        crate::security::operation(&op, title)?;
         let res = match &op {
             Operation::Install { remote, id, scope } => {
                 self.proxy.install(id, remote, scope.as_str(), title).await

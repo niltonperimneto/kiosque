@@ -14,21 +14,45 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
+  security:
+    name: Security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - run: python3 scripts/test.py security
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: security-results
+          include-hidden-files: true
+          path: .test-results/
+
   core:
     name: Core and service contracts
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
       CARGO_BUILD_JOBS: '2'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install stable Rust with lint tools
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
       - run: python3 scripts/test.py guidance
       - run: python3 scripts/test.py lint
       - run: python3 scripts/test.py core
       - run: python3 scripts/test.py services
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: core-test-results
@@ -37,22 +61,24 @@ jobs:
 
   desktop:
     name: Desktop (${{ matrix.backend }})
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     container: registry.fedoraproject.org/fedora@sha256:f8593ba07b355b0af185181d590bce9b32c4f390bb125a15829059755c8a5052
     strategy:
       fail-fast: false
       matrix:
-        backend: [native, cli]
+        backend: [native, broker]
     env:
       CARGO_BUILD_JOBS: '2'
-      QMAKE: /usr/bin/qmake6
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install desktop test dependencies
-        run: dnf install -y cargo rust meson ninja-build gcc-c++ cmake mold qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
+        run: dnf install -y desktop-file-utils cargo rust meson ninja-build gcc-c++ cmake mold qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
       - run: python3 scripts/test.py qt --backend ${{ matrix.backend }}
       - run: python3 scripts/test.py qml --backend ${{ matrix.backend }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: desktop-test-results-${{ matrix.backend }}
@@ -62,15 +88,18 @@ jobs:
             build/tests-*/meson-logs/
 
   flatpak:
-    needs: [core, desktop]
+    needs: [core, desktop, security]
     name: Build Flatpak
+    timeout-minutes: 90
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
 
       - name: Install Flatpak Builder
         run: |
@@ -80,7 +109,7 @@ jobs:
       - name: Install KDE Sdk & Platform
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub org.kde.Sdk//6.11 org.kde.Platform//6.11 org.freedesktop.Sdk.Extension.rust-stable//25.08
+          flatpak install --user -y flathub org.kde.Sdk//6.10 org.kde.Platform//6.10 org.freedesktop.Sdk.Extension.rust-stable//25.08
 
       - name: Build Flatpak
         run: |
@@ -88,24 +117,27 @@ jobs:
           flatpak build-bundle repo kiosque.flatpak org.kiosque.Kiosque
 
       - name: Upload Flatpak Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: Kiosque-Flatpak
           path: kiosque.flatpak
 
   rpm:
-    needs: [core, desktop]
+    needs: [core, desktop, security]
     name: Build RPM
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     container:
-      image: fedora:44
+      image: registry.fedoraproject.org/fedora@sha256:f8593ba07b355b0af185181d590bce9b32c4f390bb125a15829059755c8a5052
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Install Build Dependencies
         run: |
-          dnf install -y meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style flatpak-devel dbus-devel rpm-build tar
+          dnf install -y desktop-file-utils meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtdeclarative-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style flatpak-devel dbus-devel rpm-build tar
 
       - name: Build RPM Package
         run: |
@@ -117,25 +149,27 @@ jobs:
           cp ~/rpmbuild/RPMS/x86_64/*.rpm ./
 
       - name: Upload RPM Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: Kiosque-RPM
           path: "*.rpm"
 
   appimage:
-    needs: [core, desktop]
+    needs: [core, desktop, security]
     name: Build AppImage
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     container:
-      image: fedora:44
-      options: --device /dev/fuse --privileged
+      image: registry.fedoraproject.org/fedora@sha256:f8593ba07b355b0af185181d590bce9b32c4f390bb125a15829059755c8a5052
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Install Build Dependencies
         run: |
-          dnf install -y meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style kf6-sonnet plasma-breeze-qt6 qqc2-breeze-style flatpak-devel dbus-devel file wget curl file-devel
+          dnf install -y desktop-file-utils meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style kf6-sonnet plasma-breeze-qt6 qqc2-breeze-style flatpak-devel dbus-devel file wget curl file-devel
 
       - name: Build and Install to AppDir
         run: |
@@ -145,7 +179,7 @@ jobs:
 
       - name: Download & Extract linuxdeploy
         run: |
-          curl -Lo linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          python3 scripts/download_build_tool.py linuxdeploy linuxdeploy
           chmod +x linuxdeploy
           ./linuxdeploy --appimage-extract
           mv squashfs-root linuxdeploy-extracted
@@ -153,13 +187,14 @@ jobs:
 
       - name: Download & Extract linuxdeploy-plugin-qt
         run: |
-          curl -Lo linuxdeploy-plugin-qt https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          python3 scripts/download_build_tool.py linuxdeploy-plugin-qt linuxdeploy-plugin-qt
           chmod +x linuxdeploy-plugin-qt
           ./linuxdeploy-plugin-qt --appimage-extract
           mv squashfs-root linuxdeploy-plugin-qt-extracted
           rm -f linuxdeploy-plugin-qt
 
       - name: Build AppImage Bundle
+        timeout-minutes: 15
         env:
           NO_STRIP: "1"
         run: |
@@ -211,20 +246,8 @@ jobs:
           cp -r /usr/lib64/qt6/qml/org/kde/sonnet AppDir/usr/qml/org/kde/
           cp -r /usr/lib64/qt6/qml/org/kde/breeze AppDir/usr/qml/org/kde/
 
-          # Iteratively resolve and bundle all required KF6 and Kirigami library dependencies for the plugins.
-          # We look at all shared objects in the AppDir and copy any missing libKF6/libKirigami dependencies from /usr/lib64/
-          added=1
-          while [ $added -ne 0 ]; do
-            added=0
-            deps=$(find AppDir -type f \( -name "*.so" -o -perm /111 \) | xargs ldd 2>/dev/null | grep "=>" | grep -E "libKF6|libKirigami" | awk '{print $1}' | sort -u)
-            for dep in $deps; do
-              if [ ! -f "AppDir/usr/lib/$dep" ] && [ ! -f "AppDir/usr/lib64/$dep" ]; then
-                echo "Bundling missing dependency: $dep"
-                cp -d /usr/lib64/$dep* AppDir/usr/lib/
-                added=$((added + 1))
-              fi
-            done
-          done
+          # Bundle KDE dependencies as real files under their required SONAMEs.
+          bash scripts/bundle_kde_dependencies.sh AppDir
 
           # 4. Clean up base system libraries that shouldn't be bundled and cause SIGSEGV/dynamic loading conflicts.
           # We only keep Qt6 and KF6/Kirigami libraries, and let the loader resolve all other system libraries from the host.
@@ -235,13 +258,33 @@ jobs:
           done
 
           # 3. Download and extract appimagetool to pack the AppDir into the final AppImage
-          curl -Lo appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          python3 scripts/download_build_tool.py appimagetool appimagetool
           chmod +x appimagetool
           ./appimagetool --appimage-extract
           ./squashfs-root/AppRun AppDir Kiosque-x86_64.AppImage
 
       - name: Upload AppImage Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: Kiosque-AppImage
           path: "*.AppImage"
+
+  provenance:
+    name: Attest trusted packages
+    if: github.event_name == 'push'
+    needs: [flatpak, rpm, appimage]
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: Kiosque-*
+          path: artifacts
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: 'artifacts/**/*'

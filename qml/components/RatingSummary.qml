@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import com.kiosque
 
 Kirigami.ShadowedRectangle {
     id: root

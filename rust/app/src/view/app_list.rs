@@ -14,6 +14,8 @@ pub const SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppSource {
     Popular,
+    Mobile,
+    CategorySorted(String, String),
     New,
     Updated,
     Search(String),
@@ -25,6 +27,10 @@ impl AppSource {
     /// The QML form: `load("popular" | "new" | "updated" | "search" | "category", arg)`.
     pub fn parse(source: &str, arg: &str) -> Option<Self> {
         match source {
+            "mobile" => Some(Self::Mobile),
+            "category-sorted" => arg
+                .split_once(':')
+                .map(|(c, s)| Self::CategorySorted(c.into(), s.into())),
             "popular" => Some(Self::Popular),
             "new" => Some(Self::New),
             "updated" => Some(Self::Updated),
@@ -90,6 +96,17 @@ pub fn entry(app: FlathubApp) -> AppEntry {
 pub async fn fetch(client: &FlathubClient, source: &AppSource) -> Result<Vec<AppEntry>, String> {
     let apps = match source {
         AppSource::Popular => client.fetch_popular().await,
+        AppSource::Mobile => client.fetch_mobile().await,
+        AppSource::CategorySorted(category, sort) if sort == "newest" => {
+            client.fetch_category(category).await.map(|mut apps| {
+                apps.sort_by_key(|app| std::cmp::Reverse(app.added_at.unwrap_or(0)));
+                apps.truncate(30);
+                apps
+            })
+        }
+        AppSource::CategorySorted(category, sort) => {
+            client.fetch_category_sorted(category, sort).await
+        }
         AppSource::New => client.fetch_recently_added().await,
         AppSource::Updated => client.fetch_recently_updated().await,
         AppSource::Search(q) if q.is_empty() => return Ok(vec![]),
@@ -278,7 +295,7 @@ mod tests {
         FlathubApp {
             name: name.into(),
             sub_categories: subs.iter().map(|s| s.to_string()).collect(),
-            ..Default::default()
+            ..serde_json::from_value::<FlathubApp>(serde_json::json!({})).unwrap()
         }
     }
 

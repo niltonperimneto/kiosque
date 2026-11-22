@@ -10,6 +10,8 @@ pub use kiosque_core::{
 #[macro_use]
 pub mod bridge;
 pub mod disk_cache;
+pub mod flatpak;
+pub mod image_cache;
 #[cfg(feature = "test-util")]
 pub mod quicktest_ffi;
 pub mod services;
@@ -27,3 +29,6 @@ pub fn configure_style() {
         cxx_qt_lib::QQuickStyle::set_style(&cxx_qt_lib::QString::from("org.kde.desktop"));
     }
 }
+
+#[cfg(feature = "test-util")]
+pub mod test_support;

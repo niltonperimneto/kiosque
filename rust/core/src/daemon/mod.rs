@@ -10,10 +10,10 @@
 //! * `/runner`, interface `org.kde.krunner1` — a KRunner D-Bus runner that
 //!   searches the local AppStream catalog.
 //!
-//! The `kiosque-update` binary provides the tray icon and desktop
-//! notifications; it drives this module through [`start`], [`subscribe`],
-//! [`check_updates_now`], [`update_all`] and [`run_once`].
+//! The Rust shell (`rust/updater`) provides the tray icon and desktop
+//! notifications and consumes the typed daemon event stream.
 
+pub mod auth;
 pub mod client;
 pub mod runner;
 pub mod service;
@@ -22,7 +22,11 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
-use chrono::{Datelike, Local, NaiveTime, TimeZone};
+use jiff::{
+    ToSpan, Zoned,
+    civil::{Time, Weekday},
+    tz::AmbiguousOffset,
+};
 use serde::{Deserialize, Serialize};
 use zbus::Type;
 
@@ -87,7 +91,16 @@ impl From<JobWire> for Job {
     }
 }
 
-// ── Events for the shell ────────────────────────────────────────────────────
+// ── Events for the Rust shell ────────────────────────────────────────────────
+
+/// `count` = number of available app updates.
+pub const EVENT_UPDATES: i32 = 1;
+/// `count` = 1 on success, 0 on failure; `text` = job title.
+pub const EVENT_JOB_FINISHED: i32 = 2;
+/// The daemon has been idle long enough and should quit.
+pub const EVENT_IDLE_EXIT: i32 = 3;
+/// `text` = summary of an automatic update run that started.
+pub const EVENT_AUTO_UPDATE: i32 = 4;
 
 /// Something the tray/notification shell should react to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,47 +147,50 @@ pub fn app_update_count() -> usize {
 }
 
 /// Re-check available updates and publish the result.
-pub async fn check_updates() -> usize {
+pub async fn check_updates() -> crate::flatpak::Result<usize> {
     let reg = crate::registry::registry();
     let backend = crate::flatpak::backend();
     if let Err(e) = reg.reload_updates(&*backend).await {
         kerr!("daemon: update check failed: {}", e);
+        return Err(e);
     }
     let n = app_update_count();
     klog!("daemon: {} app updates available", n);
     notify(DaemonEvent::Updates(n));
-    n
+    Ok(n)
 }
 
 /// The next time automatic updates should run according to the settings.
-pub fn next_auto_update(
-    settings: &crate::settings::AppSettings,
-    now: chrono::DateTime<Local>,
-) -> Option<chrono::DateTime<Local>> {
+pub fn next_auto_update(settings: &crate::settings::AppSettings, now: &Zoned) -> Option<Zoned> {
     if !settings.auto_update {
         return None;
     }
-    let time = NaiveTime::parse_from_str(&settings.update_time, "%H:%M")
-        .unwrap_or(NaiveTime::from_hms_opt(2, 0, 0)?);
+    let time =
+        Time::strptime("%H:%M", &settings.update_time).unwrap_or(Time::new(2, 0, 0, 0).ok()?);
     let weekly = settings.update_frequency.eq_ignore_ascii_case("weekly");
     (0..=7).find_map(|d| {
-        let day = now.date_naive() + chrono::Duration::days(d);
-        if weekly && day.weekday() != chrono::Weekday::Mon {
+        let day = now.date().checked_add(d.days()).ok()?;
+        if weekly && day.weekday() != Weekday::Monday {
             return None;
         }
-        let at = Local.from_local_datetime(&day.and_time(time)).earliest()?;
-        (at > now).then_some(at)
+        let ambiguous = now.time_zone().to_ambiguous_zoned(day.to_datetime(time));
+        // Preserve existing semantics: skip nonexistent times and choose the first fold.
+        if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
+            return None;
+        }
+        let at = ambiguous.earlier().ok()?;
+        (&at > now).then_some(at)
     })
 }
 
 async fn scheduler() {
     let mut next_check = tokio::time::Instant::now();
-    let mut next_auto = next_auto_update(&crate::settings::load_settings(), Local::now());
+    let mut next_auto = next_auto_update(&crate::settings::load_settings(), &Zoned::now());
     let mut catalog_refreshed = tokio::time::Instant::now() - Duration::from_secs(86400);
     loop {
         let now = tokio::time::Instant::now();
         if now >= next_check {
-            check_updates().await;
+            let _ = check_updates().await;
             next_check = now + CHECK_INTERVAL;
         }
         if now.duration_since(catalog_refreshed) > Duration::from_secs(12 * 3600) {
@@ -184,14 +200,14 @@ async fn scheduler() {
 
         // Settings may change while we run; re-read every minute.
         let settings = crate::settings::load_settings();
-        let computed = next_auto_update(&settings, Local::now());
+        let computed = next_auto_update(&settings, &Zoned::now());
         if computed.is_none() || next_auto.is_none() {
             next_auto = computed;
         }
-        if let Some(at) = next_auto
-            && Local::now() >= at
+        if let Some(at) = &next_auto
+            && &Zoned::now() >= at
         {
-            if check_updates().await > 0 || !crate::registry::registry().updates().is_empty() {
+            if check_updates().await.is_ok() && !crate::registry::registry().updates().is_empty() {
                 klog!("daemon: running scheduled automatic update");
                 notify(DaemonEvent::AutoUpdate(app_update_count()));
                 crate::transactions::local_manager().enqueue(
@@ -199,7 +215,12 @@ async fn scheduler() {
                     "Automatic update",
                 );
             }
-            next_auto = next_auto_update(&settings, Local::now() + chrono::Duration::minutes(1));
+            next_auto = next_auto_update(
+                &settings,
+                &Zoned::now()
+                    .checked_add(1.minutes())
+                    .expect("current time plus one minute"),
+            );
         }
 
         // Idle exit for on-demand instances.
@@ -226,7 +247,7 @@ async fn job_notifier() {
             Ok(Event::Job(job)) => match job.state {
                 JobState::Done => notify(DaemonEvent::JobFinished {
                     ok: true,
-                    title: job.title.clone(),
+                    title: job.title,
                 }),
                 JobState::Failed(ref e) => notify(DaemonEvent::JobFinished {
                     ok: false,
@@ -243,17 +264,16 @@ async fn job_notifier() {
 }
 
 static CONNECTION: OnceLock<zbus::Connection> = OnceLock::new();
-
-/// The daemon's session bus connection, once [`start`] has succeeded.
 pub fn connection() -> Option<zbus::Connection> {
     CONNECTION.get().cloned()
 }
 
-/// Own the daemon bus name and start the scheduler. `background` keeps it
-/// alive while idle (autostart); otherwise it emits [`DaemonEvent::IdleExit`]
-/// after [`IDLE_TIMEOUT`]. Fails if the name is taken or the bus is
-/// unreachable. Must run inside the shared runtime.
 pub async fn start(background: bool) -> Result<(), String> {
+    if crate::flatpak::in_sandbox() {
+        return Err(
+            "Install the native Kiosque companion on the host to manage applications".into(),
+        );
+    }
     BACKGROUND.store(background, Ordering::SeqCst);
     touch();
     let conn = zbus::connection::Builder::session()
@@ -262,19 +282,13 @@ pub async fn start(background: bool) -> Result<(), String> {
         .build()
         .await
         .map_err(|e| e.to_string())?;
-    // Single instance: neither replace a running daemon nor wait in line
-    // (zbus' defaults would do the former).
     match conn
         .request_name_with_flags(BUS_NAME, zbus::fdo::RequestNameFlags::DO_NOT_QUEUE)
         .await
         .map_err(|e| e.to_string())?
     {
         zbus::fdo::RequestNameReply::PrimaryOwner | zbus::fdo::RequestNameReply::AlreadyOwner => {}
-        _ => {
-            return Err(format!(
-                "{BUS_NAME} is already owned; another instance is running"
-            ));
-        }
+        _ => return Err(format!("{BUS_NAME} is already owned")),
     }
     let _ = CONNECTION.set(conn.clone());
     klog!("daemon: serving {} (background={})", BUS_NAME, background);
@@ -290,17 +304,12 @@ pub async fn start(background: bool) -> Result<(), String> {
     Ok(())
 }
 
-// ── Shell entry points ──────────────────────────────────────────────────────
-
-/// Trigger an update check; the result arrives as [`DaemonEvent::Updates`].
 pub fn check_updates_now() {
     touch();
     crate::runtime::runtime().spawn(async {
-        check_updates().await;
+        let _ = check_updates().await;
     });
 }
-
-/// Queue an update of everything.
 pub fn update_all() {
     touch();
     crate::transactions::local_manager().enqueue(
@@ -308,21 +317,14 @@ pub fn update_all() {
         "Update all",
     );
 }
-
-/// True while transactions are queued or running.
 pub fn is_busy() -> bool {
     crate::transactions::local_manager().is_busy()
 }
-
-/// One-shot mode (`kiosque-update --check`): check and apply all updates in
-/// process. Returns the process exit code: 0 when up to date or updated,
-/// 1 when the check or the update failed.
 pub async fn run_once() -> i32 {
-    run_once_with(&*crate::flatpak::backend()).await
+    run_update_once(&*crate::flatpak::backend()).await
 }
-
-/// [`run_once`] against an explicit backend.
-pub async fn run_once_with(backend: &dyn crate::flatpak::FlatpakBackend) -> i32 {
+/// Check and apply updates using the selected backend. Does not start Qt or D-Bus.
+pub async fn run_update_once(backend: &dyn crate::flatpak::FlatpakBackend) -> i32 {
     let updates = match backend.list_updates().await {
         Ok(u) => u,
         Err(e) => {
@@ -373,59 +375,44 @@ mod tests {
     #[test]
     fn auto_update_schedule() {
         // Wednesday 2026-11-11 10:00 local
-        let now = Local.with_ymd_and_hms(2026, 11, 11, 10, 0, 0).unwrap();
+        let now = "2026-11-11T10:00:00[UTC]".parse::<Zoned>().unwrap();
         assert_eq!(
-            next_auto_update(&settings(false, "Daily", "02:00"), now),
+            next_auto_update(&settings(false, "Daily", "02:00"), &now),
             None
         );
-        let daily = next_auto_update(&settings(true, "Daily", "02:00"), now).unwrap();
-        assert_eq!(
-            daily,
-            Local.with_ymd_and_hms(2026, 11, 12, 2, 0, 0).unwrap()
-        );
-        let later_today = next_auto_update(&settings(true, "Daily", "23:30"), now).unwrap();
+        let daily = next_auto_update(&settings(true, "Daily", "02:00"), &now).unwrap();
+        assert_eq!(daily, "2026-11-12T02:00:00[UTC]".parse::<Zoned>().unwrap());
+        let later_today = next_auto_update(&settings(true, "Daily", "23:30"), &now).unwrap();
         assert_eq!(
             later_today,
-            Local.with_ymd_and_hms(2026, 11, 11, 23, 30, 0).unwrap()
+            "2026-11-11T23:30:00[UTC]".parse::<Zoned>().unwrap()
         );
-        let weekly = next_auto_update(&settings(true, "Weekly", "02:00"), now).unwrap();
-        assert_eq!(
-            weekly,
-            Local.with_ymd_and_hms(2026, 11, 16, 2, 0, 0).unwrap()
-        );
+        let weekly = next_auto_update(&settings(true, "Weekly", "02:00"), &now).unwrap();
+        assert_eq!(weekly, "2026-11-16T02:00:00[UTC]".parse::<Zoned>().unwrap());
     }
 
-    #[tokio::test]
-    async fn run_once_exit_codes() {
-        use crate::flatpak::{UpdateInfo, mock::MockBackend};
-        let up_to_date = MockBackend::default();
-        assert_eq!(run_once_with(&up_to_date).await, 0);
-        assert!(up_to_date.ran.lock().unwrap().is_empty());
-
-        let pending = MockBackend::default();
-        pending.updates.lock().unwrap().push(UpdateInfo {
-            id: "org.example.App".into(),
-            ..Default::default()
-        });
-        assert_eq!(run_once_with(&pending).await, 0);
+    #[test]
+    fn schedule_preserves_dst_gap_and_fold_behavior() {
+        let gap = "2026-03-08T00:00:00-05:00[America/New_York]"
+            .parse::<Zoned>()
+            .unwrap();
+        let next = next_auto_update(&settings(true, "Daily", "02:30"), &gap).unwrap();
         assert_eq!(
-            pending.ran.lock().unwrap().as_slice(),
-            [crate::flatpak::Operation::Update { ids: vec![] }]
+            next,
+            "2026-03-09T02:30:00-04:00[America/New_York]"
+                .parse::<Zoned>()
+                .unwrap()
         );
-
-        let failing = MockBackend::default();
-        failing.updates.lock().unwrap().push(UpdateInfo::default());
-        *failing.fail_with.lock().unwrap() = Some("disk full".into());
-        assert_eq!(run_once_with(&failing).await, 1);
-    }
-
-    #[tokio::test]
-    async fn events_reach_every_subscriber() {
-        let mut a = subscribe();
-        let mut b = subscribe();
-        notify(DaemonEvent::Updates(3));
-        assert_eq!(a.recv().await.unwrap(), DaemonEvent::Updates(3));
-        assert_eq!(b.recv().await.unwrap(), DaemonEvent::Updates(3));
+        let fold = "2026-11-01T00:00:00-04:00[America/New_York]"
+            .parse::<Zoned>()
+            .unwrap();
+        let next = next_auto_update(&settings(true, "Daily", "01:30"), &fold).unwrap();
+        assert_eq!(
+            next,
+            "2026-11-01T01:30:00-04:00[America/New_York]"
+                .parse::<Zoned>()
+                .unwrap()
+        );
     }
 
     #[test]
@@ -447,5 +434,25 @@ mod tests {
         let (decoded,): (JobWire,) = message.body().deserialize().unwrap();
         let back: Job = decoded.into();
         assert_eq!(back, job);
+    }
+    #[tokio::test]
+    async fn one_shot_reports_no_updates_success_and_backend_failures() {
+        use crate::flatpak::{Operation, UpdateInfo, mock::MockBackend};
+        let backend = MockBackend::default();
+        assert_eq!(run_update_once(&backend).await, 0);
+        assert!(backend.ran.lock().unwrap().is_empty());
+        backend.updates.lock().unwrap().push(UpdateInfo::default());
+        assert_eq!(run_update_once(&backend).await, 0);
+        assert_eq!(
+            *backend.ran.lock().unwrap(),
+            vec![Operation::Update { ids: vec![] }]
+        );
+        backend.updates.lock().unwrap().push(UpdateInfo::default());
+        *backend.fail_with.lock().unwrap() = Some("fixture failed".into());
+        assert_eq!(run_update_once(&backend).await, 1);
+        *backend.list_updates_error.lock().unwrap() = Some("fixture unavailable".into());
+        let before = backend.ran.lock().unwrap().len();
+        assert_eq!(run_update_once(&backend).await, 1);
+        assert_eq!(backend.ran.lock().unwrap().len(), before);
     }
 }

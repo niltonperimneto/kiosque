@@ -4,90 +4,144 @@
 import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 import org.kde.kirigami as Kirigami
 import com.kiosque
 import "../components" as Components
+import org.kde.kirigamiaddons.formcard as FormCard
 
 Kirigami.ScrollablePage {
     id: page
     property string appId
+    property string actionError: ""
+    onAppIdChanged: actionError = ""
     readonly property bool isNarrow: width < Kirigami.Units.gridUnit * 32
+
+    // Per-page detail state. Every view on this page binds to `details`, so two
+    // detail pages never share (or clobber) each other's data.
+    readonly property alias details: details
+
+    // ODRS reviews are revealed in batches of `reviewsBatchSize`.
+    readonly property int reviewsBatchSize: 10
+    property int reviewsShown: reviewsBatchSize
 
     title: details.name !== "" ? details.name : appId
 
-    actions: [
-        Kirigami.Action {
-            icon.name: "window-close"
-            text: L10n.i18n("Close", [])
-            visible: applicationWindow().pageStack.depth > 1
-            onTriggered: applicationWindow().pageStack.pop()
-        }
-    ]
 
-    // This page's own state; nothing is shared with other detail pages.
     AppDetails {
         id: details
         appId: page.appId
-        onReviewsLoaded: Qt.callLater(page.resetReviews)
-        onReviewSubmitted: (success, error) => {
-            if (!success)
-                console.warn("Review submission failed:", error)
+    }
+
+    Connections {
+        target: details
+
+        function onReviewsLoaded() {
+            page.reviewsShown = page.reviewsBatchSize;
         }
-        onReviewActionFinished: (success, error) => {
-            if (!success)
-                console.warn("Review action failed:", error)
+
+        function onOperationFinished(success, error) {
+            page.actionError = success ? "" : L10n.i18n("Could not complete the operation: %1", [error])
+        }
+
+        function onReviewActionFinished(success, error) {
+            if (success) {
+                page.actionError = ""
+                Qt.callLater(details.reload)
+            } else {
+                page.actionError = L10n.i18n("Could not update the review: %1", [error])
+            }
         }
     }
-    Component.onDestruction: details.dispose()
 
-    readonly property bool odrsLoading: details.loading || details.reviewsLoading
-    readonly property var ratingData: details.ratings
-    readonly property var allReviewsList: details.reviews
-    readonly property var screenshotUrls: details.screenshots
-    readonly property var urlsData: details.links
-    readonly property var permissionItems: getPermissionItems(details.permissions)
-    readonly property string windowingSystem: getWindowingSystem(details.permissions)
+    readonly property var ratingData: details.ratings || ({})
+    readonly property var allReviewsList: details.reviews || []
+    readonly property var visibleReviews: allReviewsList.slice(0, reviewsShown)
+    readonly property var screenshotUrls: details.screenshots || []
+    readonly property var urlsData: details.urls || ({})
+    readonly property var permissionItems: getPermissionItems(details.permissions, details.permissionsKnown)
+    readonly property string windowingSystem: details.permissionsKnown ? getWindowingSystem(details.permissions) : L10n.i18n("Unknown", [])
 
-    ListModel {
-        id: reviewsModel
+    // Sandbox summary shown next to the actions: "unknown" (never presented
+    // as safe), "sandboxed", "limited" or "full".
+    readonly property string permissionLevel: computePermissionLevel(details.permissions, details.permissionsKnown)
+
+    function computePermissionLevel(perms, known) {
+        if (known === false)
+            return "unknown";
+        if (isEmptyPermissions(perms))
+            return "sandboxed";
+        const filesystems = perms.filesystems || [];
+        const devices = perms.devices || [];
+        const sockets = perms.sockets || [];
+        const sessionBus = perms["session-bus"] || {};
+        const systemBus = perms["system-bus"] || {};
+        const path = fs => String(fs).split(":")[0];
+        const busNames = bus => (bus.talk || []).concat(bus.own || []);
+        const escapesSandbox = name => name === "*" || name === "org.freedesktop.Flatpak"
+                                       || String(name).startsWith("org.freedesktop.Flatpak.");
+        if (filesystems.some(fs => ["host", "host-os", "host-etc", "/"].indexOf(path(fs)) !== -1)
+                || devices.indexOf("all") !== -1
+                || sockets.indexOf("session-bus") !== -1 || sockets.indexOf("system-bus") !== -1
+                || busNames(sessionBus).some(escapesSandbox) || busNames(systemBus).some(escapesSandbox)) {
+            return "full";
+        }
+        const legacyX11 = sockets.indexOf("x11") !== -1 && sockets.indexOf("wayland") === -1;
+        if (filesystems.length > 0
+                || devices.some(d => d !== "dri")
+                || legacyX11
+                || sockets.indexOf("ssh-auth") !== -1 || sockets.indexOf("gpg-agent") !== -1
+                || busNames(systemBus).length > 0) {
+            return "limited";
+        }
+        return "sandboxed";
     }
 
-    function resetReviews() {
-        reviewsModel.clear();
-        loadMoreReviews();
+    // Links present in the AppStream data, in display order.
+    readonly property var linkEntries: {
+        const urls = page.urlsData;
+        const all = [
+            { key: "homepage", label: L10n.i18n("Website", []), icon: "internet-services" },
+            { key: "help", label: L10n.i18n("Documentation", []), icon: "help-browser" },
+            { key: "bugtracker", label: L10n.i18n("Report an Issue", []), icon: "tools-report-bug" },
+            { key: "vcs_browser", label: L10n.i18n("Source Code", []), icon: "code-context" },
+            { key: "manifest", label: L10n.i18n("Flatpak Manifest", []), icon: "text-x-script" },
+            { key: "donation", label: L10n.i18n("Donate", []), icon: "love" }
+        ];
+        return all.filter(link => !!urls[link.key]).map(link => Object.assign({ url: String(urls[link.key]) }, link));
     }
 
-    // Load next batch of reviews
+    // Reveal the next batch of reviews
     function loadMoreReviews() {
-        let currentCount = reviewsModel.count;
-        let totalCount = page.allReviewsList.length;
-        let batchSize = 10;
-        let limit = Math.min(totalCount, currentCount + batchSize);
-        for (let i = currentCount; i < limit; i++) {
-            let item = page.allReviewsList[i];
-            let dateObj = new Date(item.date * 1000); // Unix seconds
-            reviewsModel.append({
-                userName: item.user_name || L10n.i18n("Anonymous", []),
-                dateStr: dateObj.toLocaleDateString(Qt.locale(), Locale.ShortFormat),
-                rating: item.rating || 0,
-                summary: item.summary || "",
-                description: item.description || "",
-                version: item.version || "",
-                reviewId: item.review_id || 0,
-                userHash: item.user_hash || "",
-                karmaUp: item.karma_up || 0,
-                karmaDown: item.karma_down || 0
-            });
-        }
+        reviewsShown = Math.min(allReviewsList.length, reviewsShown + reviewsBatchSize);
     }
 
+    // Review date: prefer the bridge's preformatted string, fall back to an
+    // ODRS unix timestamp (seconds) when only that is provided.
+    function reviewDate(review) {
+        if (review.dateStr !== undefined && review.dateStr !== "")
+            return review.dateStr;
+        let ts = review.dateCreated !== undefined ? review.dateCreated : review.date_created;
+        if (!ts)
+            return "";
+        return new Date(ts * 1000).toLocaleDateString(Qt.locale(), Locale.ShortFormat);
+    }
+
+    // Permissions map is empty when the app requests nothing.
+    function isEmptyPermissions(perms) {
+        return !perms || Object.keys(perms).length === 0;
+    }
     // Helper to get structured list of permissions for the HIG display
-    function getPermissionItems(perms) {
-        if (!perms || Object.keys(perms).length === 0) {
+    function getPermissionItems(perms, known) {
+        if (known === false) {
+            return [{ icon: "security-medium-symbolic", title: L10n.i18n("Permissions unavailable", []),
+                      description: L10n.i18n("The application's permissions could not be verified. Review its manifest before installing.", []) }];
+        }
+        if (isEmptyPermissions(perms)) {
             return [{
                 icon: "security-high-symbolic",
-                title: L10n.i18n("No special permissions required (Fully Sandboxed)", []),
-                description: L10n.i18n("This application is fully sandboxed and isolated from your files, network, and devices.", [])
+                title: L10n.i18n("No additional permissions declared", []),
+                description: L10n.i18n("The available manifest declares no additional access. Sandbox security also depends on the runtime and system.", [])
             }];
         }
         try {
@@ -260,23 +314,23 @@ Kirigami.ScrollablePage {
             if (items.length === 0) {
                 return [{
                     icon: "security-high-symbolic",
-                    title: L10n.i18n("No special permissions required (Fully Sandboxed)", []),
-                    description: L10n.i18n("This application is fully sandboxed and isolated from your files, network, and devices.", [])
+                    title: L10n.i18n("No additional permissions declared", []),
+                    description: L10n.i18n("The available manifest declares no additional access. Sandbox security also depends on the runtime and system.", [])
                 }];
             }
             return items;
         } catch(e) {
             return [{
                 icon: "security-medium-symbolic",
-                title: L10n.i18n("Fully Sandboxed or permissions unavailable", []),
-                description: L10n.i18n("The application is either fully sandboxed or its permissions could not be loaded.", [])
+                title: L10n.i18n("Permissions unavailable", []),
+                description: L10n.i18n("The application permissions could not be verified.", [])
             }];
         }
     }
 
     // Helper to identify wayland/x11/cli support from permissions sockets
     function getWindowingSystem(perms) {
-        if (!perms || Object.keys(perms).length === 0) return "";
+        if (isEmptyPermissions(perms)) return "";
         try {
             let sockets = perms.sockets || [];
             
@@ -297,27 +351,101 @@ Kirigami.ScrollablePage {
         }
     }
 
-    // Helper to check if any URLs are available
-    function hasLinks() {
-        let urls = page.urlsData;
-        return !!(urls.homepage || urls.vcs_browser || urls.manifest || urls.bugtracker || urls.help || urls.donation);
-    }
-
     ColumnLayout {
         spacing: Kirigami.Units.largeSpacing * 1.5
         width: parent.width
 
-        // ── Loading indicator ───────────────────────────────────────────
-        Controls.BusyIndicator {
-            Layout.alignment: Qt.AlignHCenter
-            running: details.loading
-            visible: details.loading
-            Layout.preferredWidth: Kirigami.Units.gridUnit * 4
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 4
-            Layout.topMargin: Kirigami.Units.gridUnit * 5
+        Kirigami.InlineMessage {
+            objectName: "permissionsUnavailableMessage"
+            Layout.fillWidth: true
+            visible: !details.loading && !details.installed && !details.permissionsKnown && details.errorMessage === ""
+            type: Kirigami.MessageType.Warning
+            text: L10n.i18n("Permissions could not be verified. Reload the details before installing.", [])
+            actions: Kirigami.Action {
+                text: L10n.i18n("Retry", [])
+                icon.name: "view-refresh"
+                onTriggered: details.reload()
+            }
         }
 
+        Kirigami.InlineMessage {
+            objectName: "detailErrorMessage"
+            Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            type: Kirigami.MessageType.Error
+            visible: !details.loading && text !== ""
+            text: details.errorMessage !== ""
+                ? L10n.i18n("Could not load application details: %1", [details.errorMessage])
+                : page.actionError
+            actions: Kirigami.Action {
+                objectName: "retryDetailsAction"
+                text: L10n.i18n("Retry", [])
+                visible: details.errorMessage !== ""
+                onTriggered: details.reload()
+            }
+        }
 
+        // ── Loading placeholders ────────────────────────────────────────
+        // Reserve the header, action and screenshot space so the page does
+        // not jump when the details arrive.
+        ColumnLayout {
+            id: loadingPlaceholder
+            objectName: "detailLoadingPlaceholder"
+            visible: details.loading
+            Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            spacing: Kirigami.Units.largeSpacing * 1.5
+            Accessible.role: Accessible.ProgressBar
+            Accessible.name: L10n.i18n("Loading application details", [])
+
+            readonly property color shade: Kirigami.ColorUtils.linearInterpolation(
+                Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.08)
+
+            SequentialAnimation on opacity {
+                running: loadingPlaceholder.visible
+                loops: Animation.Infinite
+                NumberAnimation { from: 1.0; to: 0.5; duration: Kirigami.Units.veryLongDuration; easing.type: Easing.InOutQuad }
+                NumberAnimation { from: 0.5; to: 1.0; duration: Kirigami.Units.veryLongDuration; easing.type: Easing.InOutQuad }
+            }
+
+            RowLayout {
+                spacing: Kirigami.Units.largeSpacing * 1.5
+                Rectangle {
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.enormous
+                    Layout.preferredHeight: Kirigami.Units.iconSizes.enormous
+                    radius: Kirigami.Units.cornerRadius
+                    color: loadingPlaceholder.shade
+                }
+                ColumnLayout {
+                    spacing: Kirigami.Units.mediumSpacing
+                    Repeater {
+                        model: [14, 9, 18]
+                        delegate: Rectangle {
+                            required property int modelData
+                            required property int index
+                            Layout.preferredWidth: Kirigami.Units.gridUnit * modelData
+                            Layout.preferredHeight: index === 0 ? Kirigami.Units.gridUnit * 1.5 : Kirigami.Units.gridUnit * 0.8
+                            radius: height / 2
+                            color: loadingPlaceholder.shade
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                Layout.preferredWidth: Kirigami.Units.gridUnit * 13
+                Layout.preferredHeight: Kirigami.Units.gridUnit * 2
+                radius: Kirigami.Units.cornerRadius
+                color: loadingPlaceholder.shade
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Kirigami.Units.gridUnit * 13
+                radius: Kirigami.Units.cornerRadius
+                color: loadingPlaceholder.shade
+            }
+        }
 
         // ── App header ──────────────────────────────────────────────────
         GridLayout {
@@ -330,13 +458,12 @@ Kirigami.ScrollablePage {
             visible: !details.loading
 
             // App Icon
-            Image {
+            Components.RemoteImageView {
                 id: appIconImg
                 Layout.alignment: page.isNarrow ? Qt.AlignHCenter : Qt.AlignVCenter
                 Layout.preferredWidth: Kirigami.Units.iconSizes.enormous
                 Layout.preferredHeight: Kirigami.Units.iconSizes.enormous
-                source: appIconRemote.source
-                RemoteImage { id: appIconRemote; url: details.iconUrl; kind: "icon:256" }
+                remoteSource: details.iconUrl
                 asynchronous: true
                 fillMode: Image.PreserveAspectFit
 
@@ -359,6 +486,7 @@ Kirigami.ScrollablePage {
                 Kirigami.Heading {
                     level: 1
                     text: details.name
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
@@ -366,6 +494,7 @@ Kirigami.ScrollablePage {
 
                 Controls.Label {
                     text: details.developer !== "" ? details.developer : L10n.i18n("Unknown Developer", [])
+                    textFormat: Text.PlainText
                     color: Kirigami.Theme.disabledTextColor
                     Layout.fillWidth: true
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
@@ -373,6 +502,7 @@ Kirigami.ScrollablePage {
 
                 Controls.Label {
                     text: details.summary
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     horizontalAlignment: page.isNarrow ? Text.AlignHCenter : Text.AlignLeft
@@ -406,81 +536,91 @@ Kirigami.ScrollablePage {
             }
         }
 
-        // ── Action buttons & Permissions ─────────────────────────────────
-        GridLayout {
-            columns: page.isNarrow ? 1 : 2
-            rowSpacing: Kirigami.Units.mediumSpacing
-            columnSpacing: Kirigami.Units.largeSpacing
+        // ── Actions and sandbox summary ─────────────────────────────────
+        Flow {
+            Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
+            spacing: Kirigami.Units.mediumSpacing
             visible: !details.loading
 
-            StackLayout {
-                currentIndex: details.installProgress > 0.0 && details.installProgress < 1.0 ? 1 : 0
-                Layout.fillWidth: page.isNarrow
-                Layout.preferredWidth: page.isNarrow ? -1 : Kirigami.Units.gridUnit * 13
-                Layout.preferredHeight: Kirigami.Units.gridUnit * 2
+            // Install when not installed, Open when installed.
+            Controls.Button {
+                objectName: "installRemoveButton"
+                visible: !details.busy
+                text: details.installed ? L10n.i18n("Open", []) : L10n.i18n("Install", [])
+                icon.name: details.installed ? "media-playback-start" : "download-symbolic"
+                enabled: !details.loading && !details.busy
+                         && (details.installed || (details.permissionsKnown && details.errorMessage === ""))
+                highlighted: true
+                height: Kirigami.Units.gridUnit * 2
+                onClicked: details.installed ? details.launch() : details.install()
+            }
 
-                // 0: Normal Button
-                Controls.Button {
-                    text: {
-                        if (details.loading) return L10n.i18n("Loading…", []);
-                        return details.isInstalled ? L10n.i18n("Remove", []) : L10n.i18n("Install", []);
-                    }
-                    icon.name: details.isInstalled ? "edit-delete-symbolic" : "download-symbolic"
-                    enabled: !details.loading
-                    highlighted: !details.isInstalled
+            Controls.Button {
+                objectName: "removeButton"
+                visible: details.installed && !details.busy
+                text: L10n.i18n("Remove", [])
+                icon.name: "edit-delete-remove"
+                height: Kirigami.Units.gridUnit * 2
+                onClicked: removeConfirmDialog.open()
+            }
+
+            // Progress of the running operation, with Cancel.
+            RowLayout {
+                objectName: "detailProgressRow"
+                visible: details.busy
+                width: Kirigami.Units.gridUnit * 14
+                height: Kirigami.Units.gridUnit * 2
+                spacing: Kirigami.Units.mediumSpacing
+
+                Controls.ProgressBar {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.alignment: Qt.AlignVCenter
+                    from: 0.0
+                    to: 1.0
+                    // -1 means the backend cannot report a fraction yet.
+                    value: details.progress < 0 ? 0 : details.progress
+                    indeterminate: details.progress < 0
+                    Accessible.name: details.statusText !== "" ? details.statusText : L10n.i18n("Working…", [])
 
-                    onClicked: {
-                        if (details.isInstalled) {
-                            details.uninstall()
-                        } else {
-                            details.install()
-                        }
-                    }
+                    Behavior on value { NumberAnimation { duration: Kirigami.Units.longDuration } }
                 }
 
-                // 1: Subtle Progress Bar with Cancel
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    spacing: Kirigami.Units.mediumSpacing
-
-                    Controls.ProgressBar {
-                        id: subtleProgress
-                        Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignVCenter
-                        from: 0.0
-                        to: 1.0
-                        value: details.installProgress
-                        indeterminate: details.installProgress < 0.02
-
-                        Behavior on value { NumberAnimation { duration: 300 } }
-                    }
-
-                    Controls.ToolButton {
-                        icon.name: "dialog-cancel"
-                        display: Controls.AbstractButton.IconOnly
-                        text: L10n.i18n("Cancel", [])
-                        Controls.ToolTip.text: text
-                        Controls.ToolTip.visible: hovered
-                        Layout.alignment: Qt.AlignVCenter
-                        onClicked: {
-                            details.cancel()
-                        }
-                    }
+                Controls.ToolButton {
+                    objectName: "detailCancelButton"
+                    icon.name: "dialog-cancel"
+                    display: Controls.AbstractButton.IconOnly
+                    text: L10n.i18n("Cancel", [])
+                    Accessible.name: text
+                    Controls.ToolTip.text: text
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    Layout.alignment: Qt.AlignVCenter
+                    onClicked: details.cancel()
                 }
             }
 
-            // Permissions Button
-            Controls.Button {
-                id: permissionsBtn
-                text: L10n.i18n("Sandbox Permissions", [])
-                icon.name: "security-high-symbolic"
-                Layout.fillWidth: page.isNarrow
-                Layout.preferredHeight: Kirigami.Units.gridUnit * 2
+            // Sandbox summary; opens the full permission list.
+            Kirigami.Chip {
+                id: permissionChip
+                objectName: "permissionChip"
+                height: Kirigami.Units.gridUnit * 2
+                checkable: false
+                closable: false
+                enabled: details.errorMessage === ""
+                text: page.permissionLevel === "sandboxed" ? L10n.i18n("Sandboxed", [])
+                    : page.permissionLevel === "limited" ? L10n.i18n("Some system access", [])
+                    : page.permissionLevel === "full" ? L10n.i18n("Full system access", [])
+                    : L10n.i18n("Permissions unknown", [])
+                icon.name: page.permissionLevel === "sandboxed" ? "security-high"
+                         : page.permissionLevel === "limited" ? "security-medium"
+                         : page.permissionLevel === "full" ? "security-low"
+                         : "dialog-question"
+                Accessible.name: L10n.i18n("%1. Show permissions", [text])
+                Controls.ToolTip.text: L10n.i18n("Show sandbox permissions", [])
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                 onClicked: permissionsDialog.open()
             }
         }
@@ -539,12 +679,12 @@ Kirigami.ScrollablePage {
 
                         Behavior on border.color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
 
-                        Image {
+                        Components.RemoteImageView {
                             id: screenshotImg
                             anchors.fill: parent
                             anchors.margins: 1
-                            source: screenshotRemote.source
-                            RemoteImage { id: screenshotRemote; url: modelData; kind: "screenshot" }
+                            remoteSource: modelData
+                            sourceSize.height: 240
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             clip: true
@@ -561,6 +701,9 @@ Kirigami.ScrollablePage {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            Accessible.role: Accessible.Button
+                            Accessible.name: L10n.i18n("Screenshot %1 of %2, open larger", [index + 1, page.screenshotUrls.length])
+                            Accessible.onPressAction: clicked(null)
                             onClicked: {
                                 let idx = page.screenshotUrls.indexOf(modelData);
                                 largeScreenshotPopup.openWithIndex(idx >= 0 ? idx : 0);
@@ -573,6 +716,12 @@ Kirigami.ScrollablePage {
             // Left Navigation Arrow Button
             Controls.RoundButton {
                 id: leftScrollButton
+                text: L10n.i18n("Previous screenshots", [])
+                display: Controls.AbstractButton.IconOnly
+                Accessible.name: text
+                Controls.ToolTip.text: text
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                 anchors.left: parent.left
                 anchors.leftMargin: Kirigami.Units.largeSpacing
                 anchors.verticalCenter: parent.verticalCenter
@@ -603,6 +752,12 @@ Kirigami.ScrollablePage {
             // Right Navigation Arrow Button
             Controls.RoundButton {
                 id: rightScrollButton
+                text: L10n.i18n("Next screenshots", [])
+                display: Controls.AbstractButton.IconOnly
+                Accessible.name: text
+                Controls.ToolTip.text: text
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                 anchors.right: parent.right
                 anchors.rightMargin: Kirigami.Units.largeSpacing
                 anchors.verticalCenter: parent.verticalCenter
@@ -632,6 +787,47 @@ Kirigami.ScrollablePage {
             }
         }
 
+        // ── What's new ──────────────────────────────────────────────────
+        ColumnLayout {
+            objectName: "whatsNewSection"
+            Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            spacing: Kirigami.Units.smallSpacing
+            readonly property var release: details.latestRelease || ({})
+            visible: !details.loading && (release.version || "") !== ""
+
+            Kirigami.Heading {
+                level: 3
+                text: L10n.i18n("What's New", [])
+            }
+
+            Controls.Label {
+                Layout.fillWidth: true
+                color: Kirigami.Theme.disabledTextColor
+                textFormat: Text.PlainText
+                text: {
+                    const release = parent.release;
+                    if (!release.version)
+                        return "";
+                    if (release.timestamp > 0) {
+                        const date = new Date(release.timestamp * 1000).toLocaleDateString(Qt.locale(), Locale.LongFormat);
+                        return L10n.i18n("Version %1, released %2", [release.version, date]);
+                    }
+                    return L10n.i18n("Version %1", [release.version]);
+                }
+            }
+
+            Controls.Label {
+                objectName: "releaseNotesText"
+                Layout.fillWidth: true
+                visible: text !== ""
+                text: parent.release.description || ""
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+            }
+        }
+
         // ── Description ─────────────────────────────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
@@ -647,90 +843,51 @@ Kirigami.ScrollablePage {
 
             Controls.Label {
                 id: descText
+                objectName: "appDescriptionText"
                 Layout.fillWidth: true
                 text: details.description
-                textFormat: Text.RichText
+                textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
-                onLinkActivated: (link) => Qt.openUrlExternally(link)
             }
         }
 
-        // ── Links & Resources ───────────────────────────────────────────
+        // ── Links ───────────────────────────────────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
             spacing: Kirigami.Units.mediumSpacing
-            visible: !details.loading && hasLinks()
+            visible: !details.loading && page.linkEntries.length > 0
 
             Kirigami.Heading {
                 level: 3
-                text: L10n.i18n("Links & Resources", [])
+                text: L10n.i18n("Links", [])
                 Layout.leftMargin: Kirigami.Units.largeSpacing
             }
 
-            GridLayout {
-                columns: page.width > Kirigami.Units.gridUnit * 32 ? 3 : (page.width > Kirigami.Units.gridUnit * 20 ? 2 : 1)
-                rowSpacing: Kirigami.Units.mediumSpacing
-                columnSpacing: Kirigami.Units.mediumSpacing
+            FormCard.FormCard {
+                objectName: "linksCard"
                 Layout.fillWidth: true
                 Layout.leftMargin: Kirigami.Units.largeSpacing
                 Layout.rightMargin: Kirigami.Units.largeSpacing
+                maximumWidth: Kirigami.Units.gridUnit * 36
 
-                function getLink(key) {
-                    return page.urlsData[key] || "";
-                }
+                Repeater {
+                    model: page.linkEntries
 
-                // Homepage Button
-                Controls.Button {
-                    text: L10n.i18n("Website", [])
-                    icon.name: "internet-services"
-                    visible: parent.getLink("homepage") !== ""
-                    Layout.fillWidth: true
-                    onClicked: Qt.openUrlExternally(parent.getLink("homepage"))
-                }
-
-                // Source Repository Button
-                Controls.Button {
-                    text: L10n.i18n("Source Code", [])
-                    icon.name: "code-context"
-                    visible: parent.getLink("vcs_browser") !== ""
-                    Layout.fillWidth: true
-                    onClicked: Qt.openUrlExternally(parent.getLink("vcs_browser"))
-                }
-
-                // Manifest Button
-                Controls.Button {
-                    text: L10n.i18n("Flatpak Manifest", [])
-                    icon.name: "text-x-qml"
-                    visible: parent.getLink("manifest") !== ""
-                    Layout.fillWidth: true
-                    onClicked: Qt.openUrlExternally(parent.getLink("manifest"))
-                }
-
-                // Bug Tracker Button
-                Controls.Button {
-                    text: L10n.i18n("Report an Issue", [])
-                    icon.name: "tools-report-bug"
-                    visible: parent.getLink("bugtracker") !== ""
-                    Layout.fillWidth: true
-                    onClicked: Qt.openUrlExternally(parent.getLink("bugtracker"))
-                }
-
-                // Help Button
-                Controls.Button {
-                    text: L10n.i18n("Documentation", [])
-                    icon.name: "help-browser"
-                    visible: parent.getLink("help") !== ""
-                    Layout.fillWidth: true
-                    onClicked: Qt.openUrlExternally(parent.getLink("help"))
-                }
-
-                // Donation Button
-                Controls.Button {
-                    text: L10n.i18n("Donate / Support", [])
-                    icon.name: "love"
-                    visible: parent.getLink("donation") !== ""
-                    Layout.fillWidth: true
-                    onClicked: Qt.openUrlExternally(parent.getLink("donation"))
+                    delegate: FormCard.FormButtonDelegate {
+                        required property var modelData
+                        objectName: "link_" + modelData.key
+                        text: modelData.label
+                        icon.name: modelData.icon
+                        description: modelData.url
+                        descriptionItem.elide: Text.ElideMiddle
+                        trailing: Kirigami.Icon {
+                            source: "open-link-symbolic"
+                            implicitWidth: Kirigami.Units.iconSizes.small
+                            implicitHeight: implicitWidth
+                        }
+                        Accessible.description: L10n.i18n("Opens %1 in the web browser", [modelData.url])
+                        onClicked: Qt.openUrlExternally(modelData.url)
+                    }
                 }
             }
         }
@@ -738,9 +895,9 @@ Kirigami.ScrollablePage {
         // ── Developer's other apps ──────────────────────────────────────
         Components.HorizontalAppList {
             id: developerAppsList
-            title: L10n.i18n("More by %1", [String(details.developer !== "" ? details.developer : L10n.i18n("Developer", []))])
+            title: L10n.i18n("More by %1", [details.developer !== "" ? details.developer : L10n.i18n("Developer", [])])
             appModel: details.developerApps
-            visible: !details.loading && details.developerApps.count > 0
+            visible: !details.loading && details.developerApps.length > 0
             Layout.fillWidth: true
         }
 
@@ -749,7 +906,7 @@ Kirigami.ScrollablePage {
             id: similarAppsList
             title: L10n.i18n("Similar Applications", [])
             appModel: details.similarApps
-            visible: !details.loading && details.similarApps.count > 0
+            visible: !details.loading && details.similarApps.length > 0
             Layout.fillWidth: true
         }
 
@@ -782,7 +939,7 @@ Kirigami.ScrollablePage {
                 Controls.Button {
                     text: L10n.i18n("Write a Review", [])
                     icon.name: "document-edit"
-                    enabled: !page.odrsLoading
+                    enabled: !details.reviewsLoading && details.errorMessage === ""
                     onClicked: reviewDialog.open()
                 }
             }
@@ -792,8 +949,8 @@ Kirigami.ScrollablePage {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.topMargin: Kirigami.Units.largeSpacing
                 Layout.bottomMargin: Kirigami.Units.largeSpacing
-                running: page.odrsLoading
-                visible: page.odrsLoading
+                running: details.reviewsLoading
+                visible: details.reviewsLoading
             }
 
             // No Reviews Placeholder
@@ -804,39 +961,39 @@ Kirigami.ScrollablePage {
                 text: L10n.i18n("No Reviews Yet", [])
                 explanation: L10n.i18n("Be the first to write a review for this application!", [])
                 icon.name: "document-edit"
-                visible: !page.odrsLoading && ratingData.total === 0 && reviewsModel.count === 0
+                visible: !details.reviewsLoading && ratingData.total === 0 && page.allReviewsList.length === 0
             }
 
             // Rating Summary Card
             Components.RatingSummary {
                 Layout.fillWidth: true
-                visible: !page.odrsLoading && ratingData.total > 0
-                star0: ratingData.stars ? ratingData.stars[0] : 0
-                star1: ratingData.stars ? ratingData.stars[1] : 0
-                star2: ratingData.stars ? ratingData.stars[2] : 0
-                star3: ratingData.stars ? ratingData.stars[3] : 0
-                star4: ratingData.stars ? ratingData.stars[4] : 0
-                star5: ratingData.stars ? ratingData.stars[5] : 0
+                visible: !details.reviewsLoading && ratingData.total > 0
+                star0: ratingData.star0 || 0
+                star1: ratingData.star1 || 0
+                star2: ratingData.star2 || 0
+                star3: ratingData.star3 || 0
+                star4: ratingData.star4 || 0
+                star5: ratingData.star5 || 0
                 total: ratingData.total || 0
             }
 
             // Reviews List
             Repeater {
-                model: reviewsModel
-                visible: !page.odrsLoading && reviewsModel.count > 0
+                model: details.reviewsLoading ? [] : page.visibleReviews
                 delegate: Components.ReviewCard {
+                    required property var modelData
                     Layout.fillWidth: true
-                    userName: model.userName
-                    dateStr: model.dateStr
-                    rating: model.rating
-                    summary: model.summary
-                    description: model.description
-                    version: model.version
-                    reviewId: model.reviewId
-                    userHash: model.userHash
-                    karmaUp: model.karmaUp
-                    karmaDown: model.karmaDown
-                    details: details
+                    controller: details
+                    userName: modelData.userName || ""
+                    dateStr: page.reviewDate(modelData)
+                    rating: modelData.rating || 0
+                    summary: modelData.summary || ""
+                    description: modelData.description || ""
+                    version: modelData.version || ""
+                    reviewId: modelData.reviewId || 0
+                    userHash: modelData.userHash || ""
+                    karmaUp: modelData.karmaUp || 0
+                    karmaDown: modelData.karmaDown || 0
                 }
             }
 
@@ -846,8 +1003,8 @@ Kirigami.ScrollablePage {
                 Layout.bottomMargin: Kirigami.Units.largeSpacing
                 text: L10n.i18n("Show More Reviews", [])
                 icon.name: "arrow-down"
-                visible: !page.odrsLoading && reviewsModel.count < page.allReviewsList.length
-                onClicked: loadMoreReviews()
+                visible: !details.reviewsLoading && page.reviewsShown < page.allReviewsList.length
+                onClicked: page.loadMoreReviews()
             }
         }
     }
@@ -862,7 +1019,7 @@ Kirigami.ScrollablePage {
 
         onAccepted: {
             if (summaryInput.text !== "" && descriptionInput.text !== "") {
-                // Version, distribution and locale are filled in by Rust.
+                // Version, distro and locale are auto-detected by the backend.
                 details.submitReview(
                     ratingRow.selectedRating,
                     summaryInput.text,
@@ -942,6 +1099,7 @@ Kirigami.ScrollablePage {
     // ── Fullscreen Screenshot Zoom Popup ───────────────────────────────
     Controls.Popup {
         id: largeScreenshotPopup
+        objectName: "largeScreenshotPopup"
         parent: Controls.Overlay.overlay
         x: 0
         y: 0
@@ -960,8 +1118,35 @@ Kirigami.ScrollablePage {
             NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 200; easing.type: Easing.OutQuad }
         }
 
-        background: Rectangle {
-            color: "#f5000000" // Immersive dark backdrop
+        // Translucent, blurred view of the app behind the overlay (KDE HIG),
+        // instead of a flat blackout.
+        background: Item {
+            // Capture the page behind the overlay only while the popup is open.
+            ShaderEffectSource {
+                id: appBackdropSource
+                anchors.fill: parent
+                // A closed popup must not retain the page's scene/window.
+                sourceItem: largeScreenshotPopup.visible ? page : null
+                live: false
+                recursive: false
+                hideSource: false
+            }
+
+            MultiEffect {
+                anchors.fill: parent
+                source: appBackdropSource
+                blurEnabled: true
+                blur: 1.0
+                blurMax: 64
+                autoPaddingEnabled: false
+            }
+
+            // Translucent scrim so screenshots and white HUD text stay legible
+            // over the blurred background.
+            Rectangle {
+                anchors.fill: parent
+                color: Qt.rgba(0, 0, 0, 0.55)
+            }
         }
 
         property var screenshotsList: []
@@ -969,6 +1154,9 @@ Kirigami.ScrollablePage {
         function openWithIndex(index) {
             screenshotsList = page.screenshotUrls;
             screenshotSwipeView.currentIndex = index;
+            // Refresh the (non-live) backdrop snapshot to reflect the current
+            // page/scroll state before showing the viewer.
+            appBackdropSource.scheduleUpdate();
             open();
         }
 
@@ -1039,7 +1227,7 @@ Kirigami.ScrollablePage {
                                 }
                             }
 
-                            Image {
+                            Components.RemoteImageView {
                                 id: zoomImage
                                 property real fitWidth: {
                                     if (implicitWidth <= 0 || implicitHeight <= 0) return imageFlickable.width;
@@ -1066,8 +1254,7 @@ Kirigami.ScrollablePage {
                                 height: fitHeight * imageFlickable.zoomScale
                                 x: Math.max(0, (imageFlickable.width - width) / 2)
                                 y: Math.max(0, (imageFlickable.height - height) / 2)
-                                source: zoomRemote.source
-                                RemoteImage { id: zoomRemote; url: modelData; kind: "screenshot" }
+                                remoteSource: modelData
                                 fillMode: Image.PreserveAspectFit
                                 asynchronous: true
 
@@ -1132,15 +1319,19 @@ Kirigami.ScrollablePage {
                     Layout.fillWidth: true
                 }
 
-                Controls.ToolButton {
+                Controls.RoundButton {
                     icon.name: "window-close"
                     icon.color: "white"
                     display: Controls.AbstractButton.IconOnly
                     Layout.alignment: Qt.AlignVCenter
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.text: L10n.i18n("Close", [])
 
                     background: Rectangle {
-                        color: parent.hovered ? Qt.rgba(255, 255, 255, 0.15) : "transparent"
                         radius: width / 2
+                        color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(0, 0, 0, 0.4)
+                        border.color: parent.hovered ? "white" : "transparent"
+                        border.width: 1
                     }
 
                     onClicked: largeScreenshotPopup.close()
@@ -1159,7 +1350,7 @@ Kirigami.ScrollablePage {
 
                 background: Rectangle {
                     radius: width / 2
-                    color: parent.hovered ? Qt.rgba(255, 255, 255, 0.25) : Qt.rgba(0, 0, 0, 0.4)
+                    color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(0, 0, 0, 0.4)
                     border.color: parent.hovered ? "white" : "transparent"
                     border.width: 1
                 }
@@ -1179,7 +1370,7 @@ Kirigami.ScrollablePage {
 
                 background: Rectangle {
                     radius: width / 2
-                    color: parent.hovered ? Qt.rgba(255, 255, 255, 0.25) : Qt.rgba(0, 0, 0, 0.4)
+                    color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(0, 0, 0, 0.4)
                     border.color: parent.hovered ? "white" : "transparent"
                     border.width: 1
                 }
@@ -1201,6 +1392,30 @@ Kirigami.ScrollablePage {
     }
 
     // ── Sandbox Permissions Dialog ─────────────────────────────────────
+    Kirigami.PromptDialog {
+        id: removeConfirmDialog
+        objectName: "removeConfirmDialog"
+        title: L10n.i18n("Remove %1?", [details.name !== "" ? details.name : page.appId])
+        subtitle: L10n.i18n("The application is uninstalled. Its settings and data in your home folder are kept.", [])
+        standardButtons: Kirigami.Dialog.NoButton
+        customFooterActions: [
+            Kirigami.Action {
+                objectName: "confirmRemoveAction"
+                text: L10n.i18n("Remove", [])
+                icon.name: "edit-delete-remove"
+                onTriggered: {
+                    removeConfirmDialog.close();
+                    details.uninstall();
+                }
+            },
+            Kirigami.Action {
+                text: L10n.i18n("Cancel", [])
+                icon.name: "dialog-cancel"
+                onTriggered: removeConfirmDialog.close()
+            }
+        ]
+    }
+
     Kirigami.PromptDialog {
         id: permissionsDialog
         title: L10n.i18n("Application Permissions", [])

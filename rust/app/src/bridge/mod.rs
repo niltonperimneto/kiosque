@@ -49,12 +49,16 @@ macro_rules! notify_setters {
 pub mod app_details;
 pub mod app_list_model;
 pub mod app_shell;
+pub mod detail_data;
 pub mod featured_model;
 pub mod installed_model;
+pub mod jobs_model;
 pub mod l10n;
 pub mod remote_image;
 pub mod repo_model;
 pub mod settings_controller;
+pub mod store_controller;
+pub mod util;
 
 pub const URI: &str = "com.kiosque";
 
@@ -68,6 +72,8 @@ pub fn register_types() {
     repo_model::RepoModel::register();
     settings_controller::SettingsController::register();
     app_details::AppDetails::register();
+    store_controller::StoreController::register();
+    jobs_model::JobsModel::register();
     remote_image::RemoteImage::register();
     l10n::L10n::register();
     app_shell::AppShell::register();

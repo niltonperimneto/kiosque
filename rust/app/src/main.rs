@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use kiosque::bridge::app_shell;
 
-const USAGE: &str = "Usage: kiosque [--check-ui] [--version] [--help]\n\n  \
+const USAGE: &str = "Usage: kiosque [--app ID | appstream://ID | FILE.flatpakref | FILE.flatpakrepo] [--check-ui] [--version] [--help]\n\n  \
     --check-ui  Load the packaged UI, print KIOSQUE_UI_READY and exit\n  \
     --version   Print the version and exit\n  \
     --help      Show this help and exit\n";

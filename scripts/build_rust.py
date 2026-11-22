@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--manifest', type=Path, required=True)
 parser.add_argument('--target-dir', type=Path, required=True)
 parser.add_argument('--profile', choices=['debug', 'release'], required=True)
-parser.add_argument('--backend', choices=['native', 'cli'], required=True)
+parser.add_argument('--backend', choices=['native', 'broker'], required=True)
 parser.add_argument('--test-support', choices=['true', 'false'], required=True)
 parser.add_argument('--version', required=True)
 parser.add_argument('--localedir', required=True)
@@ -32,7 +32,7 @@ if env.get('CARGO_NET_OFFLINE', '').lower() in ('1', 'true'):
     command.append('--offline')
 if args.profile == 'release':
     command.append('--release')
-if args.backend == 'cli':
+if args.backend == 'broker':
     command.append('--no-default-features')
 if args.test_support == 'true':
     command.extend(['--features', 'kiosque/test-util'])

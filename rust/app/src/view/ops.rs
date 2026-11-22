@@ -195,6 +195,7 @@ pub fn installed_entries() -> Vec<InstalledEntry> {
             InstalledEntry {
                 is_runtime: app.is_runtime(),
                 size: super::installed::format_size(app.installed_size),
+                size_bytes: app.installed_size,
                 name: app.name,
                 app_id: app.id,
                 version: app.version,

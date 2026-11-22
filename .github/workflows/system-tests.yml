@@ -11,17 +11,15 @@ jobs:
   flatpak-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [native, cli]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils openssh-client
-      - run: python3 scripts/test.py system --backend ${{ matrix.backend }}
-      - uses: actions/upload-artifact@v7
+      - run: python3 scripts/test.py system --backend native
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
-          name: system-results-${{ matrix.backend }}
+          name: system-results-native
           include-hidden-files: true
           path: .test-results/

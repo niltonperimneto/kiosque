@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use kiosque_core::entries::AppEntry;
-use qtbridge::{QModelItem, qobject};
+use qtbridge::qobject;
 
 use crate::view::app_list::{self, AppSource};
 
@@ -13,7 +13,7 @@ pub use object::AppListModel;
 /// Seconds a cached popular list is shown without refetching.
 const POPULAR_TTL: u64 = 300;
 
-#[derive(Debug, Default, Clone, PartialEq, QModelItem)]
+#[derive(Debug, Default, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct AppItem {
     pub name: String,
@@ -70,6 +70,7 @@ mod object {
     impl AppListModel {
         qproperty!("loading", Read = loading_value, Notify = loading_changed);
         qproperty!("count", Read = count_value, Notify = count_changed);
+        qproperty!("error_message", Read = error_value, Notify = error_changed);
         qproperty!("errorString", Read = error_value, Notify = error_changed);
 
         fn loading_value(&self) -> bool {
@@ -82,9 +83,9 @@ mod object {
             self.error.clone()
         }
 
-        #[qsignal]
+        #[qsignal(qml_name = "loadingChanged")]
         pub fn loading_changed(&mut self);
-        #[qsignal]
+        #[qsignal(qml_name = "countChanged")]
         pub fn count_changed(&mut self);
         #[qsignal]
         pub fn error_changed(&mut self);
@@ -132,6 +133,50 @@ mod object {
             });
         }
 
+        #[qslot]
+        fn refresh(&mut self) {
+            self.load("popular".into(), String::new());
+        }
+        #[qslot(qml_name = "loadNew")]
+        fn load_new(&mut self) {
+            self.load("new".into(), String::new());
+        }
+        #[qslot(qml_name = "loadUpdated")]
+        fn load_updated(&mut self) {
+            self.load("updated".into(), String::new());
+        }
+        #[qslot(qml_name = "loadPopular")]
+        fn load_popular(&mut self) {
+            self.load("popular".into(), String::new());
+        }
+        #[qslot(qml_name = "loadRecentlyAdded")]
+        fn load_recently_added(&mut self) {
+            self.load("new".into(), String::new());
+        }
+        #[qslot(qml_name = "loadRecentlyUpdated")]
+        fn load_recently_updated(&mut self) {
+            self.load("updated".into(), String::new());
+        }
+        #[qslot]
+        fn search(&mut self, q: String) {
+            self.load("search".into(), q);
+        }
+        #[qslot(qml_name = "loadSearch")]
+        fn load_search(&mut self, q: String) {
+            self.load("search".into(), q);
+        }
+        #[qslot(qml_name = "loadCategory")]
+        fn load_category(&mut self, q: String) {
+            self.load("category".into(), q);
+        }
+        #[qslot(qml_name = "loadCategorySorted")]
+        fn load_category_sorted(&mut self, q: String, sort: String) {
+            self.load("category-sorted".into(), format!("{q}:{sort}"));
+        }
+        #[qslot(qml_name = "loadMobile")]
+        fn load_mobile(&mut self) {
+            self.load("mobile".into(), String::new());
+        }
         /// Drop the items and invalidate in-flight requests.
         #[qslot]
         fn clear(&mut self) {
@@ -192,3 +237,52 @@ impl AppListModel {
 }
 
 qml_element!(AppListModel, "AppListModel");
+
+// Keep the existing Qt.UserRole numbers as well as the QML role names.
+impl qtbridge::QModelItem for AppItem {
+    type T0 = String;
+    type T1 = String;
+    type T2 = String;
+    type T3 = String;
+    type T4 = ();
+    type T5 = ();
+    type T6 = ();
+    type T7 = ();
+    type T8 = ();
+    type T9 = ();
+    type T10 = ();
+    type T11 = ();
+    type T12 = ();
+    type T13 = ();
+    type T14 = ();
+    fn get0(&self) -> Option<&String> {
+        Some(&self.name)
+    }
+    fn get1(&self) -> Option<&String> {
+        Some(&self.summary)
+    }
+    fn get2(&self) -> Option<&String> {
+        Some(&self.iconUrl)
+    }
+    fn get3(&self) -> Option<&String> {
+        Some(&self.appId)
+    }
+    fn role_names() -> std::collections::HashMap<i32, String> {
+        [
+            (256, "name".into()),
+            (257, "summary".into()),
+            (258, "iconUrl".into()),
+            (259, "appId".into()),
+        ]
+        .into()
+    }
+    fn get_role(&self, role: i32) -> qtbridge::qtbridge_type_lib::QVariant {
+        match role {
+            256 => qtbridge::QVariantConvertible::to_qvariant(&self.name),
+            257 => qtbridge::QVariantConvertible::to_qvariant(&self.summary),
+            258 => qtbridge::QVariantConvertible::to_qvariant(&self.iconUrl),
+            259 => qtbridge::QVariantConvertible::to_qvariant(&self.appId),
+            _ => Default::default(),
+        }
+    }
+}

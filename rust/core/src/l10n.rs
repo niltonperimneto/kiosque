@@ -1,7 +1,7 @@
 //! Gettext catalogs for the `kiosque` domain, with KDE-style placeholders.
 //!
 //! Replaces KI18n. Messages are looked up in `.mo` catalogs parsed by the
-//! pure-Rust `gettext` crate; `%1` … `%99` in the result are then replaced by
+//! a bounded UTF-8 reader and the `gettext_catalog` plural evaluator; `%1` … `%99` in the result are then replaced by
 //! the supplied arguments, as `KLocalizedString::subs` does. Lookups fall
 //! through the user's language list per message, so a partially translated
 //! `pt_PT` catalog can be completed by `pt`.
@@ -9,7 +9,138 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use gettext::Catalog;
+use gettext_catalog::plural::PluralRule;
+use std::borrow::Cow;
+use std::collections::HashMap;
+
+/// Bounded UTF-8 GNU MO catalog, as produced by this project's msgfmt step.
+/// Keep context parsing here: the previous replacement library reversed the
+/// GNU `context\x04message` convention. Plural expressions use the complete
+/// gettext grammar supplied by `gettext_catalog`.
+#[derive(Debug)]
+pub struct Catalog {
+    messages: HashMap<String, Vec<String>>,
+    plural: PluralRule,
+}
+impl Catalog {
+    pub fn from_path(path: &Path) -> Result<Self, String> {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)
+            .map_err(|e| e.to_string())?
+            .take(16 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        Self::from_vec_u8(bytes)
+    }
+    pub fn from_vec_u8(bytes: Vec<u8>) -> Result<Self, String> {
+        if bytes.len() < 28 {
+            return Err("truncated MO header".into());
+        }
+        if bytes.len() > 16 * 1024 * 1024 {
+            return Err("catalog exceeds 16 MiB".into());
+        }
+        let little = match bytes.get(..4) {
+            Some([0xde, 0x12, 0x04, 0x95]) => true,
+            Some([0x95, 0x04, 0x12, 0xde]) => false,
+            _ => return Err("invalid MO magic".into()),
+        };
+        let word = |offset: usize| -> Result<usize, String> {
+            let raw: [u8; 4] = bytes
+                .get(offset..offset + 4)
+                .ok_or("truncated MO table")?
+                .try_into()
+                .map_err(|_| "invalid word")?;
+            Ok(if little {
+                u32::from_le_bytes(raw)
+            } else {
+                u32::from_be_bytes(raw)
+            } as usize)
+        };
+        if word(4)? != 0 {
+            return Err("unsupported MO revision".into());
+        }
+        let count = word(8)?;
+        let ids = word(12)?;
+        let values = word(16)?;
+        if count > bytes.len() / 16 {
+            return Err("invalid MO entry count".into());
+        }
+        let text = |table: usize, index: usize| -> Result<&str, String> {
+            let entry = table.checked_add(index * 8).ok_or("MO table overflow")?;
+            let length = word(entry)?;
+            let offset = word(entry + 4)?;
+            let end = offset.checked_add(length).ok_or("MO string overflow")?;
+            std::str::from_utf8(bytes.get(offset..end).ok_or("truncated MO string")?)
+                .map_err(|_| "catalog must be UTF-8".into())
+        };
+        let mut messages = HashMap::new();
+        let mut plural = PluralRule::new(2, "n != 1").map_err(|e| e.to_string())?;
+        for i in 0..count {
+            let id = text(ids, i)?;
+            let translation = text(values, i)?;
+            if id.is_empty() {
+                if let Some(forms) = translation
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Plural-Forms:"))
+                {
+                    let mut nplurals = 2;
+                    let mut expression = "n != 1";
+                    for option in forms.split(';') {
+                        if let Some((key, value)) = option.trim().split_once('=') {
+                            match key.trim() {
+                                "nplurals" => {
+                                    nplurals =
+                                        value.trim().parse().map_err(|_| "invalid plural count")?
+                                }
+                                "plural" => expression = value.trim(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    plural = PluralRule::new(nplurals, expression).map_err(|e| e.to_string())?;
+                }
+            } else if !translation.is_empty() {
+                let singular = id.split('\0').next().unwrap_or(id);
+                messages.insert(
+                    singular.into(),
+                    translation.split('\0').map(str::to_owned).collect(),
+                );
+            }
+        }
+        Ok(Self { messages, plural })
+    }
+    fn lookup(&self, id: &str, context: Option<&str>) -> Option<&Vec<String>> {
+        match context {
+            Some(context) => self.messages.get(&format!("{context}\u{4}{id}")),
+            None => self.messages.get(id),
+        }
+    }
+    pub fn translate<'a>(&'a self, id: &'a str, context: Option<&str>) -> Cow<'a, str> {
+        Cow::Borrowed(
+            self.lookup(id, context)
+                .and_then(|forms| forms.first())
+                .map(String::as_str)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(id),
+        )
+    }
+    pub fn ntranslate<'a>(
+        &'a self,
+        n: u64,
+        singular: &'a str,
+        plural: &'a str,
+        context: Option<&str>,
+    ) -> Cow<'a, str> {
+        Cow::Borrowed(
+            self.lookup(singular, context)
+                .and_then(|forms| forms.get(self.plural.index(n)))
+                .map(String::as_str)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(if n == 1 { singular } else { plural }),
+        )
+    }
+}
 
 pub const DOMAIN: &str = "kiosque";
 
@@ -108,7 +239,7 @@ pub struct Translator {
     catalogs: Vec<Catalog>,
 }
 
-/// The `gettext` crate hands back its argument on a miss, so a returned
+/// The catalog backend hands back its argument on a miss, so a returned
 /// slice that *is* one of the inputs means "not translated here".
 fn same(a: &str, b: &str) -> bool {
     std::ptr::eq(a.as_ptr(), b.as_ptr()) && a.len() == b.len()
@@ -129,8 +260,10 @@ impl Translator {
                     .join(lang)
                     .join("LC_MESSAGES")
                     .join(format!("{domain}.mo"));
-                let file = std::fs::File::open(&path).ok()?;
-                match Catalog::parse(std::io::BufReader::new(file)) {
+                if !path.is_file() {
+                    return None;
+                }
+                match Catalog::from_path(&path) {
                     Ok(c) => Some(c),
                     Err(e) => {
                         kerr!("l10n: cannot parse {}: {}", path.display(), e);
@@ -147,44 +280,44 @@ impl Translator {
         self.catalogs.is_empty()
     }
 
-    pub fn gettext<'a>(&'a self, msgid: &'a str) -> &'a str {
+    pub fn gettext<'a>(&'a self, msgid: &'a str) -> Cow<'a, str> {
         for c in &self.catalogs {
-            let t = c.gettext(msgid);
-            if !same(t, msgid) {
+            let t = c.translate(msgid, None);
+            if !same(&t, msgid) {
                 return t;
             }
         }
-        msgid
+        Cow::Borrowed(msgid)
     }
 
-    pub fn pgettext<'a>(&'a self, context: &'a str, msgid: &'a str) -> &'a str {
+    pub fn pgettext<'a>(&'a self, context: &'a str, msgid: &'a str) -> Cow<'a, str> {
         for c in &self.catalogs {
-            let t = c.pgettext(context, msgid);
-            if !same(t, msgid) {
+            let t = c.translate(msgid, Some(context));
+            if !same(&t, msgid) {
                 return t;
             }
         }
-        msgid
+        Cow::Borrowed(msgid)
     }
 
-    pub fn ngettext<'a>(&'a self, singular: &'a str, plural: &'a str, n: u64) -> &'a str {
+    pub fn ngettext<'a>(&'a self, singular: &'a str, plural: &'a str, n: u64) -> Cow<'a, str> {
         for c in &self.catalogs {
-            let t = c.ngettext(singular, plural, n);
-            if !same(t, singular) && !same(t, plural) {
+            let t = c.ntranslate(n, singular, plural, None);
+            if !same(&t, singular) && !same(&t, plural) {
                 return t;
             }
         }
-        if n == 1 { singular } else { plural }
+        Cow::Borrowed(if n == 1 { singular } else { plural })
     }
 
     /// KDE `i18n`: translate, then substitute.
     pub fn i18n(&self, msgid: &str, args: &[String]) -> String {
-        substitute(self.gettext(msgid), args)
+        substitute(&self.gettext(msgid), args)
     }
 
     /// KDE `i18nc`: translate with a disambiguating context.
     pub fn i18nc(&self, context: &str, msgid: &str, args: &[String]) -> String {
-        substitute(self.pgettext(context, msgid), args)
+        substitute(&self.pgettext(context, msgid), args)
     }
 
     /// KDE `i18np`: `n` is `%1`; further arguments are `%2` onwards.
@@ -193,7 +326,7 @@ impl Translator {
         let mut all = Vec::with_capacity(args.len() + 1);
         all.push(n.to_string());
         all.extend(args.iter().cloned());
-        substitute(self.ngettext(singular, plural, count), &all)
+        substitute(&self.ngettext(singular, plural, count), &all)
     }
 }
 
@@ -295,7 +428,7 @@ mod tests {
     fn catalog(entries: &[(&str, &str)]) -> Catalog {
         let mut all = vec![("", HEADER)];
         all.extend_from_slice(entries);
-        Catalog::parse(&mo(&all)[..]).unwrap()
+        Catalog::from_vec_u8(mo(&all)).unwrap()
     }
 
     fn env(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
@@ -394,6 +527,39 @@ mod tests {
             DOMAIN,
         );
         assert_eq!(t.i18n("Settings", &[]), "Definições");
+    }
+
+    #[test]
+    fn catalogs_preserve_three_forms_and_contexts() {
+        let bytes = mo(&[
+            (
+                "",
+                "Content-Type: text/plain; charset=UTF-8\nPlural-Forms: nplurals=3; plural=(n == 1 ? 0 : n == 2 ? 1 : 2);\n",
+            ),
+            ("noun\u{4}%1 item\0%1 items", "uno\0dos\0muchos"),
+        ]);
+        let catalog = Catalog::from_vec_u8(bytes).unwrap();
+        for (count, expected) in [(1, "uno"), (2, "dos"), (5, "muchos")] {
+            assert_eq!(
+                catalog.ntranslate(count, "%1 item", "%1 items", Some("noun")),
+                expected
+            );
+        }
+    }
+    #[test]
+    fn catalogs_accept_big_endian_and_reject_truncation() {
+        let bytes = mo(&[("", HEADER), ("Settings", "Definições")]);
+        let mut big = bytes.clone();
+        for word in big[..28 + 2 * 16].as_chunks_mut::<4>().0 {
+            let value = u32::from_le_bytes(*word);
+            word.copy_from_slice(&value.to_be_bytes());
+        }
+        let t = Translator::from_catalogs(vec![Catalog::from_vec_u8(big).unwrap()]);
+        assert_eq!(t.i18n("Settings", &[]), "Definições");
+        assert!(Catalog::from_vec_u8(bytes[..20].to_vec()).is_err());
+        let mut broken = bytes;
+        broken[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(Catalog::from_vec_u8(broken).is_err());
     }
 
     #[test]

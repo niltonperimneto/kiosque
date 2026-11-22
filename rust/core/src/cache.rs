@@ -157,12 +157,6 @@ impl AppCache {
         self.odrs_reviews.insert(app_id, value).await;
     }
 
-    /// Forget cached ratings and reviews of `app_id` (after a vote or review).
-    pub async fn invalidate_odrs(&self, app_id: &str) {
-        self.odrs_ratings.invalidate(app_id).await;
-        self.odrs_reviews.invalidate(app_id).await;
-    }
-
     // ── Stats cache ─────────────────────────────────────────────────────
 
     string_keyed_accessors!(
@@ -206,6 +200,19 @@ impl AppCache {
         get_summary,
         put_summary
     );
+
+    /// A successful submission changes the app's reviews and aggregate rating.
+    pub async fn invalidate_reviews(&self, app_id: &str) {
+        self.odrs_reviews.invalidate(app_id).await;
+        self.odrs_ratings.invalidate(app_id).await;
+    }
+
+    /// Voting/moderation identifies a review rather than an app. Invalidate
+    /// only review data, retaining unrelated catalog/details caches.
+    pub fn invalidate_all_reviews(&self) {
+        self.odrs_reviews.invalidate_all();
+        self.odrs_ratings.invalidate_all();
+    }
 
     pub async fn clear(&self) {
         klog!("CACHE CLEAR: Invalidate all moka cache entries");

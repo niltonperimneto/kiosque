@@ -16,19 +16,33 @@ jobs:
       matrix:
         artifact: [Kiosque-Flatpak, Kiosque-RPM, Kiosque-AppImage]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ${{ matrix.artifact }}
           path: artifacts
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
+      - name: Download matching host companion
+        if: matrix.artifact == 'Kiosque-Flatpak'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: Kiosque-RPM
+          path: artifacts/companion
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Verify exact package provenance before execution
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KIOSQUE_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: python3 scripts/verify_attestations.py artifacts
       - run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils openssh-client
       - name: Test each produced binary package inside a disposable VM
         run: python3 scripts/test_artifacts.py artifacts
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: package-results-${{ matrix.artifact }}

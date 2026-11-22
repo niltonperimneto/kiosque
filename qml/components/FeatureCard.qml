@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import org.kde.kirigami as Kirigami
 import QtQuick.Effects
 

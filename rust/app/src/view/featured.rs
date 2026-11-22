@@ -18,6 +18,7 @@ pub async fn fetch(client: &FlathubClient, distro_id: &str, day: &str) -> Vec<Fe
     {
         ids.push(id.to_string());
     }
+    let daily_id = ids.first().cloned();
     for id in curated_apps(distro_id) {
         if !ids.iter().any(|i| i == id) {
             ids.push(id.to_string());
@@ -28,13 +29,27 @@ pub async fn fetch(client: &FlathubClient, distro_id: &str, day: &str) -> Vec<Fe
         .await
         .into_iter()
         .filter_map(Result::ok)
-        .map(|d| FeaturedEntry {
-            description: d.description.clone().unwrap_or_else(|| d.summary.clone()),
-            name: d.name,
-            summary: d.summary,
-            icon_url: d.icon.unwrap_or_default(),
-            app_id: d.id,
-            developer: d.developer_name.unwrap_or_default(),
+        .map(|d| {
+            let (light, dark) = d.brand_colors();
+            let screenshot = d.best_screenshot_url().unwrap_or_default();
+            let daily = daily_id.as_deref() == Some(d.id.as_str());
+            FeaturedEntry {
+                screenshot_urls: d
+                    .screenshots
+                    .iter()
+                    .filter_map(|shot| shot.best_url())
+                    .collect(),
+                screenshot_url: screenshot,
+                brand_color_light: light.unwrap_or_default(),
+                brand_color_dark: dark.unwrap_or_default(),
+                is_app_of_the_day: daily,
+                description: d.description.clone().unwrap_or_else(|| d.summary.clone()),
+                name: d.name,
+                summary: d.summary,
+                icon_url: d.icon.unwrap_or_default(),
+                app_id: d.id,
+                developer: d.developer_name.unwrap_or_default(),
+            }
         })
         .collect();
     if items.is_empty() {
@@ -52,11 +67,16 @@ pub async fn fetch(client: &FlathubClient, distro_id: &str, day: &str) -> Vec<Fe
                     icon_url: app.icon.unwrap_or_default(),
                     app_id: app.app_id,
                     developer: app.developer_name.unwrap_or_default(),
+                    ..Default::default()
                 })
                 .collect();
         }
     }
-    items.truncate(MAX_FEATURED);
+    items.truncate(if items.iter().any(|e| e.is_app_of_the_day) {
+        MAX_FEATURED + 1
+    } else {
+        MAX_FEATURED
+    });
     items
 }
 

@@ -1,10 +1,9 @@
 [Desktop Entry]
 Name=Kiosque
 Comment=A modern Flatpak software center
-Exec=kiosque
+Exec=kiosque %u
 Icon=org.kiosque.Kiosque
 Terminal=false
 Type=Application
-Categories=Qt;KDE;System;
-StartupWMClass=kiosque
-Keywords=Flatpak;Flathub;Store;Software;Apps;Install;Update;
+Categories=Qt;KDE;System;PackageManager;
+MimeType=application/vnd.flatpak.ref;application/vnd.flatpak.repo;x-scheme-handler/appstream;

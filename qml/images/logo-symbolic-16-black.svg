@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- SPDX-FileCopyrightText: 2026 Kiosque Contributors -->
+<!-- Small-size (black) variant of the Kiosque logo, aligned to a 16 px grid
+     so the awning stripes stay crisp at 16 px. Use logo-symbolic-black.svg
+     everywhere else. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <path fill="#000000" fill-rule="evenodd" d="M1 1h1v4h1V1h1v4h1V1h1v4h1V1h1v4h1V1h1v4h1V1h1v4h1V1h2v7l-3 3 3 4h-2l-2.5-3.25L9 12.5V15H1z M9.5 8h3l-3 3z"/>
+</svg>

@@ -64,7 +64,7 @@ TestCase {
         tryCompare(model, "loading", false, 10000)
         compare(loadingSpy.count, 2, "loading goes true then false exactly once")
         verify(resetSpy.count >= 1, "results arrive through a model reset")
-        compare(model.count, model.rowCount())
+        compare(model.count, model.rowCount(model.index(-1,-1)))
         tryVerify(function() { return view.itemAtIndex(0) !== null })
         let item = view.itemAtIndex(0)
         verify(item.appId !== "")
@@ -90,6 +90,7 @@ TestCase {
         let view = createTemporaryObject(installedView, this, { model: model })
         model.refresh()
         tryCompare(model, "loading", false, 10000)
+        verify(BackendFixture.setUpdates(["org.kiosque.Fixture"]))
         model.checkForUpdates()
         tryCompare(model, "checking_updates", false, 10000)
         tryCompare(model, "updates_available_count", 1, 10000)
@@ -117,6 +118,6 @@ TestCase {
         spyOn(RepoModel)
         RepoModel.refresh()
         tryCompare(RepoModel, "loading", false, 10000)
-        compare(RepoModel.count, RepoModel.rowCount())
+        compare(RepoModel.count, RepoModel.rowCount(RepoModel.index(-1,-1)))
     }
 }

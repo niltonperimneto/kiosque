@@ -147,7 +147,7 @@ impl ReviewsData {
     /// Review objects with [`ReviewEntry`]'s field names, newest first.
     pub fn reviews_value(&self) -> serde_json::Value {
         let mut reviews = self.reviews.clone();
-        reviews.sort_by(|a, b| b.date.cmp(&a.date));
+        reviews.sort_by_key(|review| std::cmp::Reverse(review.date));
         serde_json::to_value(reviews).unwrap_or_default()
     }
 }
@@ -303,7 +303,7 @@ mod tests {
         let similar = FlathubApp {
             app_id: "org.kde.krita".into(),
             name: "Krita".into(),
-            ..Default::default()
+            ..serde_json::from_value::<FlathubApp>(serde_json::json!({})).unwrap()
         };
         let d = AppDetailsData::from_parts(details(), summary, vec![], vec![similar]);
         assert_eq!(d.name, "GIMP");

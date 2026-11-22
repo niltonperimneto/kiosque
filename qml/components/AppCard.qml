@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import com.kiosque
 
 // A clickable application tile: icon, name and a short summary.
 // Built on Kirigami.AbstractCard so it inherits standard hover/press
@@ -60,16 +60,20 @@ Kirigami.AbstractCard {
     contentItem: ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
-        Image {
+        RemoteImageView {
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: Kirigami.Units.iconSizes.huge
             Layout.preferredHeight: Kirigami.Units.iconSizes.huge
-            source: iconImage.source
-            RemoteImage { id: iconImage; url: root.iconUrl; kind: "icon:128" }
+            remoteSource: root.iconUrl
             sourceSize.width: Kirigami.Units.iconSizes.huge
             sourceSize.height: Kirigami.Units.iconSizes.huge
             asynchronous: true
             fillMode: Image.PreserveAspectFit
+            onStatusChanged: {
+                if (status === Image.Error) {
+                    console.warn("[qml-image] Error loading " + source + ": " + errorString)
+                }
+            }
 
             Kirigami.Icon {
                 anchors.centerIn: parent
@@ -84,6 +88,7 @@ Kirigami.AbstractCard {
         Kirigami.Heading {
             level: 4
             text: root.name
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
@@ -92,6 +97,7 @@ Kirigami.AbstractCard {
 
         Controls.Label {
             text: root.summary
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "test-util", feature = "libflatpak"))]
 //! Explicitly selected real-backend contracts; never run by ordinary cargo test.
 use kiosque_core::flatpak::{self, FlatpakBackend, FlatpakError, Operation, RemoteSource, Scope};
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -24,17 +25,18 @@ fn root() -> PathBuf {
 #[ignore = "requires disposable VM and local signed fixture repository"]
 async fn real_backend_lifecycle_and_scopes() {
     let root = root();
-    let backend: Arc<dyn FlatpakBackend> =
-        match std::env::var("KIOSQUE_TEST_BACKEND").unwrap().as_str() {
-            "cli" => Arc::new(flatpak::cli::CliBackend::new()),
-            #[cfg(feature = "libflatpak")]
-            "native" => Arc::new(flatpak::native::LibflatpakBackend::new().unwrap()),
-            other => panic!("backend unavailable: {other}"),
-        };
+    let backend = flatpak::native::LibflatpakBackend;
     let repo = std::fs::read(root.join("fixture.flatpakrepo")).unwrap();
     for scope in [Scope::User, Scope::System] {
         backend
-            .add_remote("fixture", RemoteSource::FlatpakRepo(repo.clone()), scope)
+            .add_remote(
+                "fixture",
+                RemoteSource::LocalFixture {
+                    data: repo.clone(),
+                    root: root.clone(),
+                },
+                scope,
+            )
             .await
             .unwrap();
         let progress: flatpak::ProgressSink = Arc::new(|p| assert!(p.fraction.is_finite()));
@@ -59,7 +61,8 @@ async fn real_backend_lifecycle_and_scopes() {
                 .any(|a| a.id == "org.kiosque.Fixture" && a.scope == scope)
         );
     }
-    let before = std::process::Command::new("flatpak")
+    backend.launch("org.kiosque.Fixture").await.unwrap();
+    let before = std::process::Command::new("/usr/bin/flatpak")
         .args(["info", "--user", "--show-commit", "org.kiosque.Fixture"])
         .output()
         .unwrap();
@@ -68,6 +71,7 @@ async fn real_backend_lifecycle_and_scopes() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/system/publish_fixture.py");
     assert!(
         std::process::Command::new("python3")
+            .env("PATH", std::env::var("KIOSQUE_FIXTURE_PATH").unwrap())
             .arg(publisher)
             .arg(&root)
             .arg("2")
@@ -85,7 +89,7 @@ async fn real_backend_lifecycle_and_scopes() {
         )
         .await
         .unwrap();
-    let after = std::process::Command::new("flatpak")
+    let after = std::process::Command::new("/usr/bin/flatpak")
         .args(["info", "--user", "--show-commit", "org.kiosque.Fixture"])
         .output()
         .unwrap();
