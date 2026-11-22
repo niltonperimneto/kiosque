@@ -368,7 +368,9 @@ TestCase {
         verify(banner.text.indexOf("fixture rejected review") === -1)
         compare(details.reviews.length, 1)
         details.dismissReview(second)
-        tryVerify(() => details.reviews.length === 0, 10000)
+        // Reload clears reviews before ratings arrive. Wait for completed data.
+        tryVerify(() => !details.reviewsLoading
+                  && details.reviews.length === 0 && details.ratings.total === 0, 10000)
         compare(details.ratings.total, 0)
         compare(banner.visible, false)
     }
