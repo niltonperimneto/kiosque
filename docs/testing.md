@@ -22,7 +22,7 @@ Use `--backend native` (default) or `--backend broker` for desktop suites. Each 
 The desktop CI base is pinned by OCI digest. `tests/Containerfile` provides the corresponding developer environment. Install desktop dependencies in a disposable Fedora environment:
 
 ```sh
-dnf install -y desktop-file-utils cargo rust gcc-c++ meson ninja-build cmake mold qt6-qtbase-private-devel qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
+dnf install -y desktop-file-utils cargo rust clippy gcc-c++ meson ninja-build cmake mold qt6-qtbase-private-devel qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
 python3 scripts/test.py qt --backend native
 python3 scripts/test.py qml --backend native
 python3 scripts/test.py qt --backend broker
