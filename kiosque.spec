@@ -51,6 +51,7 @@ test -f %{buildroot}%{_datadir}/krunner/dbusplugins/org.kiosque.Kiosque.desktop
 %{_bindir}/kiosque
 %{_bindir}/kiosque-update
 %{_datadir}/applications/org.kiosque.Kiosque.desktop
+%{_datadir}/metainfo/org.kiosque.Kiosque.metainfo.xml
 %{_datadir}/dbus-1/services/org.kiosque.Kiosque.Daemon.service
 %dir %{_datadir}/krunner
 %dir %{_datadir}/krunner/dbusplugins
