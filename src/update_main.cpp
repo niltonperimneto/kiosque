@@ -14,12 +14,10 @@
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusMessage>
-#include <QFileInfo>
 #include <QIcon>
 #include <QPalette>
 #include <QMenu>
 #include <QMetaObject>
-#include <QProcess>
 #include <QSystemTrayIcon>
 #include <QTextStream>
 #include <KLocalizedString>
@@ -33,6 +31,8 @@ bool kiosque_daemon_start(bool background, KiosqueDaemonCallback cb, void *ctx);
 void kiosque_daemon_check_updates();
 void kiosque_daemon_update_all();
 bool kiosque_daemon_busy();
+bool kiosque_daemon_background();
+bool kiosque_open_store();
 int kiosque_run_update_once();
 }
 
@@ -155,7 +155,8 @@ public:
             refreshActions();
             break;
         case EventIdleExit:
-            if (!m_background && !kiosque_daemon_busy()) {
+            // Background mode can change at runtime (automatic updates).
+            if (!kiosque_daemon_background() && !kiosque_daemon_busy()) {
                 QCoreApplication::quit();
             }
             break;
@@ -167,10 +168,8 @@ public:
 public Q_SLOTS:
     void openStore()
     {
-        // Launch the sibling GUI binary (same prefix / sandbox), falling back to PATH.
-        const QString sibling = QCoreApplication::applicationDirPath() + QStringLiteral("/kiosque");
-        const QString program = QFileInfo(sibling).isExecutable() ? sibling : QStringLiteral("kiosque");
-        if (!QProcess::startDetached(program, QStringList())) {
+        // The native storefront if installed alongside, else the Kiosque Flatpak.
+        if (!kiosque_open_store()) {
             qWarning("kiosque-update: cannot launch the store");
         }
     }

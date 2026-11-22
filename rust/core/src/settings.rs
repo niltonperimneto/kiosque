@@ -173,7 +173,9 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
 
 /// Apply the auto-update preference: the daemon (`kiosque-update`) runs the
 /// schedule itself, so all that is needed is asking the Background portal to
-/// autostart it (or not). This is the only scheduling mechanism; files
+/// autostart it (or not) at login. Callers also hand the schedule to the
+/// running daemon (`daemon::client::configure_automatic_updates`) so the
+/// change applies immediately. This is the only scheduling mechanism; files
 /// written by older Kiosque versions (systemd user timer, manual autostart
 /// entry) are removed.
 pub async fn apply_autostart(settings: &AppSettings) -> Result<(), String> {
@@ -221,10 +223,14 @@ async fn request_background(autostart: bool) -> Result<(), String> {
         Variant::from("Install Flatpak updates automatically in the background"),
     );
     options.insert("autostart", Variant::from(autostart));
-    options.insert(
-        "commandline",
-        Variant::from(vec!["kiosque-update", "--background"]),
-    );
+    // Inside Flatpak the host companion does the work: the packaged app
+    // only hands it the schedule at login (see `kiosque --update-companion`).
+    let commandline = if crate::flatpak::in_sandbox() {
+        vec!["kiosque", "--update-companion"]
+    } else {
+        vec!["kiosque-update", "--background"]
+    };
+    options.insert("commandline", Variant::from(commandline));
     options.insert("dbus-activatable", Variant::from(false));
     let reply = conn
         .call_method(

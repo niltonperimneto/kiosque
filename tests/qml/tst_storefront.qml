@@ -71,7 +71,11 @@ TestCase {
         compare(picture.fillMode, Image.PreserveAspectFit)
         verify(picture.width <= picture.implicitWidth)
         mouseMove(light, 100, 80)
-        tryVerify(function() { return Math.abs(light.lightX - 100) < 2 })
+        // Hovering lifts the whole card like the other feature surfaces...
+        tryCompare(card, "hovered", true)
+        tryVerify(function() { return card.scale > 1.0 })
+        // ...and the spotlight follows the pointer (allowing for that lift).
+        tryVerify(function() { return Math.abs(light.lightX - 100) < light.width * 0.03 })
         if (testArtifactDir !== "")
             grabImage(card).save(testArtifactDir + "/daily-spotlight.png")
     }

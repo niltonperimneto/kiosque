@@ -89,9 +89,17 @@ pub mod qobject {
     }
 
     impl cxx_qt::Threading for AppListModel {}
+    impl cxx_qt::Initialize for AppListModel {}
 }
 
 pub use kiosque_core::entries::AppEntry;
+
+/// A request answered from the local catalog (and Flathub).
+#[derive(Clone, Debug)]
+enum Query {
+    Search(String),
+    Category(String),
+}
 
 #[derive(Default)]
 pub struct AppListModelRust {
@@ -100,6 +108,69 @@ pub struct AppListModelRust {
     /// Why the last load failed; empty after a successful load.
     pub error_message: cxx_qt_lib::QString,
     generation: u64,
+    /// The last catalog-backed request, repeated when the catalog changes.
+    last_query: Option<Query>,
+    /// Stops the catalog subscription when the QObject is destroyed.
+    watch: Option<tokio_util::sync::CancellationToken>,
+}
+
+impl Drop for AppListModelRust {
+    fn drop(&mut self) {
+        if let Some(watch) = &self.watch {
+            watch.cancel();
+        }
+    }
+}
+
+impl cxx_qt::Initialize for qobject::AppListModel {
+    fn initialize(mut self: std::pin::Pin<&mut Self>) {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        self.as_mut().rust_mut().watch = Some(cancel.clone());
+        let mut changes = kiosque_core::catalog::changes();
+        let thread = self.qt_thread();
+        crate::runtime::runtime().spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    change = changes.recv() => {
+                        if matches!(change, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
+                            break;
+                        }
+                        let queued = thread.queue(|mut object| {
+                            // Only while no newer request is in flight.
+                            if let Some(query) = object.last_query.clone()
+                                && !object.loading
+                            {
+                                object.as_mut().start_query(query);
+                            }
+                        });
+                        if queued.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// List entries for `apps`.
+fn entries(apps: Vec<FlathubApp>) -> Vec<AppEntry> {
+    apps.into_iter()
+        .map(|app| AppEntry {
+            name: app.name,
+            summary: app.summary.unwrap_or_default(),
+            icon_url: app.icon.unwrap_or_default(),
+            app_id: app.app_id,
+        })
+        .collect()
+}
+
+/// Drop apps the distributor blocklist hides.
+fn allowed(mut apps: Vec<FlathubApp>) -> Vec<FlathubApp> {
+    let config = kiosque_core::config::config();
+    apps.retain(|app| !config.blocklist.is_blocked(&app.app_id));
+    apps
 }
 
 impl qobject::AppListModel {
@@ -154,6 +225,7 @@ impl qobject::AppListModel {
     pub fn refresh(mut self: std::pin::Pin<&mut Self>) {
         self.as_mut().set_loading(true);
         self.as_mut().rust_mut().generation += 1;
+        self.as_mut().rust_mut().last_query = None;
         let generation = self.generation;
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
@@ -186,7 +258,7 @@ impl qobject::AppListModel {
             if is_expired || cached_items.is_none() {
                 let client = crate::services::services().flathub.clone();
                 let mut error = String::new();
-                let items = match client.fetch_popular().await {
+                let items = match client.fetch_popular().await.map(allowed) {
                     Ok(apps) => {
                         klog!(
                             "AppListModel::refresh: mapping {} apps to entries",
@@ -241,12 +313,13 @@ impl qobject::AppListModel {
     pub fn load_popular(mut self: std::pin::Pin<&mut Self>) {
         self.as_mut().set_loading(true);
         self.as_mut().rust_mut().generation += 1;
+        self.as_mut().rust_mut().last_query = None;
         let generation = self.generation;
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let client = crate::services::services().flathub.clone();
             let mut error = String::new();
-            let items = match client.fetch_popular().await {
+            let items = match client.fetch_popular().await.map(allowed) {
                 Ok(apps) => apps
                     .into_iter()
                     .map(|app| AppEntry {
@@ -281,12 +354,13 @@ impl qobject::AppListModel {
     pub fn load_new(mut self: std::pin::Pin<&mut Self>) {
         self.as_mut().set_loading(true);
         self.as_mut().rust_mut().generation += 1;
+        self.as_mut().rust_mut().last_query = None;
         let generation = self.generation;
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let client = crate::services::services().flathub.clone();
             let mut error = String::new();
-            let items = match client.fetch_recently_added().await {
+            let items = match client.fetch_recently_added().await.map(allowed) {
                 Ok(apps) => apps
                     .into_iter()
                     .map(|app| AppEntry {
@@ -321,12 +395,26 @@ impl qobject::AppListModel {
     pub fn load_updated(mut self: std::pin::Pin<&mut Self>) {
         self.as_mut().set_loading(true);
         self.as_mut().rust_mut().generation += 1;
+        self.as_mut().rust_mut().last_query = None;
         let generation = self.generation;
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let client = crate::services::services().flathub.clone();
             let mut error = String::new();
-            let items = match client.fetch_recently_updated().await {
+            // Offline, the catalog's newest releases stand in for Flathub's list.
+            let result = match client.fetch_recently_updated().await {
+                Err(e) => {
+                    let local = kiosque_core::catalog::catalog().recently_updated(30);
+                    if local.is_empty() {
+                        Err(e)
+                    } else {
+                        kerr!("AppListModel::load_updated: {}; using the catalog", e);
+                        Ok(local.iter().map(|a| a.to_flathub_app()).collect())
+                    }
+                }
+                ok => ok,
+            };
+            let items = match result.map(allowed) {
                 Ok(apps) => apps
                     .into_iter()
                     .map(|app| AppEntry {
@@ -359,120 +447,45 @@ impl qobject::AppListModel {
     }
 
     pub fn search(mut self: std::pin::Pin<&mut Self>, query: cxx_qt_lib::QString) {
-        self.as_mut().set_loading(true);
-        self.as_mut().rust_mut().generation += 1;
-        let generation = self.generation;
-        let qt_thread = self.qt_thread();
-        let query_str = query.to_string();
-        crate::runtime::runtime().spawn(async move {
-            let client = crate::services::services().flathub.clone();
-            let mut error = String::new();
-            let items = match client.search(&query_str).await {
-                Ok(apps) => {
-                    klog!(
-                        "AppListModel::search(\"{}\"): {} results",
-                        query_str,
-                        apps.len()
-                    );
-                    apps.into_iter()
-                        .map(|app| AppEntry {
-                            name: app.name,
-                            summary: app.summary.unwrap_or_default(),
-                            icon_url: app.icon.unwrap_or_default(),
-                            app_id: app.app_id,
-                        })
-                        .collect()
-                }
-                Err(e) => {
-                    kerr!("AppListModel::search: {}", e);
-                    error = e.to_string();
-                    vec![]
-                }
-            };
-
-            let _ = qt_thread.queue(move |mut qobject| {
-                if qobject.generation != generation {
-                    return;
-                }
-                klog!(
-                    "AppListModel::search: updating UI with {} items",
-                    items.len()
-                );
-                qobject
-                    .as_mut()
-                    .set_error_message(cxx_qt_lib::QString::from(&error));
-                qobject.as_mut().apply_items(items);
-                qobject.as_mut().set_loading(false);
-            });
-        });
+        self.as_mut().start_query(Query::Search(query.to_string()));
     }
 
     pub fn load_category(mut self: std::pin::Pin<&mut Self>, category: cxx_qt_lib::QString) {
+        self.as_mut()
+            .start_query(Query::Category(category.to_string()));
+    }
+
+    /// Run a catalog-backed request; it is repeated when the catalog changes.
+    fn start_query(mut self: std::pin::Pin<&mut Self>, query: Query) {
         self.as_mut().set_loading(true);
         self.as_mut().rust_mut().generation += 1;
+        self.as_mut().rust_mut().last_query = None;
+        self.as_mut().rust_mut().last_query = Some(query.clone());
         let generation = self.generation;
         let qt_thread = self.qt_thread();
-        let category_str = category.to_string();
         crate::runtime::runtime().spawn(async move {
-            let client = crate::services::services().flathub.clone();
-
-            let api_category = if let Some(idx) = category_str.find('-') {
-                &category_str[..idx]
-            } else {
-                &category_str
+            let services = crate::services::services();
+            let catalog = kiosque_core::catalog::catalog();
+            let config = kiosque_core::config::config();
+            let sources = services.sources(&catalog, &config);
+            let result = match &query {
+                Query::Search(text) => kiosque_core::apps::search(sources, text).await,
+                Query::Category(id) => kiosque_core::apps::category(sources, id).await,
             };
-
-            let mut error = String::new();
-
-            let items = match client.fetch_category(api_category).await {
+            let (items, error) = match result {
                 Ok(apps) => {
-                    klog!(
-                        "AppListModel::load_category(\"{}\"): {} apps from API",
-                        category_str,
-                        apps.len()
-                    );
-
-                    // Categories without a "Prefix-SubId" form keep every app; otherwise
-                    // narrow to the apps matching the requested subcategory.
-                    let filtered: Vec<_> = apps
-                        .into_iter()
-                        .filter(|app| match category_str.split_once('-') {
-                            Some((prefix, sub_id)) => matches_subcategory(app, prefix, sub_id),
-                            None => true,
-                        })
-                        .collect();
-
-                    klog!(
-                        "AppListModel::load_category(\"{}\"): {} apps after filter",
-                        category_str,
-                        filtered.len()
-                    );
-
-                    filtered
-                        .into_iter()
-                        .map(|app| AppEntry {
-                            name: app.name,
-                            summary: app.summary.unwrap_or_default(),
-                            icon_url: app.icon.unwrap_or_default(),
-                            app_id: app.app_id,
-                        })
-                        .collect()
+                    klog!("AppListModel: {:?}: {} apps", query, apps.len());
+                    (entries(apps), String::new())
                 }
                 Err(e) => {
-                    kerr!("AppListModel::load_category: {}", e);
-                    error = e.to_string();
-                    vec![]
+                    kerr!("AppListModel: {:?}: {}", query, e);
+                    (vec![], e)
                 }
             };
-
             let _ = qt_thread.queue(move |mut qobject| {
                 if qobject.generation != generation {
                     return;
                 }
-                klog!(
-                    "AppListModel::load_category: updating UI with {} items",
-                    items.len()
-                );
                 qobject
                     .as_mut()
                     .set_error_message(cxx_qt_lib::QString::from(&error));
@@ -481,6 +494,7 @@ impl qobject::AppListModel {
             });
         });
     }
+
     fn apply_items(mut self: std::pin::Pin<&mut Self>, items: Vec<AppEntry>) {
         if self.items != items {
             self.as_mut().begin_reset_model();
@@ -507,20 +521,26 @@ impl qobject::AppListModel {
     ) {
         self.as_mut().set_loading(true);
         self.as_mut().rust_mut().generation += 1;
+        self.as_mut().rust_mut().last_query = None;
         let generation = self.generation;
         let thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let client = &crate::services::services().flathub;
             let result = match category {
-                None => client.fetch_mobile().await,
-                Some((category, sort)) if sort == "newest" => {
-                    client.fetch_category(&category).await.map(|mut apps| {
+                None => client.fetch_mobile().await.map(allowed),
+                Some((category, sort)) if sort == "newest" => client
+                    .fetch_category(&category)
+                    .await
+                    .map(allowed)
+                    .map(|mut apps| {
                         apps.sort_by_key(|app| std::cmp::Reverse(app.added_at.unwrap_or(0)));
                         apps.truncate(30);
                         apps
-                    })
-                }
-                Some((category, sort)) => client.fetch_category_sorted(&category, &sort).await,
+                    }),
+                Some((category, sort)) => client
+                    .fetch_category_sorted(&category, &sort)
+                    .await
+                    .map(allowed),
             };
             let mut error = String::new();
             let items: Vec<AppEntry> = match result {
@@ -550,163 +570,5 @@ impl qobject::AppListModel {
                 model.as_mut().set_loading(false);
             });
         });
-    }
-}
-
-/// Decide whether `app` belongs in the `<prefix>-<sub_id>` subcategory, e.g.
-/// `Game-Emulator` or `Graphics-Vector`. Flathub only tags apps with broad
-/// top-level categories, so the finer subcategory split is derived here from the
-/// app's `sub_categories` plus a few name/summary keyword heuristics for games.
-/// Unknown prefixes/sub-ids fall through to `true` (keep the app).
-fn matches_subcategory(app: &FlathubApp, prefix: &str, sub_id: &str) -> bool {
-    match prefix {
-        "Game" => {
-            let name_lower = app.name.to_lowercase();
-            let summary_lower = app
-                .summary
-                .as_ref()
-                .map(|s| s.to_lowercase())
-                .unwrap_or_default();
-            let is_emulator = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("emulator"));
-
-            let is_launcher = (app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("packagemanager"))
-                || name_lower.contains("launcher")
-                || name_lower.contains("client")
-                || summary_lower.contains("launcher"))
-                && !is_emulator;
-
-            let tool_keywords = [
-                "tool", "compat", "patcher", "config", "manager", "overlay", "hud", "backup",
-                "setup",
-            ];
-            let is_tool = (app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("utility"))
-                || tool_keywords.iter().any(|kw| name_lower.contains(kw))
-                || tool_keywords.iter().any(|kw| summary_lower.contains(kw)))
-                && !is_emulator
-                && !is_launcher;
-
-            match sub_id {
-                "Emulator" => is_emulator,
-                "Launcher" => is_launcher,
-                "Tool" => is_tool,
-                "Game" => !is_emulator && !is_launcher && !is_tool,
-                _ => true,
-            }
-        }
-        "AudioVideo" => {
-            let is_player = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("player"));
-            let is_recorder = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("recorder"));
-            let is_editing = app.sub_categories.iter().any(|s| {
-                s.eq_ignore_ascii_case("audiovideoediting")
-                    || s.eq_ignore_ascii_case("midi")
-                    || s.eq_ignore_ascii_case("sequencer")
-                    || s.eq_ignore_ascii_case("mixer")
-            });
-
-            match sub_id {
-                "Player" => is_player,
-                "Recorder" => is_recorder,
-                "Editing" => is_editing,
-                "All" => !is_player && !is_recorder && !is_editing,
-                _ => true,
-            }
-        }
-        "Development" => {
-            let is_ide = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("ide") || s.eq_ignore_ascii_case("guidedesigner"));
-            let is_debugger = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("debugger") || s.eq_ignore_ascii_case("profiler"));
-            let is_web = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("webdevelopment"));
-
-            match sub_id {
-                "IDE" => is_ide,
-                "Debugger" => is_debugger,
-                "Web" => is_web,
-                "All" => !is_ide && !is_debugger && !is_web,
-                _ => true,
-            }
-        }
-        "Graphics" => {
-            let is_3d = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("3dgraphics"));
-            let is_vector = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("vectorgraphics"));
-            let is_raster = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("rastergraphics"));
-            let is_photography = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("photography"));
-            let is_viewer = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("viewer"));
-
-            match sub_id {
-                "3D" => is_3d,
-                "Vector" => is_vector,
-                "Raster" => is_raster,
-                "Photography" => is_photography,
-                "Viewer" => is_viewer,
-                "All" => !is_3d && !is_vector && !is_raster && !is_photography && !is_viewer,
-                _ => true,
-            }
-        }
-        "Office" => {
-            let is_word = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("wordprocessor"));
-            let is_spreadsheet = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("spreadsheet"));
-            let is_presentation = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("presentation"));
-            let is_finance = app
-                .sub_categories
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("finance"));
-
-            match sub_id {
-                "WordProcessor" => is_word,
-                "Spreadsheet" => is_spreadsheet,
-                "Presentation" => is_presentation,
-                "Finance" => is_finance,
-                "All" => !is_word && !is_spreadsheet && !is_presentation && !is_finance,
-                _ => true,
-            }
-        }
-        _ => true,
     }
 }

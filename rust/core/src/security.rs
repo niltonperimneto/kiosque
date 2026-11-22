@@ -333,19 +333,35 @@ pub fn read_local_file(path: &std::path::Path, limit: usize) -> Result<Vec<u8>, 
 
 /// Format AppStream descriptions for a PlainText QML label. Text is never
 /// interpreted as HTML by the renderer, including malformed/truncated markup.
+/// Source indentation and line wrapping are dropped: paragraphs are separated
+/// by a blank line and list items start on their own line with a bullet.
 pub fn description_text(value: &str) -> String {
     use std::sync::OnceLock;
+    static SPACE: OnceLock<regex::Regex> = OnceLock::new();
+    static BLOCKS: OnceLock<regex::Regex> = OnceLock::new();
+    static LINES: OnceLock<regex::Regex> = OnceLock::new();
+    static ITEMS: OnceLock<regex::Regex> = OnceLock::new();
     static TAGS: OnceLock<regex::Regex> = OnceLock::new();
-    static BREAKS: OnceLock<regex::Regex> = OnceLock::new();
+    static GAPS: OnceLock<regex::Regex> = OnceLock::new();
+    let re = |cell: &'static OnceLock<regex::Regex>, pattern: &str| {
+        cell.get_or_init(|| regex::Regex::new(pattern).unwrap())
+    };
     let bounded: String = value.chars().take(32 * 1024).collect();
-    let breaks = BREAKS
-        .get_or_init(|| regex::Regex::new(r"(?i)</(?:p|li|ul|ol|h[1-6])\s*>|<br\s*/?>").unwrap());
-    let tags = TAGS.get_or_init(|| regex::Regex::new(r"(?s)<[^>]*>").unwrap());
-    let spaced = breaks.replace_all(&bounded, "\n");
-    let plain = tags.replace_all(&spaced, "").replace("&nbsp;", " ");
-    quick_xml::escape::unescape(&plain)
-        .map(|text| text.trim().to_owned())
-        .unwrap_or(plain)
+    let text = re(&SPACE, r"\s+").replace_all(&bounded, " ");
+    let text = re(&BLOCKS, r"(?i)</(?:p|ul|ol|h[1-6])\s*>").replace_all(&text, "\n\n");
+    let text = re(&LINES, r"(?i)<br\s*/?>").replace_all(&text, "\n");
+    let text = re(&ITEMS, r"(?i)<li(?:\s[^>]*)?>").replace_all(&text, "\n• ");
+    let plain = re(&TAGS, r"(?s)<[^>]*>")
+        .replace_all(&text, "")
+        .replace("&nbsp;", " ");
+    let plain = quick_xml::escape::unescape(&plain)
+        .map(|t| t.into_owned())
+        .unwrap_or(plain);
+    let lines: Vec<&str> = plain.lines().map(str::trim).collect();
+    re(&GAPS, r"\n{3,}")
+        .replace_all(&lines.join("\n"), "\n\n")
+        .trim()
+        .to_owned()
 }
 
 #[cfg(test)]
@@ -413,7 +429,14 @@ mod tests {
     fn descriptions_are_bounded_text_even_when_markup_is_encoded() {
         assert_eq!(
             description_text("<p>First &amp; second</p><p>Next</p>"),
-            "First & second\nNext"
+            "First & second\n\nNext"
+        );
+        // Source wrapping and indentation never reach the label.
+        assert_eq!(
+            description_text(
+                "<p>\n    Kiosque is an\n      app   store.\n  </p>\n  <p>Features:</p>\n  <ul>\n    <li>Search</li>\n    <li>Updates</li>\n  </ul>\n  <p>End</p>"
+            ),
+            "Kiosque is an app store.\n\nFeatures:\n\n• Search\n• Updates\n\nEnd"
         );
         assert_eq!(
             description_text("&lt;img src='file:///private'&gt;"),

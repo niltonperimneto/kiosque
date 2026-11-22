@@ -31,6 +31,15 @@ pub trait Daemon {
     fn cancel(&self, job_id: u64) -> zbus::Result<bool>;
     fn get_jobs(&self) -> zbus::Result<Vec<JobWire>>;
     fn check_updates(&self) -> zbus::Result<u32>;
+    fn configure_automatic_updates(
+        &self,
+        enabled: bool,
+        frequency: &str,
+        time: &str,
+    ) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn api_version(&self) -> zbus::Result<u32>;
 
     #[zbus(signal)]
     fn job_changed(&self, job: JobWire) -> zbus::Result<()>;
@@ -118,5 +127,166 @@ impl DaemonClient {
 
     pub async fn cancel(&self, id: u64) -> bool {
         self.proxy.cancel(id).await.unwrap_or(false)
+    }
+}
+
+/// Why the host companion cannot do what was asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompanionError {
+    /// Nothing provides `org.kiosque.Kiosque.Daemon` on the session bus.
+    Missing,
+    /// The companion is older than this application needs.
+    Outdated {
+        found: u32,
+        required: u32,
+    },
+    Failed(String),
+}
+
+impl std::fmt::Display for CompanionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompanionError::Missing => write!(
+                f,
+                "The Kiosque companion is not installed on this computer. Install the \
+                 kiosque-companion package from your distribution."
+            ),
+            CompanionError::Outdated { found, required } => write!(
+                f,
+                "The Kiosque companion on this computer is too old (interface version {found}, \
+                 version {required} needed). Update the kiosque-companion package."
+            ),
+            CompanionError::Failed(error) => {
+                write!(f, "The Kiosque companion could not be reached: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for CompanionError {}
+
+fn error_name(error: &zbus::Error) -> Option<String> {
+    use zbus::DBusError;
+    match error {
+        zbus::Error::MethodError(name, _, _) => Some(name.to_string()),
+        zbus::Error::FDO(error) => Some(error.name().to_string()),
+        _ => None,
+    }
+}
+
+/// Classify a failed `ApiVersion` read: no companion at all, or one that
+/// predates the property (version 1).
+pub fn classify_version_error(error: &zbus::Error) -> Result<u32, CompanionError> {
+    match error_name(error).as_deref() {
+        Some(
+            "org.freedesktop.DBus.Error.ServiceUnknown"
+            | "org.freedesktop.DBus.Error.NameHasNoOwner"
+            | "org.freedesktop.DBus.Error.Spawn.ServiceNotFound"
+            | "org.freedesktop.DBus.Error.Spawn.ExecFailed"
+            | "org.freedesktop.DBus.Error.Spawn.ChildExited",
+        ) => Err(CompanionError::Missing),
+        Some(
+            "org.freedesktop.DBus.Error.UnknownProperty"
+            | "org.freedesktop.DBus.Error.UnknownInterface"
+            | "org.freedesktop.DBus.Error.InvalidArgs",
+        ) => Ok(1),
+        _ => Err(CompanionError::Failed(error.to_string())),
+    }
+}
+
+/// Connect to the host companion (D-Bus activating it) and check that it is
+/// recent enough for this application.
+pub async fn companion() -> Result<DaemonProxy<'static>, CompanionError> {
+    let conn = zbus::Connection::session()
+        .await
+        .map_err(|e| CompanionError::Failed(e.to_string()))?;
+    let proxy = DaemonProxy::builder(&conn)
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await
+        .map_err(|e| CompanionError::Failed(e.to_string()))?;
+    let version = match tokio::time::timeout(Duration::from_secs(30), proxy.api_version()).await {
+        Ok(Ok(version)) => version,
+        Ok(Err(error)) => classify_version_error(&error)?,
+        Err(_) => {
+            return Err(CompanionError::Failed(
+                "it did not answer in time".to_string(),
+            ));
+        }
+    };
+    if version < super::REQUIRED_API_VERSION {
+        return Err(CompanionError::Outdated {
+            found: version,
+            required: super::REQUIRED_API_VERSION,
+        });
+    }
+    Ok(proxy)
+}
+
+/// Send the automatic-update settings to the daemon (D-Bus activating it),
+/// which saves them and stays running in the background while they are on.
+pub async fn configure_automatic_updates(
+    settings: &crate::settings::AppSettings,
+) -> Result<(), CompanionError> {
+    let proxy = companion().await?;
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        proxy.configure_automatic_updates(
+            settings.auto_update,
+            &settings.update_frequency,
+            &settings.update_time,
+        ),
+    )
+    .await
+    .map_err(|_| CompanionError::Failed("it did not answer in time".to_string()))?
+    .map_err(|e| CompanionError::Failed(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fdo(error: zbus::fdo::Error) -> zbus::Error {
+        zbus::Error::FDO(Box::new(error))
+    }
+
+    #[test]
+    fn missing_and_outdated_companions_are_told_apart() {
+        assert_eq!(
+            classify_version_error(&fdo(zbus::fdo::Error::ServiceUnknown("x".into()))),
+            Err(CompanionError::Missing)
+        );
+        assert_eq!(
+            classify_version_error(&fdo(zbus::fdo::Error::NameHasNoOwner("x".into()))),
+            Err(CompanionError::Missing)
+        );
+        // Companions from before the property was added.
+        assert_eq!(
+            classify_version_error(&fdo(zbus::fdo::Error::UnknownProperty("x".into()))),
+            Ok(1)
+        );
+        assert_eq!(
+            classify_version_error(&fdo(zbus::fdo::Error::InvalidArgs("x".into()))),
+            Ok(1)
+        );
+        assert!(matches!(
+            classify_version_error(&fdo(zbus::fdo::Error::AccessDenied("x".into()))),
+            Err(CompanionError::Failed(_))
+        ));
+    }
+
+    #[test]
+    fn companion_errors_name_the_package_to_install_or_update() {
+        assert!(
+            CompanionError::Missing
+                .to_string()
+                .contains("kiosque-companion")
+        );
+        let outdated = CompanionError::Outdated {
+            found: 1,
+            required: 2,
+        }
+        .to_string();
+        assert!(outdated.contains("too old") && outdated.contains("kiosque-companion"));
     }
 }

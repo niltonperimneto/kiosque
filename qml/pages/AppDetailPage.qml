@@ -361,7 +361,10 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             visible: !details.loading && !details.installed && !details.permissionsKnown && details.errorMessage === ""
             type: Kirigami.MessageType.Warning
-            text: i18n("Permissions could not be verified. Reload the details before installing.")
+            // Name the repository: retrying only helps when it publishes them.
+            text: details.origin && details.origin.title
+                ? i18n("This application's permissions could not be read from %1, so it cannot be installed from here. If the repository publishes them, try again later.", details.origin.title)
+                : i18n("Permissions could not be verified. Reload the details before installing.")
             actions: Kirigami.Action {
                 text: i18n("Retry")
                 icon.name: "view-refresh"
@@ -468,14 +471,18 @@ Kirigami.ScrollablePage {
                 asynchronous: true
                 fillMode: Image.PreserveAspectFit
 
-                // Placeholder while icon loads or if it fails
+                // Generic application icon while loading, or when the app has
+                // none or it cannot be loaded.
                 Kirigami.Icon {
+                    objectName: "appIconPlaceholder"
                     anchors.centerIn: parent
                     width: Kirigami.Units.iconSizes.huge
                     height: width
-                    source: "application-x-executable"
+                    source: "applications-all-symbolic"
+                    fallback: "application-x-executable"
+                    color: Kirigami.Theme.disabledTextColor
+                    isMask: true
                     visible: appIconImg.status !== Image.Ready
-                    opacity: 0.4
                 }
             }
 
@@ -623,6 +630,27 @@ Kirigami.ScrollablePage {
                 Controls.ToolTip.visible: hovered
                 Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                 onClicked: permissionsDialog.open()
+            }
+
+            // The repository this page's data (and an installation) comes from.
+            Kirigami.Chip {
+                id: originChip
+                objectName: "originChip"
+                readonly property var origin: details.origin || ({})
+                readonly property bool userScope: origin.scope === "user"
+                visible: !!origin.name
+                height: Kirigami.Units.gridUnit * 2
+                checkable: false
+                closable: false
+                hoverEnabled: true
+                icon.name: "repository"
+                text: userScope ? i18nc("@info source repository, per-user installation", "From %1 (user)", origin.title || "")
+                                : i18nc("@info source repository", "From %1", origin.title || "")
+                Accessible.name: text
+                Controls.ToolTip.text: origin.url ? i18n("Repository “%1” at %2", origin.name || "", origin.url)
+                                                  : i18n("Repository “%1”", origin.name || "")
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
         }
 

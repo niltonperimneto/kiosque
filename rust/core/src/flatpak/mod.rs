@@ -201,6 +201,17 @@ pub trait FlatpakBackend: Send + Sync {
     /// Refresh the AppStream metadata of a remote on disk.
     async fn refresh_appstream(&self, remote: &RemoteInfo) -> Result<()>;
 
+    /// The metadata keyfile (`[Context]`, bus policies, …) that `remote`
+    /// publishes for `reference`: an app id or a full ref. It states the
+    /// permissions an installation would grant; see [`permissions_from_metadata`].
+    async fn remote_metadata(&self, remote: &str, scope: Scope, reference: &str) -> Result<String> {
+        let _ = (remote, scope, reference);
+        Err(FlatpakError::Failed(format!(
+            "{} cannot read repository metadata",
+            self.name()
+        )))
+    }
+
     /// Start watching the installations for changes, sending `()` on `tx`
     /// whenever something was installed, removed or updated (by Kiosque or by
     /// any other tool). The default implementation polls the `.changed`
@@ -343,6 +354,80 @@ pub fn parse_ref(r: &str) -> Option<(RefKind, String, String, String)> {
     Some((kind, id, arch, branch))
 }
 
+/// Largest metadata keyfile accepted from a repository.
+pub const MAX_METADATA_BYTES: usize = 64 * 1024;
+
+/// Convert a Flatpak metadata keyfile into the permission object Flathub's
+/// summary API returns (`metadata.permissions`): `shared`, `sockets`,
+/// `devices`, `filesystems`, `persistent` lists and `session-bus` /
+/// `system-bus` objects with `talk` and `own` lists. Empty entries are
+/// omitted, so an app that requests nothing yields `{}`. Negated (`!x`)
+/// values remove access and are not listed.
+pub fn permissions_from_metadata(keyfile: &str) -> serde_json::Value {
+    use serde_json::{Map, Value};
+    const LISTS: [&str; 5] = ["shared", "sockets", "devices", "filesystems", "persistent"];
+    let mut lists: Map<String, Value> = Map::new();
+    let mut buses: [(&str, Vec<String>, Vec<String>); 2] = [
+        ("session-bus", vec![], vec![]),
+        ("system-bus", vec![], vec![]),
+    ];
+    let mut section = "";
+    for line in keyfile.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            section = match name {
+                "Context" => "context",
+                "Session Bus Policy" => "session-bus",
+                "System Bus Policy" => "system-bus",
+                _ => "",
+            };
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let (key, value) = (key.trim(), value.trim());
+        let printable = |v: &str| v.chars().filter(|c| !c.is_control()).collect::<String>();
+        match section {
+            "context" if LISTS.contains(&key) => {
+                let items: Vec<Value> = value
+                    .split(';')
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty() && !v.starts_with('!'))
+                    .map(|v| Value::String(printable(v)))
+                    .collect();
+                if !items.is_empty() {
+                    lists.insert(key.into(), Value::Array(items));
+                }
+            }
+            "session-bus" | "system-bus" => {
+                let bus = buses.iter_mut().find(|b| b.0 == section).unwrap();
+                match value {
+                    "talk" => bus.1.push(printable(key)),
+                    "own" => bus.2.push(printable(key)),
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    for (name, talk, own) in buses {
+        let mut bus = Map::new();
+        if !talk.is_empty() {
+            bus.insert("talk".into(), talk.into());
+        }
+        if !own.is_empty() {
+            bus.insert("own".into(), own.into());
+        }
+        if !bus.is_empty() {
+            lists.insert(name.into(), Value::Object(bus));
+        }
+    }
+    Value::Object(lists)
+}
+
 /// Read the `Name=` key of a `.flatpakref`/`.flatpakrepo` keyfile.
 pub fn keyfile_value(data: &[u8], key: &str) -> Option<String> {
     let text = std::str::from_utf8(data).ok()?;
@@ -413,6 +498,38 @@ mod tests {
         assert_eq!(Scope::parse("User"), Some(Scope::User));
         assert_eq!(Scope::parse("system"), Some(Scope::System));
         assert_eq!(Scope::parse("bogus"), None);
+    }
+
+    #[test]
+    fn metadata_permissions_match_the_flathub_shape() {
+        assert_eq!(permissions_from_metadata(""), serde_json::json!({}));
+        assert_eq!(
+            permissions_from_metadata("[Application]\nname=a.b.C\n[Context]\nshared=\n"),
+            serde_json::json!({}),
+            "an app requesting nothing is fully sandboxed"
+        );
+        let metadata = "[Application]\nname=org.example.App\nruntime=org.kde.Platform/x86_64/6.8\n\n\
+            [Context]\nshared=network;ipc;\nsockets=wayland;fallback-x11;!x11;\ndevices=dri;\n\
+            filesystems=xdg-download;home:ro;!host;\npersistent=.example;\n\n\
+            [Session Bus Policy]\norg.freedesktop.Notifications=talk\norg.example.App.Helper=own\norg.example.Seen=see\n\n\
+            [System Bus Policy]\norg.freedesktop.login1=talk\n\n\
+            [Extension org.example.App.Locale]\ndirectory=share/runtime/locale\n";
+        assert_eq!(
+            permissions_from_metadata(metadata),
+            serde_json::json!({
+                "shared": ["network", "ipc"],
+                "sockets": ["wayland", "fallback-x11"],
+                "devices": ["dri"],
+                "filesystems": ["xdg-download", "home:ro"],
+                "persistent": [".example"],
+                "session-bus": {"talk": ["org.freedesktop.Notifications"], "own": ["org.example.App.Helper"]},
+                "system-bus": {"talk": ["org.freedesktop.login1"]},
+            })
+        );
+        assert_eq!(
+            permissions_from_metadata("[Context]\nfilesystems=host;\n"),
+            serde_json::json!({"filesystems": ["host"]})
+        );
     }
 
     #[test]

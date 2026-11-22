@@ -27,6 +27,10 @@ pub struct MockBackend {
     pub launched: Mutex<Vec<String>>,
     /// A permit releases one transaction; cancellation also releases the waiter.
     pub gate: Mutex<Option<std::sync::Arc<tokio::sync::Semaphore>>>,
+    /// Metadata keyfiles served by `remote_metadata`, keyed by app id.
+    pub metadata: Mutex<std::collections::HashMap<String, String>>,
+    /// Every `(remote, reference)` passed to `remote_metadata`.
+    pub metadata_requests: Mutex<Vec<(String, String)>>,
 }
 
 impl MockBackend {
@@ -162,6 +166,27 @@ impl FlatpakBackend for MockBackend {
 
     async fn refresh_appstream(&self, _remote: &RemoteInfo) -> Result<()> {
         Ok(())
+    }
+
+    async fn remote_metadata(
+        &self,
+        remote: &str,
+        _scope: Scope,
+        reference: &str,
+    ) -> Result<String> {
+        self.metadata_requests
+            .lock()
+            .unwrap()
+            .push((remote.into(), reference.into()));
+        let id = super::parse_ref(reference)
+            .map(|(_, id, _, _)| id)
+            .unwrap_or_else(|| reference.to_string());
+        self.metadata
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| FlatpakError::Failed(format!("{id} has no metadata in {remote}")))
     }
 
     fn spawn_monitor(&self, _tx: broadcast::Sender<()>) {}

@@ -167,17 +167,28 @@ impl qobject::SettingsController {
                 .set_update_frequency(cxx_qt_lib::QString::from(&settings.update_frequency));
             self.as_mut()
                 .set_update_time(cxx_qt_lib::QString::from(&settings.update_time));
-            if previous_auto_update == auto_update {
-                self.settings_saved(true, cxx_qt_lib::QString::default());
+            let toggled = previous_auto_update != auto_update;
+            if !toggled {
+                // A schedule edit needs no permission: it is saved now, and
+                // the daemon is told in the background.
+                self.as_mut()
+                    .settings_saved(true, cxx_qt_lib::QString::default());
+                let thread = self.qt_thread();
+                crate::runtime::runtime().spawn(async move {
+                    if let Err(error) = apply_automatic_updates(&settings, false).await {
+                        let _ = thread.queue(move |object| {
+                            object.settings_saved(false, cxx_qt_lib::QString::from(&error));
+                        });
+                    }
+                });
                 return;
             }
             self.as_mut().set_saving_settings(true);
             let thread = self.qt_thread();
             crate::runtime::runtime().spawn(async move {
-                let result = crate::settings::apply_autostart(&settings).await;
-                let error = match result {
+                let error = match apply_automatic_updates(&settings, toggled).await {
                     Ok(()) => String::new(),
-                    Err(error) => {
+                    Err(error) if toggled => {
                         let store = &crate::services::services().settings;
                         let mut current = store.load();
                         current.auto_update = previous_auto_update;
@@ -188,6 +199,7 @@ impl qobject::SettingsController {
                             }
                         }
                     }
+                    Err(error) => error,
                 };
                 let _ = thread.queue(move |mut object| {
                     object.as_mut().load_settings();
@@ -278,5 +290,42 @@ impl qobject::SettingsController {
                 qobject.as_mut().load_settings();
             });
         });
+    }
+}
+
+/// Register (or remove) the login autostart when automatic updates were
+/// toggled, then hand the schedule to the running daemon so it applies now
+/// instead of after the next login.
+///
+/// Inside Flatpak the host companion performs the updates, so enabling fails
+/// when it cannot be reached. A native install still updates from the next
+/// login if the daemon cannot be reached now.
+async fn apply_automatic_updates(
+    settings: &kiosque_core::settings::AppSettings,
+    toggled: bool,
+) -> Result<(), String> {
+    // Hand schedules to the daemon one at a time, in the order they were saved.
+    static ORDER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _turn = ORDER.lock().await;
+    if toggled {
+        kiosque_core::settings::apply_autostart(settings).await?;
+    }
+    match kiosque_core::daemon::client::configure_automatic_updates(settings).await {
+        Ok(()) => Ok(()),
+        Err(error) if kiosque_core::flatpak::in_sandbox() && settings.auto_update => {
+            if toggled {
+                // Undo the login autostart registered above.
+                let mut off = settings.clone();
+                off.auto_update = false;
+                let _ = kiosque_core::settings::apply_autostart(&off).await;
+            }
+            Err(format!(
+                "Automatic updates need the Kiosque companion. {error}"
+            ))
+        }
+        Err(error) => {
+            kerr!("SettingsController: daemon not reachable, applying at next login: {error}");
+            Ok(())
+        }
     }
 }
