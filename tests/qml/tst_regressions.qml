@@ -560,6 +560,13 @@ TestCase {
         let upToDate = findChild(updates, "upToDateMessage")
         tryCompare(upToDate, "visible", true)
         compare(upToDate.text, "Up to Date")
+        model.updates_error = "Synthetic backend failure"
+        let failure = findChild(updates, "updateCheckError")
+        verify(failure !== null && failure.visible)
+        compare(failure.text, model.updates_error)
+        verify(upToDate.text !== "Up to Date")
+        verify(upToDate.helpfulAction !== null)
+        model.updates_error = ""
         // Leaving the Updates page restores the full installed list.
         root.navigate("installed")
         page = root.pageStack.currentItem
