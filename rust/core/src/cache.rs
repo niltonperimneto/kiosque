@@ -157,6 +157,12 @@ impl AppCache {
         self.odrs_reviews.insert(app_id, value).await;
     }
 
+    /// Forget cached ratings and reviews of `app_id` (after a vote or review).
+    pub async fn invalidate_odrs(&self, app_id: &str) {
+        self.odrs_ratings.invalidate(app_id).await;
+        self.odrs_reviews.invalidate(app_id).await;
+    }
+
     // ── Stats cache ─────────────────────────────────────────────────────
 
     string_keyed_accessors!(

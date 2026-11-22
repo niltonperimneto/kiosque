@@ -73,7 +73,7 @@ def guidance():
     if len(skills) != 6:
         raise RuntimeError('expected six project skills')
     documents = [ROOT / 'AGENTS.md', *ROOT.glob('docs/**/*.md'), *skills]
-    documents += [ROOT / directory / 'AGENTS.md' for directory in ('rust', 'qml', 'src', 'tests', '.github')]
+    documents += [ROOT / directory / 'AGENTS.md' for directory in ('rust', 'qml', 'tests', '.github')]
     for document in documents:
         content = document.read_text()
         if document.name == 'SKILL.md':
@@ -85,8 +85,24 @@ def guidance():
                 target = document.parent / link.split('#', 1)[0]
                 if not target.exists():
                     raise RuntimeError(f'broken link in {document}: {link}')
+    no_cpp()
     run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests/runner', '-v'])
     print(f'Validated {len(documents)} guidance documents and six project skills.')
+
+
+CPP_PATTERNS = ('*.cpp', '*.cc', '*.cxx', '*.h', '*.hh', '*.hpp', '*.hxx', '*.qrc')
+
+
+def no_cpp():
+    """The project is Rust + QML only; generated cxx shims live in target/."""
+    if (ROOT / '.git').exists() and shutil.which('git'):
+        listed = subprocess.run(['git', 'ls-files', *CPP_PATTERNS], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    else:
+        skip = {'target', 'build', '.git', '.flatpak-builder', '.test-results'}
+        listed = [str(p.relative_to(ROOT)) for pattern in CPP_PATTERNS for p in ROOT.rglob(pattern)
+                  if not skip.intersection(p.relative_to(ROOT).parts)]
+    if listed:
+        raise RuntimeError('C/C++ sources are not allowed: ' + ', '.join(sorted(listed)))
 
 
 def core():
@@ -135,6 +151,7 @@ def desktop(suite, backend):
     require_qmake()
     if suite == 'qt':
         features = ['--no-default-features'] if backend == 'cli' else []
+        cargo('clippy', '--locked', '-p', 'kiosque', *features, '--features', 'test-util', '--all-targets', '--', '-D', 'warnings')
         cargo('test', '--locked', '-p', 'kiosque', *features, '--lib')
     directory = ROOT / 'build' / f'tests-{backend}'
     setup = ['meson', 'setup', directory]
@@ -157,13 +174,13 @@ def selected_suites(paths):
             selected.update(('core', 'services'))
         if path.startswith('rust/updater/'):
             selected.add('core')
-        if path.startswith(('rust/app/', 'src/', 'qml/', 'meson', 'tests/qml/', 'po/')):
+        if path.startswith(('rust/app/', 'qml/', 'meson', 'tests/qml/', 'po/', 'scripts/build_rust.py', 'scripts/fixture_server.py')):
             selected.update(('core', 'services', 'qt', 'qml'))
         if '/flatpak/' in path or '/transactions' in path or '/daemon/' in path:
             selected.add('system')
         if path in ('rust/Cargo.toml', 'rust/Cargo.lock') or path.startswith('.github/'):
             selected.update(('core', 'services', 'qt', 'qml'))
-        if path.endswith(('.spec', '.desktop')) or path == 'org.kiosque.Kiosque.json':
+        if path.endswith(('.spec', '.desktop', '.metainfo.xml')) or path == 'org.kiosque.Kiosque.json' or path.startswith('flatpak/'):
             selected.add('packages')
     return sorted(selected)
 

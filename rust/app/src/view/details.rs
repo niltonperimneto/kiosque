@@ -73,7 +73,7 @@ pub async fn load(client: &FlathubClient, app_id: &str) -> Result<AppDetailsData
 }
 
 /// Star histogram and the derived average.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct RatingSummary {
     /// `stars[n]` = number of n-star ratings (ODRS reports 0…5).
     pub stars: [i32; 6],
@@ -98,7 +98,7 @@ impl From<OdrsRatings> for RatingSummary {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct ReviewEntry {
     pub review_id: i64,
     /// Empty for anonymous reviews; the view supplies a translated label.
@@ -136,6 +136,20 @@ impl From<OdrsReview> for ReviewEntry {
 pub struct ReviewsData {
     pub ratings: RatingSummary,
     pub reviews: Vec<ReviewEntry>,
+}
+
+impl ReviewsData {
+    /// `{stars: [n0…n5], total, average}` for QML.
+    pub fn ratings_value(&self) -> serde_json::Value {
+        serde_json::to_value(&self.ratings).unwrap_or_default()
+    }
+
+    /// Review objects with [`ReviewEntry`]'s field names, newest first.
+    pub fn reviews_value(&self) -> serde_json::Value {
+        let mut reviews = self.reviews.clone();
+        reviews.sort_by(|a, b| b.date.cmp(&a.date));
+        serde_json::to_value(reviews).unwrap_or_default()
+    }
 }
 
 /// Ratings and reviews; failures degrade to empty data.
@@ -328,5 +342,14 @@ mod tests {
             (80, 9, 1_700_000_000)
         );
         assert_eq!(review.user_name, "");
+        let data = ReviewsData {
+            ratings: RatingSummary::default(),
+            reviews: vec![
+                ReviewEntry { date: 1, ..Default::default() },
+                ReviewEntry { date: 2, review_id: 7, ..Default::default() },
+            ],
+        };
+        assert_eq!(data.reviews_value()[0]["review_id"], 7);
+        assert_eq!(data.ratings_value()["stars"].as_array().unwrap().len(), 6);
     }
 }

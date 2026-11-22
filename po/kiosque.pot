@@ -1,0 +1,922 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the kiosque package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: kiosque\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-14 19:22+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#: qml/Main.qml:103
+msgid "Open Settings"
+msgstr ""
+
+#: qml/Main.qml:141
+msgid "Sign In"
+msgstr ""
+
+#: qml/Main.qml:148
+msgid "Local Profile"
+msgstr ""
+
+#: qml/Main.qml:148
+msgid "Settings & Reviews"
+msgstr ""
+
+#: qml/Main.qml:160
+msgid "Home"
+msgstr ""
+
+#: qml/Main.qml:172 qml/pages/CategoriesPage.qml:12
+msgid "Categories"
+msgstr ""
+
+#: qml/Main.qml:189
+msgid "All Categories"
+msgstr ""
+
+#: qml/Main.qml:199 qml/Main.qml:202
+msgid "Audio & Video"
+msgstr ""
+
+#: qml/Main.qml:205 qml/Main.qml:208
+msgid "Games"
+msgstr ""
+
+#: qml/Main.qml:211 qml/Main.qml:214
+msgid "Office"
+msgstr ""
+
+#: qml/Main.qml:217 qml/Main.qml:220
+msgid "Graphics"
+msgstr ""
+
+#: qml/Main.qml:223 qml/Main.qml:226
+msgid "Development"
+msgstr ""
+
+#: qml/Main.qml:229 qml/Main.qml:232
+msgid "Internet"
+msgstr ""
+
+#: qml/Main.qml:235 qml/Main.qml:238
+msgid "Utilities"
+msgstr ""
+
+#: qml/Main.qml:241 qml/Main.qml:244
+msgid "Education"
+msgstr ""
+
+#: qml/Main.qml:247 qml/Main.qml:250
+msgid "System"
+msgstr ""
+
+#: qml/Main.qml:253 qml/Main.qml:256
+msgid "Science"
+msgstr ""
+
+#: qml/Main.qml:260 qml/pages/InstalledPage.qml:20
+msgid "Installed"
+msgstr ""
+
+#: qml/Main.qml:271 qml/pages/SettingsPage.qml:11
+msgid "Settings"
+msgstr ""
+
+#: qml/Main.qml:347
+msgid "Add Flatpak Repository"
+msgstr ""
+
+#: qml/Main.qml:354
+msgid ""
+"Add a new Flatpak remote repository. User-scoped repositories do not require "
+"administrator privileges."
+msgstr ""
+
+#: qml/Main.qml:364
+msgid "Name:"
+msgstr ""
+
+#: qml/Main.qml:371
+msgid "URL:"
+msgstr ""
+
+#: qml/Main.qml:382 qml/pages/AppDetailPage.qml:466
+msgid "Cancel"
+msgstr ""
+
+#: qml/Main.qml:387
+msgid "Add"
+msgstr ""
+
+#: qml/Main.qml:403
+msgid "Repository Status"
+msgstr ""
+
+#: qml/components/AppOfTheDayCard.qml:57
+msgid "App of the Day"
+msgstr ""
+
+#: qml/components/AppOfTheDayCard.qml:86 qml/components/HeroCarousel.qml:123
+msgid "View Details"
+msgstr ""
+
+#: qml/components/ProgressOverlay.qml:123
+msgid "Preparing…"
+msgstr ""
+
+#: qml/components/RatingSummary.qml:71
+msgid "%1 Review"
+msgid_plural "%1 Reviews"
+msgstr[0] ""
+msgstr[1] ""
+
+#: qml/components/ReviewCard.qml:67 qml/pages/AppDetailPage.qml:70
+msgid "Anonymous"
+msgstr ""
+
+#: qml/components/ReviewCard.qml:92
+msgid "v%1"
+msgstr ""
+
+#: qml/components/ReviewCard.qml:147
+msgid "Helpful"
+msgstr ""
+
+#: qml/components/ReviewCard.qml:159
+msgid "Unhelpful"
+msgstr ""
+
+#: qml/components/ReviewCard.qml:170
+msgid "Report Review"
+msgstr ""
+
+#: qml/components/ReviewCard.qml:182
+msgid "Delete"
+msgstr ""
+
+#: qml/components/ReviewCard.qml:193
+msgid "Delete Review?"
+msgstr ""
+
+#: qml/components/ReviewCard.qml:198
+msgid "Are you sure you want to permanently delete your review?"
+msgstr ""
+
+#: qml/components/WelcomeCard.qml:23
+msgid "Welcome to Kiosque"
+msgstr ""
+
+#: qml/components/WelcomeCard.qml:153
+msgid ""
+"Discover, install, and update your applications effortlessly. Kiosque "
+"provides a modern, fast experience for managing your Flatpaks, inspired by "
+"Flathub."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:21 qml/pages/CategoriesPage.qml:19
+#: qml/pages/CategoryAppListPage.qml:42 qml/pages/SettingsPage.qml:21
+msgid "Close"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:89 qml/pages/AppDetailPage.qml:263
+msgid "No special permissions required (Fully Sandboxed)"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:90 qml/pages/AppDetailPage.qml:264
+msgid ""
+"This application is fully sandboxed and isolated from your files, network, "
+"and devices."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:108
+msgid "Network Access"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:109
+msgid "Can access the internet or local network"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:122
+msgid "Display System"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:123
+msgid "Can show windows and access the screen (%1)"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:131
+msgid "Audio Access"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:132
+msgid "Can play audio or record sound using the sound card"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:140
+msgid "Inter-process Communication"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:141
+msgid "Can communicate directly with other running processes"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:149
+msgid "Hardware Access"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:150
+msgid "Direct access to hardware devices: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:161
+msgid "read-only"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:161
+msgid "read/write"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:161
+msgid "read/write/create"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:165
+msgid "All system files"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:167
+msgid "Home directory"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:169
+msgid "Desktop folder"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:171
+msgid "Documents folder"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:173
+msgid "Downloads folder"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:175
+msgid "Music folder"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:177
+msgid "Pictures folder"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:179
+msgid "Public share folder"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:181
+msgid "Templates folder"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:183
+msgid "Videos folder"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:185
+msgid "System keyring"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:188
+msgid "folder"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:196
+msgid "File System Access"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:197
+msgid "Access to files: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:205
+msgid "Persistent Storage"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:206
+msgid "Saves persistent data in: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:218
+msgid "Talks to session services: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:221
+msgid "Owns session services: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:224
+msgid "Talks to system services: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:227
+msgid "Owns system services: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:232
+msgid "System Integration"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:233
+msgid "Access to D-Bus services: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:244
+msgid "Security Agent Access"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:245
+msgid "Access to authentication agent sockets: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:255
+msgid "Other System Connections"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:256
+msgid "Accesses system sockets: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:271
+msgid "Fully Sandboxed or permissions unavailable"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:272
+msgid ""
+"The application is either fully sandboxed or its permissions could not be "
+"loaded."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:368
+msgid "Unknown Developer"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:427
+msgid "Loading…"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:428
+msgid "Install"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:428 qml/pages/SettingsPage.qml:230
+msgid "Remove"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:480
+msgid "Sandbox Permissions"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:645
+msgid "Description"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:666
+msgid "Links & Resources"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:684
+msgid "Website"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:693 qml/pages/SettingsPage.qml:765
+msgid "Source Code"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:702
+msgid "Flatpak Manifest"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:711
+msgid "Report an Issue"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:720
+msgid "Documentation"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:729
+msgid "Donate / Support"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:741
+msgid "Developer"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:741
+msgid "More by %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:750
+msgid "Similar Applications"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:778
+msgid "Ratings & Reviews"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:783 qml/pages/AppDetailPage.qml:858
+msgid "Write a Review"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:804
+msgid "No Reviews Yet"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:805
+msgid "Be the first to write a review for this application!"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:847
+msgid "Show More Reviews"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:886
+msgid "Rating:"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:911
+msgid "Title:"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:912
+msgid "One-line title of your review"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:919
+msgid "Review:"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:926
+msgid "Detailed review description"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:935
+msgid "Anonymous:"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:1206
+msgid "Application Permissions"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:1215
+msgid "This application has permissions to access the following:"
+msgstr ""
+
+#: qml/pages/CategoryAppListPage.qml:35
+msgid "Search in %1…"
+msgstr ""
+
+#: qml/pages/CategoryAppListPage.qml:132 qml/pages/ShopfrontPage.qml:221
+msgid "No Applications Found"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:40
+msgid "Search installed…"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:70
+msgid "Refresh"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:75
+msgid "Sort"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:79
+msgid "Name"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:85
+msgid "Size"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:92
+msgid "Ascending"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:98
+msgid "Descending"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:105
+msgid "Filter"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:109
+msgid "Show platform & SDK updates"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:115
+msgid "Updates only"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:146
+msgid "No Flatpak Applications Installed"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:148
+msgid "Install applications from the Storefront tab"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:156
+msgid "Up to Date"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:156
+msgid "Updates Available"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:203
+msgid "Updating…"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:204 qml/pages/InstalledPage.qml:395
+msgid "Checking for updates…"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:218
+msgid "%1 update available"
+msgid_plural "%1 updates available"
+msgstr[0] ""
+msgstr[1] ""
+
+#: qml/pages/InstalledPage.qml:222
+msgid "Update All"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:239
+msgctxt "%1 = count"
+msgid "Select all (%1)"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:259
+msgctxt "%1 = count of selected updates"
+msgid "Update (%1)"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:357
+msgid "Launch"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:363
+msgid "Uninstall"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:422
+msgid "Updates are available"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:423
+msgid "All applications are up to date"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:424
+msgid "Check for available application updates"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:429
+msgid "Check for Updates"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:53
+msgid "Preferences"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:57
+msgid "Configure updates, authentication, and flatpak repositories"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:65
+msgid "Advanced Settings"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:102
+msgid "Automatic Updates"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:115
+msgid "Enable Automatic Updates:"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:122
+msgid "Frequency:"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:123
+msgid "Daily"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:123
+msgid "Weekly"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:132
+msgid "Time (HH:MM):"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:179
+msgid "Repositories"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:184 qml/pages/SettingsPage.qml:189
+#: qml/pages/SettingsPage.qml:603
+msgid "Add Repository"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:278
+msgid "ODRS Review Account"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:343
+msgid "Logged in via %1"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:355
+msgid "Log Out"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:369
+msgid ""
+"To write reviews and submit application ratings, you must authenticate using "
+"an open-source development provider. Reviews are submitted pseudonymously "
+"using a secure privacy hash."
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:439
+msgid "Privacy & Security"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:451
+msgid "Privacy User Hash:"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:470
+msgid "Copy user hash to clipboard"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:484
+msgid ""
+"This hash is computed from your login identity combined with a secure local "
+"salt. It is used pseudonymously by ODRS so you can manage your reviews "
+"without disclosing your IP address or credentials."
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:491
+msgid "Privacy Actions:"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:495
+msgid "Regenerate Salt"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:501
+msgid "Clear Cache"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:540 qml/pages/SettingsPage.qml:699
+msgid "About Kiosque"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:573 qml/pages/SettingsPage.qml:727
+msgid "Version %1"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:580
+msgid "More Information…"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:619
+msgid "Name (e.g. flathub)"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:625
+msgid "URL (e.g. https://dl.flathub.org/repo/flathub.flatpakrepo)"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:634
+msgid "Regenerate Privacy Salt?"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:642
+msgid ""
+"Regenerating your local cryptographic salt will immediately assign you a "
+"completely new pseudonymous identity on the ODRS review server. Your "
+"existing reviews and votes will still exist, but they will be permanently "
+"unlinked from this machine and you will no longer be able to modify or "
+"delete them. Are you sure you want to proceed?"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:659
+msgid "Login Failed"
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:677
+msgid ""
+"Could not complete OAuth login. Please check your network connection or the "
+"credentials configuration."
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:735
+msgid ""
+"A beautiful, fast, and modern Flatpak storefront for the KDE Plasma desktop, "
+"inspired by GNOME's software curation aesthetics."
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:743
+msgid ""
+"Kiosque was built to bring a curation-focused storefront to the Qt/KDE "
+"ecosystem, showcasing applications in their best light. It integrates a high-"
+"performance Rust backend with a modern Qt6/Kirigami frontend."
+msgstr ""
+
+#: qml/pages/SettingsPage.qml:771
+msgid "Report Bug"
+msgstr ""
+
+#: qml/pages/ShopfrontPage.qml:14
+msgid "Storefront"
+msgstr ""
+
+#: qml/pages/ShopfrontPage.qml:22
+msgid "Search applications…"
+msgstr ""
+
+#: qml/pages/ShopfrontPage.qml:116
+msgid "Browse by Category"
+msgstr ""
+
+#: qml/pages/ShopfrontPage.qml:170
+msgid "Popular Applications"
+msgstr ""
+
+#: qml/pages/ShopfrontPage.qml:176
+msgid "New & Noteworthy"
+msgstr ""
+
+#: qml/pages/ShopfrontPage.qml:182
+msgid "Recently Updated"
+msgstr ""
+
+#: qml/pages/ShopfrontPage.qml:202
+msgid "%1 result for “%2”"
+msgid_plural "%1 results for “%2”"
+msgstr[0] ""
+msgstr[1] ""
+
+#: qml/pages/ShopfrontPage.qml:203
+msgid "Search Results"
+msgstr ""
+
+#: qml/pages/ShopfrontPage.qml:222
+msgid "Try a different search term or category"
+msgstr ""
+
+#: rust/app/src/bridge/installed_model.rs:271
+msgid "Preparing update…"
+msgstr ""
+
+#: rust/app/src/bridge/repo_model.rs:119
+msgid "Repository added successfully"
+msgstr ""
+
+#: rust/app/src/bridge/repo_model.rs:120
+msgid "Repository removed successfully"
+msgstr ""
+
+#: rust/core/src/l10n.rs:355
+msgid "Missing %1"
+msgstr ""
+
+#: rust/core/src/l10n.rs:368 rust/core/src/l10n.rs:369
+msgid "%1 update"
+msgid_plural "%1 updates"
+msgstr[0] ""
+msgstr[1] ""
+
+#: rust/core/src/l10n.rs:371
+msgid "%1 of %2 app"
+msgid_plural "%1 of %2 apps"
+msgstr[0] ""
+msgstr[1] ""
+
+#: rust/core/src/l10n.rs:374
+msgctxt "button"
+msgid "Open"
+msgstr ""
+
+#: rust/core/src/l10n.rs:375
+msgctxt "menu"
+msgid "Open"
+msgstr ""
+
+#: rust/core/src/l10n.rs:377 rust/core/src/l10n.rs:378
+msgid "%1 file"
+msgid_plural "%1 files"
+msgstr[0] ""
+msgstr[1] ""
+
+#: rust/updater/src/shell.rs:25
+msgid "Usage: kiosque-update [--check | --background | --help]"
+msgstr ""
+
+#: rust/updater/src/shell.rs:28
+msgid "Check for and install all updates once, then exit"
+msgstr ""
+
+#: rust/updater/src/shell.rs:29
+msgid "Run as the autostarted background notifier"
+msgstr ""
+
+#: rust/updater/src/shell.rs:30
+msgid "Show this help and exit"
+msgstr ""
+
+#: rust/updater/src/shell.rs:112
+msgid "Kiosque: installing updates…"
+msgstr ""
+
+#: rust/updater/src/shell.rs:115
+msgid "Kiosque: %1 update available"
+msgid_plural "Kiosque: %1 updates available"
+msgstr[0] ""
+msgstr[1] ""
+
+#: rust/updater/src/shell.rs:121
+msgid "Kiosque: applications are up to date"
+msgstr ""
+
+#: rust/updater/src/shell.rs:145
+msgid "Software Updates Available"
+msgstr ""
+
+#: rust/updater/src/shell.rs:147
+msgid "%1 application update is available."
+msgid_plural "%1 application updates are available."
+msgstr[0] ""
+msgstr[1] ""
+
+#: rust/updater/src/shell.rs:154 rust/updater/src/shell.rs:188
+msgid "Open Kiosque"
+msgstr ""
+
+#: rust/updater/src/shell.rs:163 rust/updater/src/shell.rs:222
+msgid "Updating Applications"
+msgstr ""
+
+#: rust/updater/src/shell.rs:165
+msgid "Installing %1 update in the background."
+msgid_plural "Installing %1 updates in the background."
+msgstr[0] ""
+msgstr[1] ""
+
+#: rust/updater/src/shell.rs:180
+msgid "Updates Completed"
+msgstr ""
+
+#: rust/updater/src/shell.rs:181
+msgid "All applications have been updated."
+msgstr ""
+
+#: rust/updater/src/shell.rs:186
+msgid "Updates Failed"
+msgstr ""
+
+#: rust/updater/src/shell.rs:224
+msgid "Kiosque is installing Flatpak updates in the background."
+msgstr ""
+
+#: rust/updater/src/tray.rs:64
+msgid "Open Store"
+msgstr ""
+
+#: rust/updater/src/tray.rs:71
+msgid "Quit"
+msgstr ""
+
+#: rust/updater/src/tray.rs:133
+msgid "Kiosque Update Notifier"
+msgstr ""
+
+#: rust/updater/src/tray.rs:159
+msgid "Kiosque"
+msgstr ""

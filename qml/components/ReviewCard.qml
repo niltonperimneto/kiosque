@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 
 Kirigami.ShadowedRectangle {
@@ -21,6 +20,8 @@ Kirigami.ShadowedRectangle {
     property string userHash: ""
     property int karmaUp: 0
     property int karmaDown: 0
+    // The page's AppDetails; review actions go through it.
+    property var details: null
 
     radius: 8
     color: Kirigami.Theme.backgroundColor
@@ -63,7 +64,7 @@ Kirigami.ShadowedRectangle {
                 spacing: 0
 
                 Controls.Label {
-                    text: root.userName !== "" ? root.userName : i18n("Anonymous")
+                    text: root.userName !== "" ? root.userName : L10n.i18n("Anonymous", [])
                     font.bold: true
                     Layout.fillWidth: true
                 }
@@ -88,7 +89,7 @@ Kirigami.ShadowedRectangle {
                 Controls.Label {
                     id: versionLabel
                     anchors.centerIn: parent
-                    text: i18n("v%1", root.version)
+                    text: L10n.i18n("v%1", [String(root.version)])
                     font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
                     color: Kirigami.Theme.textColor
                     opacity: 0.8
@@ -142,8 +143,8 @@ Kirigami.ShadowedRectangle {
                 text: root.karmaUp > 0 ? root.karmaUp : ""
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
-                onClicked: StoreController.upvoteReview(root.reviewId)
-                Controls.ToolTip.text: i18n("Helpful")
+                onClicked: root.details.upvoteReview(root.reviewId)
+                Controls.ToolTip.text: L10n.i18n("Helpful", [])
                 Controls.ToolTip.visible: hovered
             }
 
@@ -154,8 +155,8 @@ Kirigami.ShadowedRectangle {
                 text: root.karmaDown > 0 ? root.karmaDown : ""
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
-                onClicked: StoreController.downvoteReview(root.reviewId)
-                Controls.ToolTip.text: i18n("Unhelpful")
+                onClicked: root.details.downvoteReview(root.reviewId)
+                Controls.ToolTip.text: L10n.i18n("Unhelpful", [])
                 Controls.ToolTip.visible: hovered
             }
 
@@ -165,8 +166,8 @@ Kirigami.ShadowedRectangle {
                 icon.name: "flag"
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
-                onClicked: StoreController.dismissReview(root.reviewId)
-                Controls.ToolTip.text: i18n("Report Review")
+                onClicked: root.details.dismissReview(root.reviewId)
+                Controls.ToolTip.text: L10n.i18n("Report Review", [])
                 Controls.ToolTip.visible: hovered
             }
 
@@ -178,7 +179,7 @@ Kirigami.ShadowedRectangle {
             Controls.Button {
                 id: deleteButton
                 icon.name: "edit-delete"
-                text: i18n("Delete")
+                text: L10n.i18n("Delete", [])
                 flat: true
                 visible: root.userHash === SettingsController.odrs_user_hash && SettingsController.is_authenticated
                 onClicked: deleteConfirmDialog.open()
@@ -189,12 +190,12 @@ Kirigami.ShadowedRectangle {
     // Delete confirmation dialog
     Kirigami.Dialog {
         id: deleteConfirmDialog
-        title: i18n("Delete Review?")
+        title: L10n.i18n("Delete Review?", [])
         standardButtons: Kirigami.Dialog.Yes | Kirigami.Dialog.No
-        onAccepted: StoreController.removeReview(root.reviewId)
+        onAccepted: root.details.removeReview(root.reviewId)
         
         Controls.Label {
-            text: i18n("Are you sure you want to permanently delete your review?")
+            text: L10n.i18n("Are you sure you want to permanently delete your review?", [])
             wrapMode: Text.WordWrap
             width: Kirigami.Units.gridUnit * 15
         }

@@ -1,198 +1,176 @@
-use cxx_qt::Threading;
-use std::pin::Pin;
+//! `SettingsController` singleton: preferences, Flathub login, ODRS identity.
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
+use qtbridge::qobject;
+
+pub use object::SettingsController;
+
+#[qobject(NoQmlElement)]
+mod object {
+    use qtbridge::QmlObject;
+
+    #[derive(Default)]
+    pub struct SettingsController {
+        pub(super) auto_update: bool,
+        pub(super) update_frequency: String,
+        pub(super) update_time: String,
+        pub(super) is_authenticated: bool,
+        pub(super) oauth_provider: String,
+        pub(super) oauth_username: String,
+        pub(super) oauth_avatar_url: String,
+        pub(super) odrs_user_hash: String,
     }
 
-    unsafe extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        #[qml_singleton]
-        #[qproperty(bool, auto_update)]
-        #[qproperty(QString, update_frequency)]
-        #[qproperty(QString, update_time)]
-        #[qproperty(bool, is_authenticated)]
-        #[qproperty(QString, oauth_provider)]
-        #[qproperty(QString, oauth_username)]
-        #[qproperty(QString, oauth_avatar_url)]
-        #[qproperty(QString, odrs_user_hash)]
-        type SettingsController = super::SettingsControllerRust;
+    impl SettingsController {
+        qproperty!("auto_update", Read = get_auto_update, Notify = auto_update_changed);
+        qproperty!("update_frequency", Read = get_update_frequency, Notify = update_frequency_changed);
+        qproperty!("update_time", Read = get_update_time, Notify = update_time_changed);
+        qproperty!("is_authenticated", Read = get_is_authenticated, Notify = is_authenticated_changed);
+        qproperty!("oauth_provider", Read = get_oauth_provider, Notify = oauth_provider_changed);
+        qproperty!("oauth_username", Read = get_oauth_username, Notify = oauth_username_changed);
+        qproperty!("oauth_avatar_url", Read = get_oauth_avatar_url, Notify = oauth_avatar_url_changed);
+        qproperty!("odrs_user_hash", Read = get_odrs_user_hash, Notify = odrs_user_hash_changed);
 
-        #[qinvokable]
-        #[cxx_name = "loadSettings"]
-        fn load_settings(self: Pin<&mut SettingsController>);
-
-        #[qinvokable]
-        #[cxx_name = "saveSettings"]
-        fn save_settings(
-            self: Pin<&mut SettingsController>,
-            auto_update: bool,
-            frequency: QString,
-            time: QString,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "login"]
-        fn login(self: Pin<&mut SettingsController>, provider: QString);
-
-        #[qinvokable]
-        #[cxx_name = "logout"]
-        fn logout(self: Pin<&mut SettingsController>);
-
-        #[qinvokable]
-        #[cxx_name = "regenerateSalt"]
-        fn regenerate_salt(self: Pin<&mut SettingsController>);
-
-        #[qinvokable]
-        #[cxx_name = "clearCache"]
-        fn clear_cache(self: Pin<&mut SettingsController>);
+        fn get_auto_update(&self) -> bool {
+            self.auto_update
+        }
+        fn get_update_frequency(&self) -> String {
+            self.update_frequency.clone()
+        }
+        fn get_update_time(&self) -> String {
+            self.update_time.clone()
+        }
+        fn get_is_authenticated(&self) -> bool {
+            self.is_authenticated
+        }
+        fn get_oauth_provider(&self) -> String {
+            self.oauth_provider.clone()
+        }
+        fn get_oauth_username(&self) -> String {
+            self.oauth_username.clone()
+        }
+        fn get_oauth_avatar_url(&self) -> String {
+            self.oauth_avatar_url.clone()
+        }
+        fn get_odrs_user_hash(&self) -> String {
+            self.odrs_user_hash.clone()
+        }
 
         #[qsignal]
-        #[cxx_name = "loginFailed"]
-        fn login_failed(self: Pin<&mut SettingsController>, error: QString);
-    }
+        pub fn auto_update_changed(&mut self);
+        #[qsignal]
+        pub fn update_frequency_changed(&mut self);
+        #[qsignal]
+        pub fn update_time_changed(&mut self);
+        #[qsignal]
+        pub fn is_authenticated_changed(&mut self);
+        #[qsignal]
+        pub fn oauth_provider_changed(&mut self);
+        #[qsignal]
+        pub fn oauth_username_changed(&mut self);
+        #[qsignal]
+        pub fn oauth_avatar_url_changed(&mut self);
+        #[qsignal]
+        pub fn odrs_user_hash_changed(&mut self);
+        #[qsignal(qml_name = "loginFailed")]
+        pub fn login_failed(&mut self, error: String);
 
-    impl cxx_qt::Threading for SettingsController {}
-}
+        #[qslot(qml_name = "loadSettings")]
+        fn load_settings(&mut self) {
+            let s = crate::services::services().settings.load();
+            self.set_auto_update(s.auto_update);
+            self.set_update_frequency(s.update_frequency);
+            self.set_update_time(s.update_time);
+            self.set_is_authenticated(s.oauth_token.is_some());
+            self.set_oauth_provider(s.oauth_provider.unwrap_or_default());
+            self.set_oauth_username(s.oauth_username.unwrap_or_default());
+            self.set_oauth_avatar_url(s.oauth_avatar_url.unwrap_or_default());
+            self.set_odrs_user_hash(kiosque_core::flathub::odrs::get_user_hash());
+        }
 
-#[derive(Default)]
-pub struct SettingsControllerRust {
-    pub auto_update: bool,
-    pub update_frequency: cxx_qt_lib::QString,
-    pub update_time: cxx_qt_lib::QString,
-    pub is_authenticated: bool,
-    pub oauth_provider: cxx_qt_lib::QString,
-    pub oauth_username: cxx_qt_lib::QString,
-    pub oauth_avatar_url: cxx_qt_lib::QString,
-    pub odrs_user_hash: cxx_qt_lib::QString,
-}
-
-impl qobject::SettingsController {
-    pub fn load_settings(mut self: Pin<&mut Self>) {
-        let settings = crate::services::services().settings.load();
-        self.as_mut().set_auto_update(settings.auto_update);
-        self.as_mut()
-            .set_update_frequency(cxx_qt_lib::QString::from(&settings.update_frequency));
-        self.as_mut()
-            .set_update_time(cxx_qt_lib::QString::from(&settings.update_time));
-
-        let is_auth = settings.oauth_token.is_some();
-        self.as_mut().set_is_authenticated(is_auth);
-
-        let provider = settings.oauth_provider.unwrap_or_default();
-        self.as_mut()
-            .set_oauth_provider(cxx_qt_lib::QString::from(&provider));
-
-        let username = settings.oauth_username.unwrap_or_default();
-        self.as_mut()
-            .set_oauth_username(cxx_qt_lib::QString::from(&username));
-
-        let avatar_url = settings.oauth_avatar_url.unwrap_or_default();
-        self.as_mut()
-            .set_oauth_avatar_url(cxx_qt_lib::QString::from(&avatar_url));
-
-        let user_hash = crate::flathub::odrs::get_user_hash();
-        self.as_mut()
-            .set_odrs_user_hash(cxx_qt_lib::QString::from(&user_hash));
-    }
-
-    pub fn save_settings(
-        mut self: Pin<&mut Self>,
-        auto_update: bool,
-        frequency: cxx_qt_lib::QString,
-        time: cxx_qt_lib::QString,
-    ) {
-        let mut settings = crate::services::services().settings.load();
-        let autostart_changed = settings.auto_update != auto_update;
-        settings.auto_update = auto_update;
-        settings.update_frequency = frequency.to_string();
-        settings.update_time = time.to_string();
-
-        if let Err(e) = crate::services::services().settings.save(&settings) {
-            eprintln!("[kiosque] Failed to save settings: {}", e);
-        } else {
-            // The only place autostart is changed: an explicit settings save.
+        /// Persist the update preferences. This is the only caller of
+        /// `autostart::apply`, and only when the toggle actually changed.
+        #[qslot(qml_name = "saveSettings")]
+        fn save_settings(&mut self, auto_update: bool, frequency: String, time: String) {
+            let store = &crate::services::services().settings;
+            let mut s = store.load();
+            let autostart_changed = s.auto_update != auto_update;
+            s.auto_update = auto_update;
+            s.update_frequency = frequency;
+            s.update_time = time;
+            if let Err(e) = store.save(&s) {
+                kerr!("settings: cannot save: {}", e);
+                return;
+            }
             if autostart_changed {
-                crate::runtime::runtime().spawn(async move {
+                crate::bridge::spawn(async move {
                     if let Err(e) = kiosque_core::autostart::apply(auto_update).await {
                         kerr!("autostart: {}", e);
                     }
                 });
             }
-            self.as_mut().set_auto_update(settings.auto_update);
-            self.as_mut()
-                .set_update_frequency(cxx_qt_lib::QString::from(&settings.update_frequency));
-            self.as_mut()
-                .set_update_time(cxx_qt_lib::QString::from(&settings.update_time));
+            self.set_auto_update(s.auto_update);
+            self.set_update_frequency(s.update_frequency);
+            self.set_update_time(s.update_time);
         }
-    }
 
-    pub fn login(self: Pin<&mut Self>, provider: cxx_qt_lib::QString) {
-        let provider_str = provider.to_string();
-        let provider_enum = match crate::flathub::oauth::OAuthProvider::from_str(&provider_str) {
-            Some(p) => p,
-            None => {
-                eprintln!("[kiosque] Unknown OAuth provider: {}", provider_str);
+        #[qslot]
+        fn login(&mut self, provider: String) {
+            let Some(provider) = kiosque_core::flathub::oauth::OAuthProvider::from_str(&provider) else {
+                self.login_failed(format!("unknown provider {provider:?}"));
                 return;
-            }
-        };
-
-        let qt_thread = self.qt_thread();
-        crate::runtime::runtime().spawn(async move {
-            match crate::flathub::oauth::perform_login(provider_enum).await {
-                Ok(()) => {
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject.as_mut().load_settings();
-                    });
-                }
-                Err(e) => {
-                    eprintln!("[kiosque] OAuth Login failed: {}", e);
-                    let err_str = e.to_string();
-                    let _ = qt_thread.queue(move |mut qobject| {
-                        qobject
-                            .as_mut()
-                            .login_failed(cxx_qt_lib::QString::from(&err_str));
-                    });
-                }
-            }
-        });
-    }
-
-    pub fn logout(mut self: Pin<&mut Self>) {
-        if let Err(e) = crate::flathub::oauth::perform_logout() {
-            eprintln!("[kiosque] Logout failed: {}", e);
-        } else {
-            self.as_mut().load_settings();
+            };
+            let handle = self.get_thread_handle();
+            crate::bridge::spawn(async move {
+                let result = kiosque_core::flathub::oauth::perform_login(provider).await;
+                handle.invoke_mut(move |c| match result {
+                    Ok(()) => c.load_settings(),
+                    Err(e) => {
+                        kerr!("login failed: {}", e);
+                        c.login_failed(e);
+                    }
+                });
+            });
         }
-    }
 
-    pub fn regenerate_salt(self: Pin<&mut Self>) {
-        let mut settings = crate::services::services().settings.load();
-        settings.odrs_salt = crate::settings::AppSettings::default().odrs_salt;
-
-        let qt_thread = self.qt_thread();
-        crate::runtime::runtime().spawn(async move {
-            if let Err(e) = crate::services::services().settings.save(&settings) {
-                eprintln!("[kiosque] Failed to save regenerated salt settings: {}", e);
+        #[qslot]
+        fn logout(&mut self) {
+            match kiosque_core::flathub::oauth::perform_logout() {
+                Ok(()) => self.load_settings(),
+                Err(e) => kerr!("logout failed: {}", e),
             }
-            let _ = qt_thread.queue(move |mut qobject| {
-                qobject.as_mut().load_settings();
-            });
-        });
-    }
+        }
 
-    pub fn clear_cache(self: Pin<&mut Self>) {
-        let qt_thread = self.qt_thread();
-        crate::runtime::runtime().spawn(async move {
-            crate::cache::app_cache().clear().await;
-            eprintln!("[kiosque] Cache cleared successfully.");
-            let _ = qt_thread.queue(move |mut qobject| {
-                qobject.as_mut().load_settings();
+        #[qslot(qml_name = "regenerateSalt")]
+        fn regenerate_salt(&mut self) {
+            let store = &crate::services::services().settings;
+            let mut s = store.load();
+            s.odrs_salt = kiosque_core::settings::AppSettings::default().odrs_salt;
+            if let Err(e) = store.save(&s) {
+                kerr!("settings: cannot save salt: {}", e);
+            }
+            self.load_settings();
+        }
+
+        #[qslot(qml_name = "clearCache")]
+        fn clear_cache(&mut self) {
+            let handle = self.get_thread_handle();
+            crate::bridge::spawn(async move {
+                kiosque_core::cache::app_cache().clear().await;
+                handle.invoke_mut(|c| c.load_settings());
             });
-        });
+        }
     }
 }
+
+notify_setters!(SettingsController {
+    set_auto_update: auto_update: bool => auto_update_changed,
+    set_update_frequency: update_frequency: String => update_frequency_changed,
+    set_update_time: update_time: String => update_time_changed,
+    set_is_authenticated: is_authenticated: bool => is_authenticated_changed,
+    set_oauth_provider: oauth_provider: String => oauth_provider_changed,
+    set_oauth_username: oauth_username: String => oauth_username_changed,
+    set_oauth_avatar_url: oauth_avatar_url: String => oauth_avatar_url_changed,
+    set_odrs_user_hash: odrs_user_hash: String => odrs_user_hash_changed,
+});
+
+qml_element!(SettingsController, "SettingsController", singleton);

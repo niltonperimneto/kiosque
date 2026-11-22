@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 
 // Installed applications manager.
@@ -18,7 +17,7 @@ import com.kiosque
 // header checkboxes and a multi-state footer.
 Kirigami.ScrollablePage {
     id: page
-    title: i18n("Installed")
+    title: L10n.i18n("Installed", [])
     supportsRefreshing: true
 
     property var installedModel: applicationWindow().installedModel
@@ -38,7 +37,7 @@ Kirigami.ScrollablePage {
         id: searchField
         Layout.fillWidth: true
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-        placeholderText: i18n("Search installed…")
+        placeholderText: L10n.i18n("Search installed…", [])
         onTextChanged: page.installedModel.applySearchFilter(text)
     }
 
@@ -68,52 +67,52 @@ Kirigami.ScrollablePage {
     // ── Toolbar: refresh + sort + filter ───────────────────────────────────────
     actions: [
         Kirigami.Action {
-            text: i18n("Refresh")
+            text: L10n.i18n("Refresh", [])
             icon.name: "view-refresh"
             onTriggered: page.installedModel.refresh()
         },
         Kirigami.Action {
-            text: i18n("Sort")
+            text: L10n.i18n("Sort", [])
             icon.name: "view-sort"
 
             Kirigami.Action {
-                text: i18n("Name")
+                text: L10n.i18n("Name", [])
                 checkable: true
                 checked: page.sortCriterion === "name"
                 onTriggered: page.sortCriterion = "name"
             }
             Kirigami.Action {
-                text: i18n("Size")
+                text: L10n.i18n("Size", [])
                 checkable: true
                 checked: page.sortCriterion === "size"
                 onTriggered: page.sortCriterion = "size"
             }
             Kirigami.Action { separator: true }
             Kirigami.Action {
-                text: i18n("Ascending")
+                text: L10n.i18n("Ascending", [])
                 checkable: true
                 checked: page.sortAscending
                 onTriggered: page.sortAscending = true
             }
             Kirigami.Action {
-                text: i18n("Descending")
+                text: L10n.i18n("Descending", [])
                 checkable: true
                 checked: !page.sortAscending
                 onTriggered: page.sortAscending = false
             }
         },
         Kirigami.Action {
-            text: i18n("Filter")
+            text: L10n.i18n("Filter", [])
             icon.name: "view-filter"
 
             Kirigami.Action {
-                text: i18n("Show platform & SDK updates")
+                text: L10n.i18n("Show platform & SDK updates", [])
                 checkable: true
                 checked: page.installedModel && page.installedModel.show_runtimes
                 onTriggered: page.installedModel.applyShowRuntimes(checked)
             }
             Kirigami.Action {
-                text: i18n("Updates only")
+                text: L10n.i18n("Updates only", [])
                 checkable: true
                 checked: page.showUpdatesOnly
                 onTriggered: {
@@ -144,9 +143,9 @@ Kirigami.ScrollablePage {
             anchors.centerIn: parent
             width: parent.width - Kirigami.Units.gridUnit * 4
             visible: listView.count === 0 && !(page.installedModel && page.installedModel.loading)
-            text: i18n("No Flatpak Applications Installed")
+            text: L10n.i18n("No Flatpak Applications Installed", [])
             icon.name: "application-x-executable"
-            explanation: i18n("Install applications from the Storefront tab")
+            explanation: L10n.i18n("Install applications from the Storefront tab", [])
         }
 
         // ── Section headers (Updates Available / Up to Date) ───────────────────
@@ -154,7 +153,7 @@ Kirigami.ScrollablePage {
         section.criteria: ViewSection.FullString
         section.delegate: Kirigami.ListSectionHeader {
             width: ListView.view ? ListView.view.width : 0
-            text: section === "updates" ? i18n("Updates Available") : i18n("Up to Date")
+            text: section === "updates" ? L10n.i18n("Updates Available", []) : L10n.i18n("Up to Date", [])
         }
 
         // ── Pending Updates card ───────────────────────────────────────────────
@@ -201,8 +200,8 @@ Kirigami.ScrollablePage {
                             color: Kirigami.Theme.disabledTextColor
                             elide: Text.ElideRight
                             text: page.installedModel && page.installedModel.updating
-                                ? (page.installedModel.update_status_text || i18n("Updating…"))
-                                : i18n("Checking for updates…")
+                                ? (page.installedModel.update_status_text || L10n.i18n("Updating…", []))
+                                : L10n.i18n("Checking for updates…", [])
                         }
                     }
 
@@ -216,12 +215,11 @@ Kirigami.ScrollablePage {
                             Layout.fillWidth: true
                             level: 4
                             elide: Text.ElideRight
-                            text: i18np("%1 update available", "%1 updates available",
-                                        page.installedModel ? page.installedModel.updates_available_count : 0)
+                            text: L10n.i18np("%1 update available", "%1 updates available", page.installedModel ? page.installedModel.updates_available_count : 0, [])
                         }
 
                         Controls.Button {
-                            text: i18n("Update All")
+                            text: L10n.i18n("Update All", [])
                             icon.name: "system-software-update"
                             highlighted: true
                             onClicked: {
@@ -238,8 +236,7 @@ Kirigami.ScrollablePage {
                         visible: !updatesCard.busy
 
                         Controls.CheckBox {
-                            text: i18nc("%1 = count", "Select all (%1)",
-                                        page.installedModel ? page.installedModel.updates_available_count : 0)
+                            text: L10n.i18nc("%1 = count", "Select all (%1)", [String(page.installedModel ? page.installedModel.updates_available_count : 0)])
                             tristate: true
                             checkState: {
                                 if (!page.installedModel) return Qt.Unchecked;
@@ -259,8 +256,7 @@ Kirigami.ScrollablePage {
                         Item { Layout.fillWidth: true }
 
                         Controls.Button {
-                            text: i18nc("%1 = count of selected updates", "Update (%1)",
-                                        page.installedModel ? page.installedModel.updates_checked_count : 0)
+                            text: L10n.i18nc("%1 = count of selected updates", "Update (%1)", [String(page.installedModel ? page.installedModel.updates_checked_count : 0)])
                             icon.name: "system-software-update"
                             enabled: page.installedModel && page.installedModel.updates_checked_count > 0
                             onClicked: page.installedModel.updateSelectedApps()
@@ -358,13 +354,13 @@ Kirigami.ScrollablePage {
 
             actions: [
                 Kirigami.Action {
-                    text: i18n("Launch")
+                    text: L10n.i18n("Launch", [])
                     icon.name: "media-playback-start"
                     visible: !model.isRuntime
                     onTriggered: page.installedModel.launchApp(index)
                 },
                 Kirigami.Action {
-                    text: i18n("Uninstall")
+                    text: L10n.i18n("Uninstall", [])
                     icon.name: "edit-delete"
                     onTriggered: page.installedModel.uninstallApp(index)
                 }
@@ -396,7 +392,7 @@ Kirigami.ScrollablePage {
                     horizontalAlignment: Text.AlignHCenter
                     font: Kirigami.Theme.smallFont
                     color: Kirigami.Theme.disabledTextColor
-                    text: i18n("Checking for updates…")
+                    text: L10n.i18n("Checking for updates…", [])
                 }
             }
 
@@ -423,14 +419,14 @@ Kirigami.ScrollablePage {
                     color: Kirigami.Theme.disabledTextColor
                     text: {
                         if (page.installedModel && page.installedModel.updates_available_count > 0)
-                            return i18n("Updates are available");
-                        return page.hasChecked ? i18n("All applications are up to date")
-                                               : i18n("Check for available application updates");
+                            return L10n.i18n("Updates are available", []);
+                        return page.hasChecked ? L10n.i18n("All applications are up to date", [])
+                                               : L10n.i18n("Check for available application updates", []);
                     }
                 }
 
                 Controls.Button {
-                    text: i18n("Check for Updates")
+                    text: L10n.i18n("Check for Updates", [])
                     icon.name: "view-refresh"
                     onClicked: page.installedModel.checkForUpdates()
                 }

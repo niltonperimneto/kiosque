@@ -3,4 +3,6 @@
 
 pub mod app_list;
 pub mod details;
+pub mod featured;
 pub mod installed;
+pub mod ops;

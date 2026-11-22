@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import com.kiosque
 
 // A clickable application tile: icon, name and a short summary.
 // Built on Kirigami.AbstractCard so it inherits standard hover/press
@@ -63,7 +64,8 @@ Kirigami.AbstractCard {
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: Kirigami.Units.iconSizes.huge
             Layout.preferredHeight: Kirigami.Units.iconSizes.huge
-            source: root.iconUrl
+            source: iconImage.source
+            RemoteImage { id: iconImage; url: root.iconUrl; kind: "icon:128" }
             sourceSize.width: Kirigami.Units.iconSizes.huge
             sourceSize.height: Kirigami.Units.iconSizes.huge
             asynchronous: true

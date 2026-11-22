@@ -5,7 +5,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
+import com.kiosque
 
 Kirigami.ShadowedRectangle {
     id: root
@@ -68,7 +68,7 @@ Kirigami.ShadowedRectangle {
             }
 
             Controls.Label {
-                text: i18np("%1 Review", "%1 Reviews", root.total)
+                text: L10n.i18np("%1 Review", "%1 Reviews", root.total, [])
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 color: Kirigami.Theme.disabledTextColor
                 Layout.alignment: Qt.AlignHCenter

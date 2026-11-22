@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 import "../components" as Components
 
@@ -15,7 +14,7 @@ Kirigami.ScrollablePage {
     property string categoryId: ""
     property string categoryName: ""
     
-    title: i18n(categoryName)
+    title: L10n.i18n(categoryName, [])
 
     property string searchQuery: ""
     property bool hasVisibleApps: {
@@ -33,14 +32,14 @@ Kirigami.ScrollablePage {
         id: searchField
         Layout.fillWidth: true
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-        placeholderText: i18n("Search in %1…").arg(page.title)
+        placeholderText: L10n.i18n("Search in %1…", []).arg(page.title)
         onTextChanged: page.searchQuery = text
     }
     
     actions: [
         Kirigami.Action {
             icon.name: "window-close"
-            text: i18n("Close")
+            text: L10n.i18n("Close", [])
             visible: applicationWindow().pageStack.depth > 1
             onTriggered: applicationWindow().pageStack.pop()
         }
@@ -57,9 +56,9 @@ Kirigami.ScrollablePage {
     
     function loadData() {
         if (categoryId === "") {
-            categoryModel.refresh();
+            categoryModel.load("popular", "");
         } else {
-            categoryModel.loadCategory(categoryId);
+            categoryModel.load("category", categoryId);
         }
     }
 
@@ -90,7 +89,7 @@ Kirigami.ScrollablePage {
                 spacing: Kirigami.Units.smallSpacing
                 
                 delegate: Controls.Button {
-                    text: i18n(modelData.text)
+                    text: L10n.i18n(modelData.text, [])
                     icon.name: modelData.icon
                     flat: !highlighted
                     highlighted: {
@@ -130,7 +129,7 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 8
             icon.name: "edit-find"
-            text: i18n("No Applications Found")
+            text: L10n.i18n("No Applications Found", [])
             visible: !page.categoryModel.loading && (appGridRepeater.count === 0 || !page.hasVisibleApps)
         }
 

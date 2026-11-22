@@ -129,6 +129,11 @@ impl OdrsClient {
         format!("{}/{}", self.base_url, path)
     }
 
+    /// Drop cached ratings/reviews of `app_id` so the next fetch is fresh.
+    pub async fn invalidate(&self, app_id: &str) {
+        self.cache.invalidate_odrs(app_id).await;
+    }
+
     /// Fetch aggregate ratings for an app from ODRS.
     pub async fn fetch_ratings(&self, app_id: &str) -> Result<OdrsRatings, FlathubError> {
         let cache = &self.cache;

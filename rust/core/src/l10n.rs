@@ -232,6 +232,22 @@ pub fn tr() -> &'static Translator {
     init()
 }
 
+/// [`Translator::i18n`] on the process-wide translator. Free functions,
+/// because xgettext's Rust parser only recognises plain calls as keywords.
+pub fn i18n(msgid: &str, args: &[String]) -> String {
+    tr().i18n(msgid, args)
+}
+
+/// [`Translator::i18nc`] on the process-wide translator.
+pub fn i18nc(context: &str, msgid: &str, args: &[String]) -> String {
+    tr().i18nc(context, msgid, args)
+}
+
+/// [`Translator::i18np`] on the process-wide translator.
+pub fn i18np(singular: &str, plural: &str, n: i64, args: &[String]) -> String {
+    tr().i18np(singular, plural, n, args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

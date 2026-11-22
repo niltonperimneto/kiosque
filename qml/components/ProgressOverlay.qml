@@ -5,7 +5,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
+import com.kiosque
 
 Rectangle {
     id: root
@@ -120,7 +120,7 @@ Rectangle {
             Controls.Label {
                 text: root.progress >= 0.01
                       ? Math.round(root.progress * 100) + "%"
-                      : i18n("Preparing…")
+                      : L10n.i18n("Preparing…", [])
                 Layout.alignment: Qt.AlignHCenter
                 color: Kirigami.Theme.disabledTextColor
                 font.pointSize: Kirigami.Theme.smallFont.pointSize

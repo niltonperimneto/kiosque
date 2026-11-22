@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use kiosque_core::l10n::tr;
+use kiosque_core::l10n::i18n;
 use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender;
 use zbus::object_server::SignalEmitter;
@@ -61,14 +61,14 @@ impl Entry {
                 put("type", Variant::from("separator"));
                 return p;
             }
-            Entry::Open => (tr().i18n("Open Store", &[]), "org.kiosque.Kiosque", true),
+            Entry::Open => (i18n("Open Store", &[]), "org.kiosque.Kiosque", true),
             Entry::Check => (
-                tr().i18n("Check for Updates", &[]),
+                i18n("Check for Updates", &[]),
                 "view-refresh",
                 state.can_check,
             ),
-            Entry::UpdateAll => (tr().i18n("Update All", &[]), ICON, state.can_update),
-            Entry::Quit => (tr().i18n("Quit", &[]), "application-exit", true),
+            Entry::UpdateAll => (i18n("Update All", &[]), ICON, state.can_update),
+            Entry::Quit => (i18n("Quit", &[]), "application-exit", true),
         };
         put("label", Variant::from(label));
         put("icon-name", Variant::from(icon));
@@ -130,7 +130,7 @@ impl Item {
     }
     #[zbus(property)]
     fn title(&self) -> String {
-        tr().i18n("Kiosque Update Notifier", &[])
+        i18n("Kiosque Update Notifier", &[])
     }
     #[zbus(property)]
     fn status(&self) -> String {
@@ -156,7 +156,7 @@ impl Item {
     #[zbus(property)]
     fn tool_tip(&self) -> ToolTip {
         let tip = self.0.state.lock().unwrap().tooltip.clone();
-        (ICON.into(), vec![], tr().i18n("Kiosque", &[]), tip)
+        (ICON.into(), vec![], i18n("Kiosque", &[]), tip)
     }
 
     fn activate(&self, _x: i32, _y: i32) {

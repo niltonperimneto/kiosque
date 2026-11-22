@@ -5,7 +5,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
+import com.kiosque
 
 // The "App of the Day" spotlight — a full-width feature surface built on the
 // shared FeatureCard so it shares the exact same flair as the hero carousel.
@@ -29,7 +29,8 @@ FeatureCard {
         spacing: Kirigami.Units.largeSpacing * 2
 
         Image {
-            source: root.cardIconUrl
+            source: iconImage.source
+            RemoteImage { id: iconImage; url: root.cardIconUrl; kind: "icon:128" }
             Layout.preferredWidth: root.iconDim
             Layout.preferredHeight: root.iconDim
             Layout.alignment: Qt.AlignVCenter
@@ -53,7 +54,7 @@ FeatureCard {
 
             // Eyebrow label — accent coloured so the spotlight reads instantly.
             Controls.Label {
-                text: i18n("App of the Day")
+                text: L10n.i18n("App of the Day", [])
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 font.bold: true
                 font.capitalization: Font.AllUppercase
@@ -82,7 +83,7 @@ FeatureCard {
         }
 
         Controls.Button {
-            text: i18n("View Details")
+            text: L10n.i18n("View Details", [])
             icon.name: "go-next-symbolic"
             highlighted: true
             visible: !root.isNarrow

@@ -5,14 +5,13 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 import "../components" as Components
 
 Kirigami.ScrollablePage {
     id: page
 
-    title: i18n("Storefront")
+    title: L10n.i18n("Storefront", [])
     supportsRefreshing: true
 
     // Search lives in the toolbar so it stays accessible while scrolling.
@@ -20,12 +19,12 @@ Kirigami.ScrollablePage {
         id: searchField
         Layout.fillWidth: true
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-        placeholderText: i18n("Search applications…")
+        placeholderText: L10n.i18n("Search applications…", [])
         onAccepted: {
             if (text.length > 0) {
-                appListModel.search(text);
+                appListModel.load("search", text);
             } else {
-                appListModel.refresh();
+                appListModel.load("popular", "");
             }
         }
     }
@@ -45,18 +44,18 @@ Kirigami.ScrollablePage {
     readonly property real contentMaxWidth: Kirigami.Units.gridUnit * 70
 
     Component.onCompleted: {
-        popularModel.loadPopular();
-        newModel.loadNew();
-        updatedModel.loadUpdated();
+        popularModel.load("popular", "");
+        newModel.load("new", "");
+        updatedModel.load("updated", "");
     }
 
     onRefreshingChanged: {
         if (refreshing) {
             featuredModel.refresh();
-            popularModel.loadPopular();
-            newModel.loadNew();
-            updatedModel.loadUpdated();
-            appListModel.refresh();
+            popularModel.load("popular", "");
+            newModel.load("new", "");
+            updatedModel.load("updated", "");
+            appListModel.load("popular", "");
             refreshing = false;
         }
     }
@@ -114,7 +113,7 @@ Kirigami.ScrollablePage {
 
             Kirigami.Heading {
                 level: 2
-                text: i18n("Browse by Category")
+                text: L10n.i18n("Browse by Category", [])
                 Layout.fillWidth: true
                 Layout.leftMargin: Kirigami.Units.largeSpacing
                 Layout.rightMargin: Kirigami.Units.largeSpacing
@@ -145,7 +144,7 @@ Kirigami.ScrollablePage {
                     Components.CategoryChip {
                         id: chip
                         anchors.verticalCenter: parent.verticalCenter
-                        label: i18n(categoryDelegate.text)
+                        label: L10n.i18n(categoryDelegate.text, [])
                         categoryId: categoryDelegate.category
                         onClicked: {
                             applicationWindow().currentSection = "categories";
@@ -168,19 +167,19 @@ Kirigami.ScrollablePage {
 
             Components.HorizontalAppList {
                 Layout.fillWidth: true
-                title: i18n("Popular Applications")
+                title: L10n.i18n("Popular Applications", [])
                 appModel: page.popularModel
             }
 
             Components.HorizontalAppList {
                 Layout.fillWidth: true
-                title: i18n("New & Noteworthy")
+                title: L10n.i18n("New & Noteworthy", [])
                 appModel: page.newModel
             }
 
             Components.HorizontalAppList {
                 Layout.fillWidth: true
-                title: i18n("Recently Updated")
+                title: L10n.i18n("Recently Updated", [])
                 appModel: page.updatedModel
             }
         }
@@ -200,8 +199,8 @@ Kirigami.ScrollablePage {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: appGrid.count > 0
-                    ? i18np("%1 result for “%2”", "%1 results for “%2”", appGrid.count, page.activeSearchQuery)
-                    : i18n("Search Results")
+                    ? L10n.i18np("%1 result for “%2”", "%1 results for “%2”", appGrid.count, [String(page.activeSearchQuery)])
+                    : L10n.i18n("Search Results", [])
             }
 
             // Loading state
@@ -219,8 +218,8 @@ Kirigami.ScrollablePage {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Kirigami.Units.gridUnit * 8
                 icon.name: "edit-find"
-                text: i18n("No Applications Found")
-                explanation: i18n("Try a different search term or category")
+                text: L10n.i18n("No Applications Found", [])
+                explanation: L10n.i18n("Try a different search term or category", [])
                 visible: (!page.appListModel || !page.appListModel.loading) && appGrid.count === 0
             }
 

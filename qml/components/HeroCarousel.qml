@@ -5,7 +5,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
+import com.kiosque
 
 ColumnLayout {
     id: root
@@ -61,7 +61,8 @@ ColumnLayout {
                         Image {
                             id: appIcon
                             z: 1
-                            source: slideDelegate.iconUrl
+                            source: iconImage.source
+                            RemoteImage { id: iconImage; url: slideDelegate.iconUrl; kind: "icon:128" }
                             sourceSize.width: 120
                             sourceSize.height: 120
                             width: 120
@@ -119,7 +120,7 @@ ColumnLayout {
                         // View Details Button (anchored to bottom-right of the card, clearing right arrow)
                         Controls.Button {
                             id: viewDetailsButton
-                            text: i18n("View Details")
+                            text: L10n.i18n("View Details", [])
                             icon.name: "go-next-symbolic"
                             highlighted: hovered
 

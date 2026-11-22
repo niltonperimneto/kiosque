@@ -5,18 +5,18 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
+import com.kiosque
 
 Kirigami.Page {
     id: page
-    title: i18n("Categories")
+    title: L10n.i18n("Categories", [])
 
     padding: 0
 
     actions: [
         Kirigami.Action {
             icon.name: "window-close"
-            text: i18n("Close")
+            text: L10n.i18n("Close", [])
             visible: applicationWindow().pageStack.depth > 1
             onTriggered: applicationWindow().pageStack.pop()
         }
@@ -66,7 +66,7 @@ Kirigami.Page {
                 }
 
                 Controls.Label {
-                    text: i18n(model.text)
+                    text: L10n.i18n(model.text, [])
                     font.bold: true
                     Layout.alignment: Qt.AlignHCenter
                     wrapMode: Text.WordWrap

@@ -1,657 +1,402 @@
-use cxx_qt::{CxxQtType, Threading};
+//! `InstalledModel`: installed apps/runtimes and the update selection.
+//!
+//! Rows come from [`InstalledView`]; installed/update state comes from the
+//! shared registry, so changes made by a detail page, the daemon or another
+//! window show up here. Progress values are the registry's real job
+//! progress (0…1).
 
-use crate::bridge::util;
-use crate::view::installed::sort_items_helper;
+use std::sync::Arc;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
+use qtbridge::{QModelItem, qobject};
+use tokio_util::sync::CancellationToken;
 
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
+use crate::view::installed::{InstalledEntry, InstalledView};
 
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
+pub use object::InstalledModel;
 
-        include!("cxx-qt-lib/qbytearray.h");
-        type QByteArray = cxx_qt_lib::QByteArray;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-    }
-
-    unsafe extern "C++" {
-        include!(<QtCore/QAbstractListModel>);
-        type QAbstractListModel;
-    }
-
-    unsafe extern "RustQt" {
-        #[qobject]
-        #[base = QAbstractListModel]
-        #[qml_element]
-        #[qproperty(bool, loading)]
-        #[qproperty(QString, uninstalling_app_id)]
-        #[qproperty(f64, uninstall_progress)]
-        #[qproperty(bool, checking_updates)]
-        #[qproperty(bool, updating)]
-        #[qproperty(f64, update_progress)]
-        #[qproperty(QString, update_status_text)]
-        // Reactive counters — QML bindings update automatically when these change
-        #[qproperty(i32, updates_available_count)]
-        #[qproperty(i32, updates_checked_count)]
-        // Model-side filter state
-        #[qproperty(bool, show_runtimes)]
-        type InstalledModel = super::InstalledModelRust;
-
-        #[qinvokable]
-        #[cxx_override]
-        fn data(self: &InstalledModel, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[qinvokable]
-        #[cxx_name = "rowCount"]
-        #[cxx_override]
-        fn row_count(self: &InstalledModel, parent: &QModelIndex) -> i32;
-
-        #[qinvokable]
-        #[cxx_name = "roleNames"]
-        #[cxx_override]
-        fn role_names(self: &InstalledModel) -> QHash_i32_QByteArray;
-
-        #[qinvokable]
-        fn refresh(self: Pin<&mut InstalledModel>);
-
-        #[qinvokable]
-        #[cxx_name = "uninstallApp"]
-        fn uninstall_app(self: Pin<&mut InstalledModel>, index: i32);
-
-        #[qinvokable]
-        #[cxx_name = "launchApp"]
-        fn launch_app(self: Pin<&mut InstalledModel>, index: i32);
-
-        #[qinvokable]
-        #[cxx_name = "sortModel"]
-        fn sort_model(self: Pin<&mut InstalledModel>, criterion: QString, ascending: bool);
-
-        #[qinvokable]
-        #[cxx_name = "checkForUpdates"]
-        fn check_for_updates(self: Pin<&mut InstalledModel>);
-
-        #[qinvokable]
-        #[cxx_name = "toggleUpdateChecked"]
-        fn toggle_update_checked(self: Pin<&mut InstalledModel>, index: i32);
-
-        #[qinvokable]
-        #[cxx_name = "updateSelectedApps"]
-        fn update_selected_apps(self: Pin<&mut InstalledModel>);
-
-        #[qinvokable]
-        #[cxx_name = "setAllUpdatesChecked"]
-        fn set_all_updates_checked(self: Pin<&mut InstalledModel>, checked: bool);
-
-        // Filter setters — call begin/endResetModel around the state change
-        #[qinvokable]
-        #[cxx_name = "applySearchFilter"]
-        fn apply_search_filter(self: Pin<&mut InstalledModel>, filter: QString);
-
-        #[qinvokable]
-        #[cxx_name = "applyShowUpdatesOnly"]
-        fn apply_show_updates_only(self: Pin<&mut InstalledModel>, enabled: bool);
-
-        #[qinvokable]
-        #[cxx_name = "applyShowRuntimes"]
-        fn apply_show_runtimes(self: Pin<&mut InstalledModel>, enabled: bool);
-    }
-
-    unsafe extern "RustQt" {
-        #[inherit]
-        #[cxx_name = "beginResetModel"]
-        fn begin_reset_model(self: Pin<&mut InstalledModel>);
-
-        #[inherit]
-        #[cxx_name = "endResetModel"]
-        fn end_reset_model(self: Pin<&mut InstalledModel>);
-    }
-
-    impl cxx_qt::Threading for InstalledModel {}
+#[derive(Debug, Default, Clone, PartialEq, QModelItem)]
+#[allow(non_snake_case)]
+pub struct InstalledItem {
+    pub name: String,
+    pub appId: String,
+    pub version: String,
+    pub size: String,
+    pub origin: String,
+    pub hasUpdate: bool,
+    pub isChecked: bool,
+    pub isRuntime: bool,
+    pub sectionGroup: String,
 }
 
-pub use kiosque_core::entries::InstalledEntry;
-
-pub struct InstalledModelRust {
-    pub items: Vec<InstalledEntry>,
-    pub current_sort_criterion: String,
-    pub current_sort_ascending: bool,
-    pub loading: bool,
-    pub uninstalling_app_id: cxx_qt_lib::QString,
-    pub uninstall_progress: f64,
-    pub checking_updates: bool,
-    pub updating: bool,
-    pub update_progress: f64,
-    pub update_status_text: cxx_qt_lib::QString,
-    pub updates_available_count: i32,
-    pub updates_checked_count: i32,
-    // Filter state (not exposed as qproperty — set via invokables)
-    pub search_filter: String,
-    pub show_updates_only: bool,
-    // show_runtimes is a qproperty so the section toggle in QML can bind to it
-    pub show_runtimes: bool,
-    pub filtered_indices_cache: std::cell::RefCell<Option<Vec<usize>>>,
-    watch: Option<tokio_util::sync::CancellationToken>,
-}
-
-impl Default for InstalledModelRust {
-    fn default() -> Self {
+impl From<&InstalledEntry> for InstalledItem {
+    fn from(e: &InstalledEntry) -> Self {
         Self {
-            items: Vec::new(),
-            watch: None,
-            current_sort_criterion: "name".to_string(),
-            current_sort_ascending: true,
-            loading: false,
-            uninstalling_app_id: cxx_qt_lib::QString::from(""),
-            uninstall_progress: 0.0,
-            checking_updates: false,
-            updating: false,
-            update_progress: 0.0,
-            update_status_text: cxx_qt_lib::QString::from(""),
-            updates_available_count: 0,
-            updates_checked_count: 0,
-            search_filter: String::new(),
-            show_updates_only: false,
-            show_runtimes: false,
-            filtered_indices_cache: std::cell::RefCell::new(None),
+            name: e.name.clone(),
+            appId: e.app_id.clone(),
+            version: e.version.clone(),
+            size: e.size.clone(),
+            origin: e.origin.clone(),
+            hasUpdate: e.has_update,
+            isChecked: e.is_checked_for_update,
+            isRuntime: e.is_runtime,
+            sectionGroup: if e.has_update { "updates" } else { "uptodate" }.into(),
         }
     }
 }
 
-impl Drop for InstalledModelRust {
-    fn drop(&mut self) {
-        if let Some(watch) = &self.watch {
-            watch.cancel();
-        }
+#[qobject(Base = QListModel, NoQmlElement)]
+mod object {
+    use qtbridge::{QListModel, QListModelBase, QmlObject};
+
+    use super::*;
+    use crate::view::ops;
+
+    #[derive(Default)]
+    pub struct InstalledModel {
+        pub(super) view: InstalledView,
+        pub(super) rows: Vec<InstalledItem>,
+        pub(super) loading: bool,
+        pub(super) count: i32,
+        pub(super) uninstalling_app_id: String,
+        pub(super) uninstall_progress: f64,
+        pub(super) checking_updates: bool,
+        pub(super) updating: bool,
+        pub(super) update_progress: f64,
+        pub(super) update_status_text: String,
+        pub(super) updates_available_count: i32,
+        pub(super) updates_checked_count: i32,
+        pub(super) show_runtimes: bool,
+        pub(super) watch: Option<CancellationToken>,
     }
-}
 
-impl qobject::InstalledModel {
-    pub const NAME_ROLE: i32 = 256;
-    pub const APP_ID_ROLE: i32 = 257;
-    pub const VERSION_ROLE: i32 = 258;
-    pub const SIZE_ROLE: i32 = 259;
-    pub const ORIGIN_ROLE: i32 = 260;
-    pub const HAS_UPDATE_ROLE: i32 = 261;
-    pub const IS_CHECKED_ROLE: i32 = 262;
-    pub const IS_RUNTIME_ROLE: i32 = 263;
-    pub const SECTION_GROUP_ROLE: i32 = 264;
-
-    /// Returns the indices into `self.items` that pass the current filter.
-    fn filtered_indices(&self) -> Vec<usize> {
-        if let Ok(cache) = self.filtered_indices_cache.try_borrow() {
-            if let Some(ref indices) = *cache {
-                return indices.clone();
+    impl Drop for InstalledModel {
+        fn drop(&mut self) {
+            if let Some(w) = &self.watch {
+                w.cancel();
             }
         }
+    }
 
-        let filter = self.search_filter.to_lowercase();
-        let updates_only = self.show_updates_only;
-        let show_runtimes = self.show_runtimes;
-
-        let indices: Vec<usize> = self
-            .items
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| {
-                // Runtimes are hidden unless the user has toggled them on
-                if item.is_runtime && !show_runtimes {
-                    return false;
+    impl QListModel for InstalledModel {
+        type Item = InstalledItem;
+        fn len(&self) -> usize {
+            self.rows.len()
+        }
+        fn get(&self, index: usize) -> Option<&InstalledItem> {
+            self.rows.get(index)
+        }
+        fn set_unnotified(&mut self, index: usize, value: InstalledItem) -> bool {
+            match self.rows.get_mut(index) {
+                Some(row) => {
+                    *row = value;
+                    true
                 }
-                let matches_search = filter.is_empty()
-                    || item.name.to_lowercase().contains(&filter)
-                    || item.app_id.to_lowercase().contains(&filter);
-                let matches_updates = !updates_only || item.has_update;
-                matches_search && matches_updates
-            })
-            .map(|(i, _)| i)
-            .collect();
-
-        if let Ok(mut cache) = self.filtered_indices_cache.try_borrow_mut() {
-            *cache = Some(indices.clone());
+                None => false,
+            }
         }
-        indices
-    }
-
-    pub fn data(&self, index: &cxx_qt_lib::QModelIndex, role: i32) -> cxx_qt_lib::QVariant {
-        if !index.is_valid() {
-            return cxx_qt_lib::QVariant::default();
-        }
-        let filtered = self.filtered_indices();
-        let row = index.row() as usize;
-        let actual_idx = match filtered.get(row) {
-            Some(&i) => i,
-            None => return cxx_qt_lib::QVariant::default(),
-        };
-        let item = match self.items.get(actual_idx) {
-            Some(i) => i,
-            None => return cxx_qt_lib::QVariant::default(),
-        };
-
-        match role {
-            Self::NAME_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.name)),
-            Self::APP_ID_ROLE => {
-                cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.app_id))
-            }
-            Self::VERSION_ROLE => {
-                cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.version))
-            }
-            Self::SIZE_ROLE => cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.size)),
-            Self::ORIGIN_ROLE => {
-                cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(&item.origin))
-            }
-            Self::HAS_UPDATE_ROLE => cxx_qt_lib::QVariant::from(&item.has_update),
-            Self::IS_CHECKED_ROLE => cxx_qt_lib::QVariant::from(&item.is_checked_for_update),
-            Self::IS_RUNTIME_ROLE => cxx_qt_lib::QVariant::from(&item.is_runtime),
-            Self::SECTION_GROUP_ROLE => {
-                let group = if item.has_update {
-                    "updates"
-                } else {
-                    "uptodate"
-                };
-                cxx_qt_lib::QVariant::from(&cxx_qt_lib::QString::from(group))
-            }
-            _ => cxx_qt_lib::QVariant::default(),
+        fn reset_unnotified(&mut self) {
+            self.rows = (0..self.view.len())
+                .filter_map(|r| self.view.row(r).map(InstalledItem::from))
+                .collect();
         }
     }
 
-    pub fn row_count(&self, parent: &cxx_qt_lib::QModelIndex) -> i32 {
-        if parent.is_valid() {
-            return 0;
+    impl InstalledModel {
+        qproperty!("loading", Read = get_loading, Notify = loading_changed);
+        qproperty!("count", Read = get_count, Notify = count_changed);
+        qproperty!("uninstalling_app_id", Read = get_uninstalling_app_id, Notify = uninstalling_app_id_changed);
+        qproperty!("uninstall_progress", Read = get_uninstall_progress, Notify = uninstall_progress_changed);
+        qproperty!("checking_updates", Read = get_checking_updates, Notify = checking_updates_changed);
+        qproperty!("updating", Read = get_updating, Notify = updating_changed);
+        qproperty!("update_progress", Read = get_update_progress, Notify = update_progress_changed);
+        qproperty!("update_status_text", Read = get_update_status_text, Notify = update_status_text_changed);
+        qproperty!("updates_available_count", Read = get_updates_available_count, Notify = updates_available_count_changed);
+        qproperty!("updates_checked_count", Read = get_updates_checked_count, Notify = updates_checked_count_changed);
+        qproperty!("show_runtimes", Read = get_show_runtimes, Notify = show_runtimes_changed);
+
+        fn get_loading(&self) -> bool {
+            self.loading
         }
-        self.filtered_indices().len() as i32
+        fn get_count(&self) -> i32 {
+            self.count
+        }
+        fn get_uninstalling_app_id(&self) -> String {
+            self.uninstalling_app_id.clone()
+        }
+        fn get_uninstall_progress(&self) -> f64 {
+            self.uninstall_progress
+        }
+        fn get_checking_updates(&self) -> bool {
+            self.checking_updates
+        }
+        fn get_updating(&self) -> bool {
+            self.updating
+        }
+        fn get_update_progress(&self) -> f64 {
+            self.update_progress
+        }
+        fn get_update_status_text(&self) -> String {
+            self.update_status_text.clone()
+        }
+        fn get_updates_available_count(&self) -> i32 {
+            self.updates_available_count
+        }
+        fn get_updates_checked_count(&self) -> i32 {
+            self.updates_checked_count
+        }
+        fn get_show_runtimes(&self) -> bool {
+            self.show_runtimes
+        }
+
+        #[qsignal]
+        pub fn loading_changed(&mut self);
+        #[qsignal]
+        pub fn count_changed(&mut self);
+        #[qsignal]
+        pub fn uninstalling_app_id_changed(&mut self);
+        #[qsignal]
+        pub fn uninstall_progress_changed(&mut self);
+        #[qsignal]
+        pub fn checking_updates_changed(&mut self);
+        #[qsignal]
+        pub fn updating_changed(&mut self);
+        #[qsignal]
+        pub fn update_progress_changed(&mut self);
+        #[qsignal]
+        pub fn update_status_text_changed(&mut self);
+        #[qsignal]
+        pub fn updates_available_count_changed(&mut self);
+        #[qsignal]
+        pub fn updates_checked_count_changed(&mut self);
+        #[qsignal]
+        pub fn show_runtimes_changed(&mut self);
+
+        /// Reload installed refs; the model follows the registry afterwards.
+        #[qslot]
+        fn refresh(&mut self) {
+            self.set_loading(true);
+            self.ensure_watch();
+            let handle = self.get_thread_handle();
+            crate::bridge::spawn(async move {
+                if let Err(e) = ops::reload_installed().await {
+                    kerr!("InstalledModel::refresh: {}", e);
+                }
+                handle.invoke_mut(|m| {
+                    m.sync_registry();
+                    m.set_loading(false);
+                });
+            });
+        }
+
+        #[qslot(qml_name = "checkForUpdates")]
+        fn check_for_updates(&mut self) {
+            if self.checking_updates {
+                return;
+            }
+            self.set_checking_updates(true);
+            self.ensure_watch();
+            let handle = self.get_thread_handle();
+            crate::bridge::spawn(async move {
+                if let Err(e) = ops::reload_updates().await {
+                    kerr!("InstalledModel::check_for_updates: {}", e);
+                }
+                handle.invoke_mut(|m| {
+                    m.sync_registry();
+                    m.set_checking_updates(false);
+                });
+            });
+        }
+
+        #[qslot(qml_name = "sortModel")]
+        fn sort_model(&mut self, criterion: String, ascending: bool) {
+            self.view.sort(&criterion, ascending);
+            self.publish();
+        }
+
+        #[qslot(qml_name = "applySearchFilter")]
+        fn apply_search_filter(&mut self, filter: String) {
+            let (updates, runtimes) = (self.view.updates_only, self.view.show_runtimes);
+            self.view.set_filter(&filter, updates, runtimes);
+            self.publish();
+        }
+
+        #[qslot(qml_name = "applyShowUpdatesOnly")]
+        fn apply_show_updates_only(&mut self, enabled: bool) {
+            let search = self.view.search.clone();
+            let runtimes = self.view.show_runtimes;
+            self.view.set_filter(&search, enabled, runtimes);
+            self.publish();
+        }
+
+        #[qslot(qml_name = "applyShowRuntimes")]
+        fn apply_show_runtimes(&mut self, enabled: bool) {
+            let search = self.view.search.clone();
+            let updates = self.view.updates_only;
+            self.view.set_filter(&search, updates, enabled);
+            self.publish();
+            self.set_show_runtimes(enabled);
+        }
+
+        /// Flip one row's checkbox: a `dataChanged` for that row, no reset.
+        #[qslot(qml_name = "toggleUpdateChecked")]
+        fn toggle_update_checked(&mut self, index: i32) {
+            let Ok(row) = usize::try_from(index) else {
+                return;
+            };
+            if self.view.toggle_checked(row)
+                && let Some(item) = self.view.row(row).map(InstalledItem::from)
+            {
+                self.set(row, item);
+                self.sync_counts();
+            }
+        }
+
+        #[qslot(qml_name = "setAllUpdatesChecked")]
+        fn set_all_updates_checked(&mut self, checked: bool) {
+            for row in self.view.set_all_checked(checked) {
+                if let Some(item) = self.view.row(row).map(InstalledItem::from) {
+                    self.set(row, item);
+                }
+            }
+            self.sync_counts();
+        }
+
+        #[qslot(qml_name = "updateSelectedApps")]
+        fn update_selected_apps(&mut self) {
+            let ids = self.view.selected_updates();
+            if ids.is_empty() || self.updating {
+                return;
+            }
+            self.set_update_progress(0.0);
+            self.set_update_status_text(kiosque_core::l10n::i18n("Preparing update…", &[]));
+            self.set_updating(true);
+            let handle = Arc::new(self.get_thread_handle());
+            let progress = handle.clone();
+            crate::bridge::spawn(async move {
+                let result = ops::update(&ids, move |p| {
+                    progress.invoke_mut(move |m| {
+                        m.set_update_progress(p.fraction.max(0.0));
+                        if !p.status.is_empty() {
+                            m.set_update_status_text(p.status);
+                        }
+                    });
+                })
+                .await;
+                handle.invoke_mut(move |m| {
+                    if let Err(e) = result {
+                        kerr!("InstalledModel::update_selected_apps: {}", e);
+                    }
+                    m.set_update_progress(0.0);
+                    m.set_update_status_text(String::new());
+                    m.set_updating(false);
+                });
+            });
+        }
+
+        #[qslot(qml_name = "uninstallApp")]
+        fn uninstall_app(&mut self, index: i32) {
+            let Some(id) = self.app_id_at(index) else {
+                return;
+            };
+            self.set_uninstall_progress(0.0);
+            self.set_uninstalling_app_id(id.clone());
+            let handle = Arc::new(self.get_thread_handle());
+            let progress = handle.clone();
+            crate::bridge::spawn(async move {
+                let result = ops::uninstall(&id, move |p| {
+                    progress.invoke_mut(move |m| m.set_uninstall_progress(p.fraction.max(0.0)));
+                })
+                .await;
+                handle.invoke_mut(move |m| {
+                    if let Err(e) = result {
+                        kerr!("InstalledModel::uninstall_app: {}", e);
+                    }
+                    m.set_uninstall_progress(0.0);
+                    m.set_uninstalling_app_id(String::new());
+                });
+            });
+        }
+
+        #[qslot(qml_name = "launchApp")]
+        fn launch_app(&mut self, index: i32) {
+            let Some(id) = self.app_id_at(index) else {
+                return;
+            };
+            crate::bridge::spawn(async move {
+                if let Err(e) = ops::launch(&id).await {
+                    kerr!("InstalledModel::launch_app: {}", e);
+                }
+            });
+        }
     }
 
-    pub fn role_names(&self) -> cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray> {
-        let mut roles = cxx_qt_lib::QHash::<cxx_qt_lib::QHashPair_i32_QByteArray>::default();
-        roles.insert(Self::NAME_ROLE, cxx_qt_lib::QByteArray::from("name"));
-        roles.insert(Self::APP_ID_ROLE, cxx_qt_lib::QByteArray::from("appId"));
-        roles.insert(Self::VERSION_ROLE, cxx_qt_lib::QByteArray::from("version"));
-        roles.insert(Self::SIZE_ROLE, cxx_qt_lib::QByteArray::from("size"));
-        roles.insert(Self::ORIGIN_ROLE, cxx_qt_lib::QByteArray::from("origin"));
-        roles.insert(
-            Self::HAS_UPDATE_ROLE,
-            cxx_qt_lib::QByteArray::from("hasUpdate"),
-        );
-        roles.insert(
-            Self::IS_CHECKED_ROLE,
-            cxx_qt_lib::QByteArray::from("isChecked"),
-        );
-        roles.insert(
-            Self::IS_RUNTIME_ROLE,
-            cxx_qt_lib::QByteArray::from("isRuntime"),
-        );
-        roles.insert(
-            Self::SECTION_GROUP_ROLE,
-            cxx_qt_lib::QByteArray::from("sectionGroup"),
-        );
-        roles
-    }
+    impl InstalledModel {
+        fn app_id_at(&self, index: i32) -> Option<String> {
+            let row = usize::try_from(index).ok()?;
+            self.view.row(row).map(|e| e.app_id.clone())
+        }
 
-    /// Sync the `updates_available_count` / `updates_checked_count` qproperties
-    /// from `self.items`. Call this after any mutation that can change update state.
-    fn sync_update_counts(mut self: std::pin::Pin<&mut Self>) {
-        let available = self.items.iter().filter(|i| i.has_update).count() as i32;
-        let checked = self
-            .items
-            .iter()
-            .filter(|i| i.has_update && i.is_checked_for_update)
-            .count() as i32;
-        self.as_mut().set_updates_available_count(available);
-        self.as_mut().set_updates_checked_count(checked);
-    }
+        /// Reset the rows from the view, then publish derived counters.
+        fn publish(&mut self) {
+            self.reset();
+            self.set_count(self.rows.len() as i32);
+            self.sync_counts();
+        }
 
-    pub fn refresh(mut self: std::pin::Pin<&mut Self>) {
-        self.as_mut().set_loading(true);
-        if self.watch.is_none() {
-            let cancel = tokio_util::sync::CancellationToken::new();
-            self.as_mut().rust_mut().watch = Some(cancel.clone());
+        fn sync_counts(&mut self) {
+            let (available, checked) = self.view.update_counts();
+            self.set_updates_available_count(available as i32);
+            self.set_updates_checked_count(checked as i32);
+        }
+
+        fn sync_registry(&mut self) {
+            self.view.set_items(ops::installed_entries());
+            self.publish();
+        }
+
+        /// Follow registry changes for the lifetime of this object.
+        fn ensure_watch(&mut self) {
+            if self.watch.is_some() {
+                return;
+            }
+            let cancel = CancellationToken::new();
+            self.watch = Some(cancel.clone());
             let mut events = crate::services::services().registry.subscribe();
-            let thread = self.qt_thread();
-            crate::runtime::runtime().spawn(async move {
+            let handle = self.get_thread_handle();
+            crate::bridge::spawn(async move {
+                use kiosque_core::registry::Event;
                 loop {
                     tokio::select! {
                         _ = cancel.cancelled() => break,
-                        event = events.recv() => {
-                            if matches!(event, Ok(crate::registry::Event::Installed | crate::registry::Event::Updates)) {
-                                if thread.queue(|mut object| {
-                                    object.as_mut().sync_registry();
-                                }).is_err() { break; }
+                        event = events.recv() => match event {
+                            Ok(Event::Installed | Event::Updates) => {
+                                handle.invoke_mut(|m| m.sync_registry());
                             }
-                        }
-                    }
-                }
-            });
-        }
-        let qt_thread = self.qt_thread();
-        crate::runtime::runtime().spawn(async move {
-            let services = crate::services::services();
-            if let Err(error) = services.registry.reload_installed(&*services.backend).await {
-                kerr!("InstalledModel::refresh: {}", error);
-            }
-            let _ = qt_thread.queue(|mut object| {
-                object.as_mut().sync_registry();
-                object.as_mut().set_loading(false);
-            });
-        });
-    }
-
-    fn sync_registry(mut self: std::pin::Pin<&mut Self>) {
-        let registry = &crate::services::services().registry;
-        let items = registry
-            .installed()
-            .into_iter()
-            .map(|app| {
-                let has_update = registry.state(&app.id).update.is_some();
-                let is_runtime = app.is_runtime();
-                InstalledEntry {
-                    name: app.name,
-                    app_id: app.id,
-                    version: app.version,
-                    size: format!("{} B", app.installed_size),
-                    origin: app.origin,
-                    has_update,
-                    is_checked_for_update: has_update,
-                    is_runtime,
-                }
-            })
-            .collect();
-        self.as_mut().begin_reset_model();
-        {
-            let mut state = self.as_mut().rust_mut();
-            state.items = items;
-            state.filtered_indices_cache.replace(None);
-            let criterion = state.current_sort_criterion.clone();
-            let ascending = state.current_sort_ascending;
-            sort_items_helper(&mut state.items, &criterion, ascending);
-        }
-        self.as_mut().end_reset_model();
-        self.as_mut().sync_update_counts();
-    }
-
-    pub fn sort_model(
-        self: std::pin::Pin<&mut Self>,
-        criterion: cxx_qt_lib::QString,
-        ascending: bool,
-    ) {
-        let criterion_str = criterion.to_string();
-        let mut qobject = self;
-        qobject.as_mut().begin_reset_model();
-        {
-            let mut rust_mut = qobject.as_mut().rust_mut();
-            rust_mut.current_sort_criterion = criterion_str.clone();
-            rust_mut.current_sort_ascending = ascending;
-            rust_mut.filtered_indices_cache.replace(None);
-            let c = rust_mut.current_sort_criterion.clone();
-            sort_items_helper(&mut rust_mut.items, &c, ascending);
-        }
-        qobject.as_mut().end_reset_model();
-    }
-
-    pub fn apply_search_filter(self: std::pin::Pin<&mut Self>, filter: cxx_qt_lib::QString) {
-        let filter_str = filter.to_string();
-        let mut qobject = self;
-        qobject.as_mut().begin_reset_model();
-        {
-            let mut rust_mut = qobject.as_mut().rust_mut();
-            rust_mut.search_filter = filter_str;
-            rust_mut.filtered_indices_cache.replace(None);
-        }
-        qobject.as_mut().end_reset_model();
-    }
-
-    pub fn apply_show_updates_only(self: std::pin::Pin<&mut Self>, enabled: bool) {
-        let mut qobject = self;
-        qobject.as_mut().begin_reset_model();
-        {
-            let mut rust_mut = qobject.as_mut().rust_mut();
-            rust_mut.show_updates_only = enabled;
-            rust_mut.filtered_indices_cache.replace(None);
-        }
-        qobject.as_mut().end_reset_model();
-    }
-
-    pub fn apply_show_runtimes(self: std::pin::Pin<&mut Self>, enabled: bool) {
-        let mut qobject = self;
-        qobject.as_mut().begin_reset_model();
-        {
-            let mut rust_mut = qobject.as_mut().rust_mut();
-            rust_mut.show_runtimes = enabled;
-            rust_mut.filtered_indices_cache.replace(None);
-        }
-        qobject.as_mut().end_reset_model();
-        // Keep the qproperty in sync so QML bindings on show_runtimes still work
-        qobject.as_mut().set_show_runtimes(enabled);
-    }
-
-    pub fn uninstall_app(mut self: std::pin::Pin<&mut Self>, index: i32) {
-        let filtered = self.filtered_indices();
-        let actual_idx = match filtered.get(index as usize) {
-            Some(&i) => i,
-            None => {
-                kerr!(
-                    "InstalledModel::uninstall_app: index {} out of filtered bounds",
-                    index
-                );
-                return;
-            }
-        };
-        let app_id = self.items[actual_idx].app_id.clone();
-
-        self.as_mut()
-            .set_uninstalling_app_id(cxx_qt_lib::QString::from(&app_id));
-        self.as_mut().set_uninstall_progress(0.01);
-
-        let qt_thread = self.qt_thread();
-        klog!("InstalledModel::uninstall_app: uninstalling \"{}\"", app_id);
-
-        let op_app_id = app_id.clone();
-        util::run_with_progress(
-            qt_thread,
-            async move { crate::flatpak::cli::uninstall_app(&op_app_id).await },
-            None,
-            |q, p| q.set_uninstall_progress(p),
-            |_| {},
-            move |mut q, res| {
-                q.as_mut()
-                    .set_uninstalling_app_id(cxx_qt_lib::QString::from(""));
-                q.as_mut().set_uninstall_progress(0.0);
-                match res {
-                    Ok(()) => {
-                        klog!(
-                            "InstalledModel::uninstall_app: successfully uninstalled \"{}\"",
-                            app_id
-                        );
-                        q.as_mut().refresh();
-                    }
-                    Err(e) => {
-                        kerr!("InstalledModel::uninstall_app: {}", e);
-                    }
-                }
-            },
-        );
-    }
-
-    pub fn launch_app(self: std::pin::Pin<&mut Self>, index: i32) {
-        let filtered = self.filtered_indices();
-        let actual_idx = match filtered.get(index as usize) {
-            Some(&i) => i,
-            None => {
-                kerr!(
-                    "InstalledModel::launch_app: index {} out of filtered bounds",
-                    index
-                );
-                return;
-            }
-        };
-        let app_id = self.items[actual_idx].app_id.clone();
-        klog!("InstalledModel::launch_app: launching \"{}\"", app_id);
-        crate::runtime::runtime().spawn(async move {
-            if let Err(e) = crate::flatpak::cli::launch_app(&app_id).await {
-                kerr!("InstalledModel::launch_app: {}", e);
-            }
-        });
-    }
-
-    pub fn check_for_updates(mut self: std::pin::Pin<&mut Self>) {
-        self.as_mut().set_checking_updates(true);
-        let qt_thread = self.qt_thread();
-        crate::runtime::runtime().spawn(async move {
-            let updates = match crate::flatpak::cli::list_updates().await {
-                Ok(ids) => {
-                    klog!(
-                        "InstalledModel::check_for_updates: found {} updates",
-                        ids.len()
-                    );
-                    ids
-                }
-                Err(e) => {
-                    kerr!("InstalledModel::check_for_updates: {}", e);
-                    vec![]
-                }
-            };
-
-            let _ = qt_thread.queue(move |mut qobject| {
-                qobject.as_mut().begin_reset_model();
-                {
-                    let mut rust_mut = qobject.as_mut().rust_mut();
-                    rust_mut.filtered_indices_cache.replace(None);
-
-                    let mut found_app_updates = std::collections::HashSet::new();
-
-                    for item in &mut rust_mut.items {
-                        if updates.iter().any(|u| u.application_id == item.app_id) {
-                            item.has_update = true;
-                            item.is_checked_for_update = true;
-                            found_app_updates.insert(item.app_id.clone());
-                        } else {
-                            item.has_update = false;
-                            item.is_checked_for_update = false;
-                        }
-                    }
-
-                    for up in updates {
-                        let is_runtime = up
-                            .ref_string
-                            .as_ref()
-                            .map(|r| r.starts_with("runtime/"))
-                            .unwrap_or(false);
-                        if is_runtime && !found_app_updates.contains(&up.application_id) {
-                            if !rust_mut.items.iter().any(|i| i.app_id == up.application_id) {
-                                rust_mut.items.push(InstalledEntry {
-                                    name: up.name.clone(),
-                                    app_id: up.application_id.clone(),
-                                    version: up.version.clone().unwrap_or_default(),
-                                    size: up.installed_size.clone().unwrap_or_default(),
-                                    origin: up.origin.clone().unwrap_or_default(),
-                                    has_update: true,
-                                    is_checked_for_update: true,
-                                    is_runtime: true,
-                                });
+                            Ok(Event::Job(_)) => {}
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                                handle.invoke_mut(|m| m.sync_registry());
                             }
+                            Err(_) => break,
                         }
                     }
-
-                    let criterion = rust_mut.current_sort_criterion.clone();
-                    let ascending = rust_mut.current_sort_ascending;
-                    sort_items_helper(&mut rust_mut.items, &criterion, ascending);
                 }
-                qobject.as_mut().end_reset_model();
-                qobject.as_mut().set_checking_updates(false);
-                qobject.as_mut().sync_update_counts();
             });
-        });
-    }
-
-    pub fn toggle_update_checked(self: std::pin::Pin<&mut Self>, index: i32) {
-        let filtered = self.filtered_indices();
-        let actual_idx = match filtered.get(index as usize) {
-            Some(&i) => i,
-            None => return,
-        };
-        let mut qobject = self;
-        qobject.as_mut().begin_reset_model();
-        {
-            let mut rust_mut = qobject.as_mut().rust_mut();
-            rust_mut.items[actual_idx].is_checked_for_update =
-                !rust_mut.items[actual_idx].is_checked_for_update;
         }
-        qobject.as_mut().end_reset_model();
-        qobject.as_mut().sync_update_counts();
-    }
-
-    pub fn set_all_updates_checked(self: std::pin::Pin<&mut Self>, checked: bool) {
-        let mut qobject = self;
-        qobject.as_mut().begin_reset_model();
-        {
-            let mut rust_mut = qobject.as_mut().rust_mut();
-            for item in &mut rust_mut.items {
-                if item.has_update {
-                    item.is_checked_for_update = checked;
-                }
-            }
-        }
-        qobject.as_mut().end_reset_model();
-        qobject.as_mut().sync_update_counts();
-    }
-
-    pub fn update_selected_apps(mut self: std::pin::Pin<&mut Self>) {
-        let app_ids: Vec<String> = self
-            .items
-            .iter()
-            .filter(|item| item.has_update && item.is_checked_for_update)
-            .map(|item| item.app_id.clone())
-            .collect();
-
-        if app_ids.is_empty() {
-            return;
-        }
-
-        self.as_mut().set_updating(true);
-        self.as_mut().set_update_progress(0.01);
-        self.as_mut()
-            .set_update_status_text(cxx_qt_lib::QString::from("Initializing update…"));
-        let qt_thread = self.qt_thread();
-        let qt_thread_status = qt_thread.clone();
-
-        let operation = async move {
-            crate::flatpak::cli::update_apps(&app_ids, move |line| {
-                let line_qs = cxx_qt_lib::QString::from(&line);
-                let _ = qt_thread_status.queue(move |mut qobject| {
-                    qobject.as_mut().set_update_status_text(line_qs);
-                });
-            })
-            .await
-        };
-
-        util::run_with_progress(
-            qt_thread,
-            operation,
-            None,
-            |q, p| q.set_update_progress(p),
-            |_| {},
-            |mut q, res| {
-                q.as_mut().set_updating(false);
-                q.as_mut().set_update_progress(0.0);
-                q.as_mut()
-                    .set_update_status_text(cxx_qt_lib::QString::from(""));
-                match res {
-                    Ok(()) => {
-                        klog!("InstalledModel::update_selected_apps: successfully updated");
-                    }
-                    Err(e) => {
-                        kerr!("InstalledModel::update_selected_apps: {}", e);
-                    }
-                }
-                q.as_mut().refresh();
-            },
-        );
     }
 }
+
+notify_setters!(InstalledModel {
+    set_loading: loading: bool => loading_changed,
+    set_count: count: i32 => count_changed,
+    set_uninstalling_app_id: uninstalling_app_id: String => uninstalling_app_id_changed,
+    set_uninstall_progress: uninstall_progress: f64 => uninstall_progress_changed,
+    set_checking_updates: checking_updates: bool => checking_updates_changed,
+    set_updating: updating: bool => updating_changed,
+    set_update_progress: update_progress: f64 => update_progress_changed,
+    set_update_status_text: update_status_text: String => update_status_text_changed,
+    set_updates_available_count: updates_available_count: i32 => updates_available_count_changed,
+    set_updates_checked_count: updates_checked_count: i32 => updates_checked_count_changed,
+    set_show_runtimes: show_runtimes: bool => show_runtimes_changed,
+});
+
+qml_element!(InstalledModel, "InstalledModel");

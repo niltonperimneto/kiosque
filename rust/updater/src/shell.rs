@@ -3,7 +3,7 @@
 //! in `tray.rs`/`notify.rs`, so this file is tested without a bus.
 
 use kiosque_core::daemon::DaemonEvent;
-use kiosque_core::l10n::tr;
+use kiosque_core::l10n::{i18n, i18np};
 
 /// How the process was started.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,13 +21,13 @@ pub enum Mode {
 pub fn usage() -> String {
     format!(
         "{}\n\n  --check       {}\n  --background  {}\n  --help        {}\n",
-        tr().i18n(
+        i18n(
             "Usage: kiosque-update [--check | --background | --help]",
             &[]
         ),
-        tr().i18n("Check for and install all updates once, then exit", &[]),
-        tr().i18n("Run as the autostarted background notifier", &[]),
-        tr().i18n("Show this help and exit", &[]),
+        i18n("Check for and install all updates once, then exit", &[]),
+        i18n("Run as the autostarted background notifier", &[]),
+        i18n("Show this help and exit", &[]),
     )
 }
 
@@ -109,16 +109,16 @@ pub struct Shell {
 impl Shell {
     pub fn tray(&self) -> TrayState {
         let tooltip = if self.updating {
-            tr().i18n("Kiosque: installing updates…", &[])
+            i18n("Kiosque: installing updates…", &[])
         } else if self.updates > 0 {
-            tr().i18np(
+            i18np(
                 "Kiosque: %1 update available",
                 "Kiosque: %1 updates available",
                 self.updates as i64,
                 &[],
             )
         } else {
-            tr().i18n("Kiosque: applications are up to date", &[])
+            i18n("Kiosque: applications are up to date", &[])
         };
         TrayState {
             status: if self.updating {
@@ -142,16 +142,16 @@ impl Shell {
                 self.updates = n;
                 if n > 0 && n != self.announced && !self.updating {
                     out.push(Effect::Notify(Notification {
-                        summary: tr().i18n("Software Updates Available", &[]),
-                        body: tr().i18np(
+                        summary: i18n("Software Updates Available", &[]),
+                        body: i18np(
                             "%1 application update is available.",
                             "%1 application updates are available.",
                             n as i64,
                             &[],
                         ),
                         actions: vec![
-                            ("update", tr().i18n("Update All", &[])),
-                            ("open", tr().i18n("Open Kiosque", &[])),
+                            ("update", i18n("Update All", &[])),
+                            ("open", i18n("Open Kiosque", &[])),
                         ],
                     }));
                 }
@@ -160,8 +160,8 @@ impl Shell {
             DaemonEvent::AutoUpdate(n) => {
                 self.updating = true;
                 out.push(Effect::Notify(Notification {
-                    summary: tr().i18n("Updating Applications", &[]),
-                    body: tr().i18np(
+                    summary: i18n("Updating Applications", &[]),
+                    body: i18np(
                         "Installing %1 update in the background.",
                         "Installing %1 updates in the background.",
                         n as i64,
@@ -177,15 +177,15 @@ impl Shell {
                 self.updating = false;
                 out.push(Effect::Notify(if ok {
                     Notification {
-                        summary: tr().i18n("Updates Completed", &[]),
-                        body: tr().i18n("All applications have been updated.", &[]),
+                        summary: i18n("Updates Completed", &[]),
+                        body: i18n("All applications have been updated.", &[]),
                         actions: vec![],
                     }
                 } else {
                     Notification {
-                        summary: tr().i18n("Updates Failed", &[]),
+                        summary: i18n("Updates Failed", &[]),
                         body: title,
-                        actions: vec![("open", tr().i18n("Open Kiosque", &[]))],
+                        actions: vec![("open", i18n("Open Kiosque", &[]))],
                     }
                 }));
                 // The registry refreshes updates after a transaction; ask anyway
@@ -219,8 +219,8 @@ impl Shell {
                 vec![
                     Effect::UpdateAll,
                     Effect::Notify(Notification {
-                        summary: tr().i18n("Updating Applications", &[]),
-                        body: tr().i18n(
+                        summary: i18n("Updating Applications", &[]),
+                        body: i18n(
                             "Kiosque is installing Flatpak updates in the background.",
                             &[],
                         ),

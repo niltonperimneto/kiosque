@@ -6,3 +6,5 @@ Icon=org.kiosque.Kiosque
 Terminal=false
 Type=Application
 Categories=Qt;KDE;System;
+StartupWMClass=kiosque
+Keywords=Flatpak;Flathub;Store;Software;Apps;Install;Update;

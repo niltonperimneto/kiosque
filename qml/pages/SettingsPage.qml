@@ -2,14 +2,13 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 import org.kde.kirigamiaddons.components as KirigamiAddons
 import QtCore
 
 Kirigami.ScrollablePage {
     id: page
-    title: i18n("Settings")
+    title: L10n.i18n("Settings", [])
 
     leftPadding: Kirigami.Units.largeSpacing * 2
     rightPadding: Kirigami.Units.largeSpacing * 2
@@ -19,7 +18,7 @@ Kirigami.ScrollablePage {
     actions: [
         Kirigami.Action {
             icon.name: "window-close"
-            text: i18n("Close")
+            text: L10n.i18n("Close", [])
             visible: applicationWindow().pageStack.depth > 1
             onTriggered: applicationWindow().pageStack.pop()
         }
@@ -51,11 +50,11 @@ Kirigami.ScrollablePage {
                 Layout.fillWidth: true
                 
                 Kirigami.Heading {
-                    text: i18n("Preferences")
+                    text: L10n.i18n("Preferences", [])
                     level: 2
                 }
                 Controls.Label {
-                    text: i18n("Configure updates, authentication, and flatpak repositories")
+                    text: L10n.i18n("Configure updates, authentication, and flatpak repositories", [])
                     color: Kirigami.Theme.disabledTextColor
                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.95
                 }
@@ -63,7 +62,7 @@ Kirigami.ScrollablePage {
             
             Controls.Switch {
                 id: advancedToggle
-                text: i18n("Advanced Settings")
+                text: L10n.i18n("Advanced Settings", [])
                 checked: localSettings.showAdvanced
                 onCheckedChanged: localSettings.showAdvanced = checked
                 Layout.alignment: Qt.AlignVCenter
@@ -100,7 +99,7 @@ Kirigami.ScrollablePage {
                         isMask: true
                     }
                     Kirigami.Heading {
-                        text: i18n("Automatic Updates")
+                        text: L10n.i18n("Automatic Updates", [])
                         level: 3
                         Layout.fillWidth: true
                     }
@@ -113,15 +112,15 @@ Kirigami.ScrollablePage {
 
                     Controls.Switch {
                         id: autoUpdateSwitch
-                        Kirigami.FormData.label: i18n("Enable Automatic Updates:")
+                        Kirigami.FormData.label: L10n.i18n("Enable Automatic Updates:", [])
                         checked: SettingsController.auto_update
                         onCheckedChanged: saveSettings()
                     }
 
                     Controls.ComboBox {
                         id: frequencyCombo
-                        Kirigami.FormData.label: i18n("Frequency:")
-                        model: [i18n("Daily"), i18n("Weekly")]
+                        Kirigami.FormData.label: L10n.i18n("Frequency:", [])
+                        model: [L10n.i18n("Daily", []), L10n.i18n("Weekly", [])]
                         currentIndex: SettingsController.update_frequency.toLowerCase() === "weekly" ? 1 : 0
                         enabled: autoUpdateSwitch.checked
                         visible: advancedToggle.checked
@@ -130,7 +129,7 @@ Kirigami.ScrollablePage {
 
                     Controls.TextField {
                         id: timeField
-                        Kirigami.FormData.label: i18n("Time (HH:MM):")
+                        Kirigami.FormData.label: L10n.i18n("Time (HH:MM):", [])
                         text: SettingsController.update_time
                         placeholderText: "02:00"
                         enabled: autoUpdateSwitch.checked
@@ -177,17 +176,17 @@ Kirigami.ScrollablePage {
                         isMask: true
                     }
                     Kirigami.Heading {
-                        text: i18n("Repositories")
+                        text: L10n.i18n("Repositories", [])
                         level: 3
                         Layout.fillWidth: true
                     }
                     Controls.Button {
-                        text: page.width < Kirigami.Units.gridUnit * 28 ? "" : i18n("Add Repository")
+                        text: page.width < Kirigami.Units.gridUnit * 28 ? "" : L10n.i18n("Add Repository", [])
                         icon.name: "list-add"
                         onClicked: addRepoDialog.open()
 
                         Controls.ToolTip {
-                            text: i18n("Add Repository")
+                            text: L10n.i18n("Add Repository", [])
                             visible: parent.hovered && page.width < Kirigami.Units.gridUnit * 28
                         }
                     }
@@ -228,7 +227,7 @@ Kirigami.ScrollablePage {
 
                             actions: [
                                 Kirigami.Action {
-                                    text: i18n("Remove")
+                                    text: L10n.i18n("Remove", [])
                                     icon.name: "edit-delete"
                                     onTriggered: {
                                         RepoModel.removeRemote(model.name)
@@ -276,7 +275,7 @@ Kirigami.ScrollablePage {
                         isMask: true
                     }
                     Kirigami.Heading {
-                        text: i18n("ODRS Review Account")
+                        text: L10n.i18n("ODRS Review Account", [])
                         level: 3
                         Layout.fillWidth: true
                     }
@@ -318,8 +317,14 @@ Kirigami.ScrollablePage {
                                 anchors.centerIn: parent
                                 width: parent.width - 8
                                 height: width
-                                source: SettingsController.oauth_avatar_url !== "" ? SettingsController.oauth_avatar_url : ""
+                                source: settingsAvatarImage.source
                                 name: SettingsController.oauth_username
+
+                                RemoteImage {
+                                    id: settingsAvatarImage
+                                    url: SettingsController.oauth_avatar_url
+                                    kind: "avatar"
+                                }
                             }
                         }
 
@@ -335,7 +340,7 @@ Kirigami.ScrollablePage {
                             }
 
                             Controls.Label {
-                                text: i18n("Logged in via %1").arg(
+                                text: L10n.i18n("Logged in via %1", []).arg(
                                     SettingsController.oauth_provider === "github" ? "GitHub" :
                                     SettingsController.oauth_provider === "gitlab" ? "GitLab" :
                                     SettingsController.oauth_provider === "gnome_gitlab" ? "GNOME GitLab" :
@@ -347,7 +352,7 @@ Kirigami.ScrollablePage {
                         }
 
                         Controls.Button {
-                            text: i18n("Log Out")
+                            text: L10n.i18n("Log Out", [])
                             icon.name: "log-out"
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: SettingsController.logout()
@@ -361,7 +366,7 @@ Kirigami.ScrollablePage {
                         visible: !SettingsController.is_authenticated
 
                         Controls.Label {
-                            text: i18n("To write reviews and submit application ratings, you must authenticate using an open-source development provider. Reviews are submitted pseudonymously using a secure privacy hash.")
+                            text: L10n.i18n("To write reviews and submit application ratings, you must authenticate using an open-source development provider. Reviews are submitted pseudonymously using a secure privacy hash.", [])
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                             color: Kirigami.Theme.textColor
@@ -431,7 +436,7 @@ Kirigami.ScrollablePage {
                         isMask: true
                     }
                     Kirigami.Heading {
-                        text: i18n("Privacy & Security")
+                        text: L10n.i18n("Privacy & Security", [])
                         level: 3
                         Layout.fillWidth: true
                     }
@@ -443,7 +448,7 @@ Kirigami.ScrollablePage {
                     Layout.fillWidth: true
 
                     RowLayout {
-                        Kirigami.FormData.label: i18n("Privacy User Hash:")
+                        Kirigami.FormData.label: L10n.i18n("Privacy User Hash:", [])
                         Layout.fillWidth: true
                         spacing: Kirigami.Units.smallSpacing
 
@@ -462,7 +467,7 @@ Kirigami.ScrollablePage {
                                 icon.name: "edit-copy"
                                 flat: true
                                 Controls.ToolTip {
-                                    text: i18n("Copy user hash to clipboard")
+                                    text: L10n.i18n("Copy user hash to clipboard", [])
                                     visible: parent.hovered
                                 }
                                 onClicked: {
@@ -476,24 +481,24 @@ Kirigami.ScrollablePage {
 
                     Controls.Label {
                         Layout.fillWidth: true
-                        text: i18n("This hash is computed from your login identity combined with a secure local salt. It is used pseudonymously by ODRS so you can manage your reviews without disclosing your IP address or credentials.")
+                        text: L10n.i18n("This hash is computed from your login identity combined with a secure local salt. It is used pseudonymously by ODRS so you can manage your reviews without disclosing your IP address or credentials.", [])
                         wrapMode: Text.WordWrap
                         font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
                         color: Kirigami.Theme.disabledTextColor
                     }
 
                     RowLayout {
-                        Kirigami.FormData.label: i18n("Privacy Actions:")
+                        Kirigami.FormData.label: L10n.i18n("Privacy Actions:", [])
                         spacing: Kirigami.Units.mediumSpacing
 
                         Controls.Button {
-                            text: i18n("Regenerate Salt")
+                            text: L10n.i18n("Regenerate Salt", [])
                             icon.name: "view-refresh"
                             onClicked: regenerateSaltDialog.open()
                         }
 
                         Controls.Button {
-                            text: i18n("Clear Cache")
+                            text: L10n.i18n("Clear Cache", [])
                             icon.name: "edit-clear"
                             onClicked: SettingsController.clearCache()
                         }
@@ -532,7 +537,7 @@ Kirigami.ScrollablePage {
                         isMask: true
                     }
                     Kirigami.Heading {
-                        text: i18n("About Kiosque")
+                        text: L10n.i18n("About Kiosque", [])
                         level: 3
                         Layout.fillWidth: true
                     }
@@ -565,14 +570,14 @@ Kirigami.ScrollablePage {
                         }
 
                         Controls.Label {
-                            text: i18n("Version %1").arg(Qt.application.version)
+                            text: L10n.i18n("Version %1", []).arg(Qt.application.version)
                             color: Kirigami.Theme.disabledTextColor
                             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
                         }
                     }
 
                     Controls.Button {
-                        text: i18n("More Information…")
+                        text: L10n.i18n("More Information…", [])
                         icon.name: "help-about-symbolic"
                         onClicked: aboutDialog.open()
                         Layout.alignment: Qt.AlignVCenter
@@ -595,7 +600,7 @@ Kirigami.ScrollablePage {
     // Add Repository Dialog
     Kirigami.Dialog {
         id: addRepoDialog
-        title: i18n("Add Repository")
+        title: L10n.i18n("Add Repository", [])
         standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
 
         onAccepted: {
@@ -611,13 +616,13 @@ Kirigami.ScrollablePage {
             
             Controls.TextField {
                 id: repoNameField
-                placeholderText: i18n("Name (e.g. flathub)")
+                placeholderText: L10n.i18n("Name (e.g. flathub)", [])
                 Layout.fillWidth: true
             }
 
             Controls.TextField {
                 id: repoUrlField
-                placeholderText: i18n("URL (e.g. https://dl.flathub.org/repo/flathub.flatpakrepo)")
+                placeholderText: L10n.i18n("URL (e.g. https://dl.flathub.org/repo/flathub.flatpakrepo)", [])
                 Layout.fillWidth: true
             }
         }
@@ -626,7 +631,7 @@ Kirigami.ScrollablePage {
     // Regenerate Salt Confirm Dialog
     Kirigami.Dialog {
         id: regenerateSaltDialog
-        title: i18n("Regenerate Privacy Salt?")
+        title: L10n.i18n("Regenerate Privacy Salt?", [])
         standardButtons: Kirigami.Dialog.Yes | Kirigami.Dialog.No
         
         onAccepted: {
@@ -634,7 +639,7 @@ Kirigami.ScrollablePage {
         }
 
         Controls.Label {
-            text: i18n("Regenerating your local cryptographic salt will immediately assign you a completely new pseudonymous identity on the ODRS review server. Your existing reviews and votes will still exist, but they will be permanently unlinked from this machine and you will no longer be able to modify or delete them. Are you sure you want to proceed?")
+            text: L10n.i18n("Regenerating your local cryptographic salt will immediately assign you a completely new pseudonymous identity on the ODRS review server. Your existing reviews and votes will still exist, but they will be permanently unlinked from this machine and you will no longer be able to modify or delete them. Are you sure you want to proceed?", [])
             wrapMode: Text.WordWrap
             width: Kirigami.Units.gridUnit * 25
         }
@@ -651,7 +656,7 @@ Kirigami.ScrollablePage {
     // Login Error Dialog
     Kirigami.Dialog {
         id: loginErrorDialog
-        title: i18n("Login Failed")
+        title: L10n.i18n("Login Failed", [])
         standardButtons: Kirigami.Dialog.Close
         
         property string errorMessage: ""
@@ -669,7 +674,7 @@ Kirigami.ScrollablePage {
             }
 
             Controls.Label {
-                text: i18n("Could not complete OAuth login. Please check your network connection or the credentials configuration.")
+                text: L10n.i18n("Could not complete OAuth login. Please check your network connection or the credentials configuration.", [])
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
@@ -691,7 +696,7 @@ Kirigami.ScrollablePage {
     Controls.Dialog {
         id: aboutDialog
         anchors.centerIn: parent
-        title: i18n("About Kiosque")
+        title: L10n.i18n("About Kiosque", [])
         standardButtons: Controls.Dialog.Close
         modal: true
 
@@ -719,7 +724,7 @@ Kirigami.ScrollablePage {
             }
 
             Controls.Label {
-                text: i18n("Version %1", Qt.application.version)
+                text: L10n.i18n("Version %1", [String(Qt.application.version)])
                 font.weight: Font.DemiBold
                 color: Kirigami.Theme.highlightColor
                 Layout.alignment: Qt.AlignHCenter
@@ -727,7 +732,7 @@ Kirigami.ScrollablePage {
             }
 
             Controls.Label {
-                text: i18n("A beautiful, fast, and modern Flatpak storefront for the KDE Plasma desktop, inspired by GNOME's software curation aesthetics.")
+                text: L10n.i18n("A beautiful, fast, and modern Flatpak storefront for the KDE Plasma desktop, inspired by GNOME's software curation aesthetics.", [])
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
                 Layout.alignment: Qt.AlignHCenter
@@ -735,7 +740,7 @@ Kirigami.ScrollablePage {
             }
 
             Controls.Label {
-                text: i18n("Kiosque was built to bring a curation-focused storefront to the Qt/KDE ecosystem, showcasing applications in their best light. It integrates a high-performance Rust backend with a modern Qt6/Kirigami frontend.")
+                text: L10n.i18n("Kiosque was built to bring a curation-focused storefront to the Qt/KDE ecosystem, showcasing applications in their best light. It integrates a high-performance Rust backend with a modern Qt6/Kirigami frontend.", [])
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
                 color: Kirigami.Theme.disabledTextColor
@@ -757,13 +762,13 @@ Kirigami.ScrollablePage {
 
                 Controls.Button {
                     icon.name: "code-context"
-                    text: i18n("Source Code")
+                    text: L10n.i18n("Source Code", [])
                     flat: true
                     onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque")
                 }
                 Controls.Button {
                     icon.name: "tools-report-bug"
-                    text: i18n("Report Bug")
+                    text: L10n.i18n("Report Bug", [])
                     flat: true
                     onClicked: Qt.openUrlExternally("https://github.com/niltonperimneto/kiosque/issues")
                 }

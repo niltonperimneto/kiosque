@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 import "pages" as Pages
 import "components" as Components
@@ -50,49 +49,14 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    // Every detail page owns its AppDetails, so pages can stack freely
+    // (e.g. a similar app opened from another app's page).
     function pushAppDetail(appId) {
-        // Find if there is already an AppDetailPage in the pageStack
-        let existingPage = null;
-        for (let i = 0; i < pageStack.depth; i++) {
-            let page = pageStack.get(i);
-            if (page && page.appId !== undefined) {
-                existingPage = page;
-                break;
-            }
+        let top = pageStack.currentItem;
+        if (top && top.appId === appId) {
+            return;
         }
-
-        if (existingPage !== null) {
-            // If the existing page has the same appId, we just pop back to it and we're done
-            if (existingPage.appId === appId) {
-                pageStack.pop(existingPage);
-                return;
-            }
-            
-            // Otherwise, we pop back to the page preceding the existing AppDetailPage,
-            // and then push the new AppDetailPage
-            let precedingPage = null;
-            let index = -1;
-            for (let i = 0; i < pageStack.depth; i++) {
-                if (pageStack.get(i) === existingPage) {
-                    index = i;
-                    break;
-                }
-            }
-            if (index > 0) {
-                precedingPage = pageStack.get(index - 1);
-            }
-            
-            if (precedingPage !== null) {
-                pageStack.pop(precedingPage);
-            } else {
-                while (pageStack.depth > 1) {
-                    pageStack.pop();
-                }
-            }
-        }
-
-        let newPage = appDetailComponent.createObject(null, { appId: appId });
-        pageStack.push(newPage);
+        pageStack.push(appDetailComponent, { appId: appId });
     }
 
     // ── Navigation button grouping ──────────────────────────────────────
@@ -136,7 +100,7 @@ Kirigami.ApplicationWindow {
                 Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
             }
 
-            Controls.ToolTip.text: i18n("Open Settings")
+            Controls.ToolTip.text: L10n.i18n("Open Settings", [])
             Controls.ToolTip.visible: mainDrawer.collapsed && hovered
             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
 
@@ -157,8 +121,14 @@ Kirigami.ApplicationWindow {
                     Layout.preferredWidth: mainDrawer.collapsed ? Kirigami.Units.iconSizes.medium : Kirigami.Units.iconSizes.large
                     Layout.preferredHeight: Layout.preferredWidth
                     Layout.alignment: Qt.AlignVCenter
-                    source: SettingsController.is_authenticated && SettingsController.oauth_avatar_url !== "" ? SettingsController.oauth_avatar_url : ""
+                    source: avatarImage.source
                     name: SettingsController.is_authenticated ? SettingsController.oauth_username : ""
+
+                    RemoteImage {
+                        id: avatarImage
+                        url: SettingsController.is_authenticated ? SettingsController.oauth_avatar_url : ""
+                        kind: "avatar"
+                    }
                 }
 
                 ColumnLayout {
@@ -168,14 +138,14 @@ Kirigami.ApplicationWindow {
                     Layout.alignment: Qt.AlignVCenter
 
                     Controls.Label {
-                        text: SettingsController.is_authenticated ? SettingsController.oauth_username : i18n("Sign In")
+                        text: SettingsController.is_authenticated ? SettingsController.oauth_username : L10n.i18n("Sign In", [])
                         font.weight: Font.Bold
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
 
                     Controls.Label {
-                        text: SettingsController.is_authenticated ? i18n("Settings & Reviews") : i18n("Local Profile")
+                        text: SettingsController.is_authenticated ? L10n.i18n("Settings & Reviews", []) : L10n.i18n("Local Profile", [])
                         font: Kirigami.Theme.smallFont
                         color: Kirigami.Theme.disabledTextColor
                         elide: Text.ElideRight
@@ -187,19 +157,19 @@ Kirigami.ApplicationWindow {
 
         actions: [
             Kirigami.Action {
-                text: i18n("Home")
+                text: L10n.i18n("Home", [])
                 icon.name: "go-home-symbolic"
                 checked: root.currentSection === "shopfront"
                 onTriggered: {
                     root.currentSection = "shopfront";
                     root.currentCategory = "";
                     root.switchToPage("qrc:/qml/pages/ShopfrontPage.qml");
-                    appListModel.refresh();
+                    appListModel.load("popular", "");
                 }
             },
             Kirigami.Action {
                 id: categoriesAction
-                text: i18n("Categories")
+                text: L10n.i18n("Categories", [])
                 icon.name: "applications-all-symbolic"
                 checked: root.currentSection === "category" || root.currentSection === "categories"
                 onTriggered: {
@@ -216,7 +186,7 @@ Kirigami.ApplicationWindow {
                 }
 
                 Kirigami.Action {
-                    text: i18n("All Categories")
+                    text: L10n.i18n("All Categories", [])
                     icon.name: "applications-all-symbolic"
                     checked: root.currentSection === "categories"
                     onTriggered: {
@@ -226,68 +196,68 @@ Kirigami.ApplicationWindow {
                     }
                 }
                 Kirigami.Action {
-                    text: i18n("Audio & Video")
+                    text: L10n.i18n("Audio & Video", [])
                     icon.name: "applications-multimedia-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "AudioVideo"
-                    onTriggered: categoriesAction.openCategory("AudioVideo", i18n("Audio & Video"))
+                    onTriggered: categoriesAction.openCategory("AudioVideo", L10n.i18n("Audio & Video", []))
                 }
                 Kirigami.Action {
-                    text: i18n("Games")
+                    text: L10n.i18n("Games", [])
                     icon.name: "applications-games-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Game"
-                    onTriggered: categoriesAction.openCategory("Game", i18n("Games"))
+                    onTriggered: categoriesAction.openCategory("Game", L10n.i18n("Games", []))
                 }
                 Kirigami.Action {
-                    text: i18n("Office")
+                    text: L10n.i18n("Office", [])
                     icon.name: "applications-office-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Office"
-                    onTriggered: categoriesAction.openCategory("Office", i18n("Office"))
+                    onTriggered: categoriesAction.openCategory("Office", L10n.i18n("Office", []))
                 }
                 Kirigami.Action {
-                    text: i18n("Graphics")
+                    text: L10n.i18n("Graphics", [])
                     icon.name: "applications-graphics-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Graphics"
-                    onTriggered: categoriesAction.openCategory("Graphics", i18n("Graphics"))
+                    onTriggered: categoriesAction.openCategory("Graphics", L10n.i18n("Graphics", []))
                 }
                 Kirigami.Action {
-                    text: i18n("Development")
+                    text: L10n.i18n("Development", [])
                     icon.name: "applications-development-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Development"
-                    onTriggered: categoriesAction.openCategory("Development", i18n("Development"))
+                    onTriggered: categoriesAction.openCategory("Development", L10n.i18n("Development", []))
                 }
                 Kirigami.Action {
-                    text: i18n("Internet")
+                    text: L10n.i18n("Internet", [])
                     icon.name: "applications-internet-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Network"
-                    onTriggered: categoriesAction.openCategory("Network", i18n("Internet"))
+                    onTriggered: categoriesAction.openCategory("Network", L10n.i18n("Internet", []))
                 }
                 Kirigami.Action {
-                    text: i18n("Utilities")
+                    text: L10n.i18n("Utilities", [])
                     icon.name: "applications-utilities-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Utility"
-                    onTriggered: categoriesAction.openCategory("Utility", i18n("Utilities"))
+                    onTriggered: categoriesAction.openCategory("Utility", L10n.i18n("Utilities", []))
                 }
                 Kirigami.Action {
-                    text: i18n("Education")
+                    text: L10n.i18n("Education", [])
                     icon.name: "applications-education-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Education"
-                    onTriggered: categoriesAction.openCategory("Education", i18n("Education"))
+                    onTriggered: categoriesAction.openCategory("Education", L10n.i18n("Education", []))
                 }
                 Kirigami.Action {
-                    text: i18n("System")
+                    text: L10n.i18n("System", [])
                     icon.name: "applications-system-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "System"
-                    onTriggered: categoriesAction.openCategory("System", i18n("System"))
+                    onTriggered: categoriesAction.openCategory("System", L10n.i18n("System", []))
                 }
                 Kirigami.Action {
-                    text: i18n("Science")
+                    text: L10n.i18n("Science", [])
                     icon.name: "applications-science-symbolic"
                     checked: root.currentSection === "category" && root.currentCategory === "Science"
-                    onTriggered: categoriesAction.openCategory("Science", i18n("Science"))
+                    onTriggered: categoriesAction.openCategory("Science", L10n.i18n("Science", []))
                 }
             },
             Kirigami.Action {
-                text: i18n("Installed")
+                text: L10n.i18n("Installed", [])
                 icon.name: "view-list-details-symbolic"
                 checked: root.currentSection === "installed"
                 onTriggered: {
@@ -298,7 +268,7 @@ Kirigami.ApplicationWindow {
                 }
             },
             Kirigami.Action {
-                text: i18n("Settings")
+                text: L10n.i18n("Settings", [])
                 icon.name: "settings-configure-symbolic"
                 checked: root.currentSection === "settings"
                 onTriggered: {
@@ -374,14 +344,14 @@ Kirigami.ApplicationWindow {
     Kirigami.OverlaySheet {
         id: addRepoSheet
         
-        title: i18n("Add Flatpak Repository")
+        title: L10n.i18n("Add Flatpak Repository", [])
 
         ColumnLayout {
             spacing: Kirigami.Units.largeSpacing
             implicitWidth: Kirigami.Units.gridUnit * 18
 
             Controls.Label {
-                text: i18n("Add a new Flatpak remote repository. User-scoped repositories do not require administrator privileges.")
+                text: L10n.i18n("Add a new Flatpak remote repository. User-scoped repositories do not require administrator privileges.", [])
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
             }
@@ -391,14 +361,14 @@ Kirigami.ApplicationWindow {
 
                 Controls.TextField {
                     id: repoNameField
-                    Kirigami.FormData.label: i18n("Name:")
+                    Kirigami.FormData.label: L10n.i18n("Name:", [])
                     placeholderText: "flathub-beta"
                     Layout.fillWidth: true
                 }
 
                 Controls.TextField {
                     id: repoUrlField
-                    Kirigami.FormData.label: i18n("URL:")
+                    Kirigami.FormData.label: L10n.i18n("URL:", [])
                     placeholderText: "https://dl.flathub.org/beta-repo/flathub-beta.flatpakrepo"
                     Layout.fillWidth: true
                 }
@@ -409,12 +379,12 @@ Kirigami.ApplicationWindow {
                 spacing: Kirigami.Units.mediumSpacing
 
                 Controls.Button {
-                    text: i18n("Cancel")
+                    text: L10n.i18n("Cancel", [])
                     onClicked: addRepoSheet.close()
                 }
 
                 Controls.Button {
-                    text: i18n("Add")
+                    text: L10n.i18n("Add", [])
                     highlighted: true
                     enabled: repoNameField.text.length > 0 && repoUrlField.text.length > 0
                     onClicked: {
@@ -430,7 +400,7 @@ Kirigami.ApplicationWindow {
     Controls.Dialog {
         id: statusDialog
         anchors.centerIn: parent
-        title: i18n("Repository Status")
+        title: L10n.i18n("Repository Status", [])
         standardButtons: Controls.Dialog.Ok
 
         property string messageText: ""
@@ -479,10 +449,32 @@ Kirigami.ApplicationWindow {
     }
 
     // ── Startup ─────────────────────────────────────────────────────────
+    // `kiosque --check-ui`: report once the window and a packaged image are up.
+    Image {
+        id: packagedLogo
+        visible: false
+        source: AppShell.checkUi ? "qrc:/qml/images/logo.svg" : ""
+        onStatusChanged: {
+            if (!AppShell.checkUi || status === Image.Loading || status === Image.Null) {
+                return;
+            }
+            AppShell.uiReady(status === Image.Ready);
+            Qt.callLater(Qt.quit);
+        }
+    }
+
     Component.onCompleted: {
+        Qt.application.name = "Kiosque";
+        Qt.application.displayName = "Kiosque";
+        Qt.application.organization = "Kiosque";
+        Qt.application.domain = "kiosque.app";
+        Qt.application.version = AppShell.version;
+        if (AppShell.checkUi) {
+            return;
+        }
         SettingsController.loadSettings();
         featuredModel.refresh();
-        appListModel.refresh();
+        appListModel.load("popular", "");
         installedModel.refresh();
     }
 
