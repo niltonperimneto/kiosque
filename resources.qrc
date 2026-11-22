@@ -3,26 +3,31 @@
     <file>qml/Main.qml</file>
     <file>qml/style/qmldir</file>
     <file>qml/style/Style.qml</file>
+    <file>qml/components/AddRepositoryDialog.qml</file>
     <file>qml/components/AppCard.qml</file>
+    <file>qml/components/Categories.qml</file>
     <file>qml/components/AppOfTheDayCard.qml</file>
     <file>qml/components/GamesSection.qml</file>
     <file>qml/components/TopCropImage.qml</file>
     <file>qml/components/StorefrontAppCard.qml</file>
+    <file>qml/components/TasksDialog.qml</file>
     <file>qml/components/HeroBanner.qml</file>
     <file>qml/components/CategoryChip.qml</file>
     <file>qml/components/FeatureCard.qml</file>
     <file>qml/components/HeroCarousel.qml</file>
     <file>qml/components/HorizontalAppList.qml</file>
-    <file>qml/components/ProgressOverlay.qml</file>
     <file>qml/components/RatingSummary.qml</file>
     <file>qml/components/ReviewCard.qml</file>
     <file>qml/components/WelcomeCard.qml</file>
+    <file>qml/pages/AboutPage.qml</file>
     <file>qml/pages/AppDetailPage.qml</file>
     <file>qml/pages/SettingsPage.qml</file>
     <file>qml/pages/CategoriesPage.qml</file>
     <file>qml/pages/CategoryAppListPage.qml</file>
     <file>qml/pages/InstalledPage.qml</file>
+    <file>qml/pages/SearchPage.qml</file>
     <file>qml/pages/ShopfrontPage.qml</file>
+    <file>qml/pages/UpdatesPage.qml</file>
     <file>qml/images/logo.svg</file>
 </qresource>
 </RCC>

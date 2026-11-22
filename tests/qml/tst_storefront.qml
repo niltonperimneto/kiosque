@@ -52,9 +52,12 @@ TestCase {
             grabImage(root.contentItem).save(testArtifactDir + "/storefront.png")
         root.switchToPage("qrc:/qml/pages/SettingsPage.qml")
         let settings = root.pageStack.currentItem
-        let selector = findChild(settings, "settingsCategorySelector")
-        verify(selector !== null)
-        compare(selector.count, 5)
+        // Every settings topic is a FormCard on the same page.
+        for (let name of ["updatesCard", "repositoriesCard", "accountCard", "privacyCard", "aboutCard"]) {
+            let card = findChild(settings, name)
+            verify(card !== null, name)
+            verify(card.visible, name)
+        }
         verify(waitForRendering(root.contentItem))
         if (testArtifactDir !== "")
             grabImage(root.contentItem).save(testArtifactDir + "/settings.png")
@@ -93,5 +96,20 @@ TestCase {
         tryCompare(timer, "running", false)
         mouseMove(this, 990, 690)
         tryCompare(timer, "running", true)
+    }
+    // Not in PageRegressions: Kirigami Addons 1.13 logs a TypeError from its own
+    // MessageDialog.qml (self-qualified enum) when the About page is created.
+    function test_settings_open_standard_about_page() {
+        let definition = Qt.createComponent("qrc:/qml/Main.qml")
+        compare(definition.status, Component.Ready, definition.errorString())
+        let root = createTemporaryObject(definition, null)
+        root.switchToPage("qrc:/qml/pages/SettingsPage.qml")
+        let page = root.pageStack.currentItem
+        findChild(page, "aboutKiosqueButton").clicked()
+        tryVerify(() => root.pageStack.currentItem.objectName === "aboutPage", 5000)
+        let about = root.pageStack.currentItem
+        compare(about.aboutData.displayName, "Kiosque")
+        compare(about.aboutData.version, Qt.application.version)
+        compare(about.aboutData.licenses[0].spdx, "GPL-3.0-or-later")
     }
 }

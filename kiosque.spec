@@ -55,6 +55,7 @@ test -f %{buildroot}%{_datadir}/krunner/dbusplugins/org.kiosque.Kiosque.desktop
 %dir %{_datadir}/krunner/dbusplugins
 %{_datadir}/krunner/dbusplugins/org.kiosque.Kiosque.desktop
 %{_datadir}/icons/hicolor/scalable/apps/org.kiosque.Kiosque.svg
+%{_datadir}/icons/hicolor/symbolic/apps/org.kiosque.Kiosque-symbolic.svg
 
 %changelog
 * Fri Jun 19 2026 Kiosque Contributors <contributors@kiosque.org> - 0.1.0-1

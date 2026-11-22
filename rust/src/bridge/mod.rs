@@ -3,6 +3,7 @@ pub mod app_list_model;
 pub mod detail_data;
 pub mod featured_model;
 pub mod installed_model;
+pub mod jobs_model;
 pub mod repo_model;
 pub mod settings_controller;
 pub mod store_controller;

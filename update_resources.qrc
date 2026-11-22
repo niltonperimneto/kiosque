@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+<qresource prefix="/">
+    <file>qml/images/logo-symbolic-black.svg</file>
+    <file>qml/images/logo-symbolic-white.svg</file>
+    <file>qml/images/logo-symbolic-16-black.svg</file>
+    <file>qml/images/logo-symbolic-16-white.svg</file>
+</qresource>
+</RCC>

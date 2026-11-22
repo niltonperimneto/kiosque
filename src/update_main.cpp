@@ -15,6 +15,8 @@
 #include <QDBusInterface>
 #include <QDBusMessage>
 #include <QFileInfo>
+#include <QIcon>
+#include <QPalette>
 #include <QMenu>
 #include <QMetaObject>
 #include <QProcess>
@@ -59,6 +61,23 @@ UpdateDaemon *g_daemon = nullptr;
 
 void daemonEventCallback(int event, int count, const char *text, void *ctx);
 
+// Monochrome Kiosque logo for the tray, as KDE uses symbolic icons there. The
+// installed theme icon lets Plasma recolour it for the panel; without it, pick
+// the black or white logo for the current palette (grid-aligned at 16 px).
+QIcon trayIcon()
+{
+    const QString themed = QStringLiteral("org.kiosque.Kiosque-symbolic");
+    if (QIcon::hasThemeIcon(themed)) {
+        return QIcon::fromTheme(themed);
+    }
+    const bool dark = QApplication::palette().color(QPalette::Window).lightness() < 128;
+    const QString colour = dark ? QStringLiteral("white") : QStringLiteral("black");
+    QIcon icon;
+    icon.addFile(QStringLiteral(":/qml/images/logo-symbolic-16-%1.svg").arg(colour), QSize(16, 16));
+    icon.addFile(QStringLiteral(":/qml/images/logo-symbolic-%1.svg").arg(colour), QSize(32, 32));
+    return icon;
+}
+
 class UpdateDaemon : public QObject
 {
     Q_OBJECT
@@ -67,7 +86,7 @@ public:
         : QObject(parent)
         , m_background(background)
     {
-        m_trayIcon = new QSystemTrayIcon(QIcon::fromTheme(QStringLiteral("system-software-update")), this);
+        m_trayIcon = new QSystemTrayIcon(trayIcon(), this);
 
         m_menu = new QMenu();
         m_actionOpen = m_menu->addAction(QIcon::fromTheme(QStringLiteral("org.kiosque.Kiosque")), i18n("Open Store"));
