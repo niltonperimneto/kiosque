@@ -106,14 +106,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
 
-      - name: Install KDE Sdk & Platform
+      - name: Configure Flatpak dependency source
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub org.kde.Sdk//6.10 org.kde.Platform//6.10 org.freedesktop.Sdk.Extension.rust-stable//25.08
 
       - name: Build Flatpak
         run: |
-          flatpak-builder --user --force-clean --ccache --require-changes --repo=repo build org.kiosque.Kiosque.json
+          flatpak-builder --user --install-deps-from=flathub --assumeyes --force-clean --ccache --require-changes --repo=repo build org.kiosque.Kiosque.json
           flatpak build-bundle repo kiosque.flatpak org.kiosque.Kiosque
 
       - name: Upload Flatpak Artifact

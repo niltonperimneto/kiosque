@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Smoke-test an actual artifact; Flatpak installation is restricted to the VM."""
 import os
+import json
 import pwd
 from pathlib import Path
 import shutil
@@ -47,7 +48,9 @@ def main(artifact, companion):
                 env.pop(variable, None)
             as_user = ['runuser', '--user', user, '--']
             run([*as_user, 'flatpak', 'remote-add', '--user', '--if-not-exists', 'flathub', 'https://dl.flathub.org/repo/flathub.flatpakrepo'], env=env)
-            run([*as_user, 'flatpak', 'install', '--user', '-y', '--noninteractive', 'flathub', 'org.kde.Platform//6.10'], env=env)
+            manifest = json.loads((ROOT / 'org.kiosque.Kiosque.json').read_text())
+            runtime_ref = manifest['runtime'] + '//'+ manifest['runtime-version']
+            run([*as_user, 'flatpak', 'install', '--user', '-y', '--noninteractive', 'flathub', runtime_ref], env=env)
             run([*as_user, 'flatpak', 'install', '--user', '-y', '--noninteractive', '--bundle', artifact], env=env)
             app = ['flatpak', 'run', '--user', 'org.kiosque.Kiosque', '--check-ui']
             helper = ['flatpak', 'run', '--user', '--command=kiosque-update', 'org.kiosque.Kiosque', '--help']
