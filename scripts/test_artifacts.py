@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-artifacts = sorted(path for path in Path(sys.argv[1]).rglob('*') if path.parent.name != 'companion' and path.suffix.lower() in ('.rpm', '.flatpak', '.appimage'))
+artifacts = sorted(path for path in Path(sys.argv[1]).rglob('*') if path.parent.name != 'companion' and (path.suffix.lower() in ('.flatpak', '.appimage') or path.match('kiosque-[0-9]*.rpm')))
 if not artifacts:
     sys.exit('no packaged artifacts found')
 for artifact in artifacts:
