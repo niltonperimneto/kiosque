@@ -23,7 +23,7 @@ def main():
     Path('.test-results').mkdir(exist_ok=True)
     packages = ['cargo', 'rust', 'gcc', 'gcc-c++', 'glibc-static', 'flatpak', 'flatpak-devel', 'gnupg2', 'dbus-daemon', 'python3', 'pkgconf-pkg-config']
     if args.artifact:
-        packages += ['meson', 'ninja-build', 'cmake', 'qt6-qtbase-devel', 'qt6-qtdeclarative-devel', 'qt6-qtsvg', 'kf6-kirigami-devel', 'kf6-ki18n-devel', 'kf6-kirigami-addons', 'kf6-qqc2-desktop-style', 'xorg-x11-server-Xvfb', 'xauth', 'cpio']
+        packages += ['meson', 'ninja-build', 'cmake', 'qt6-qtbase-devel', 'qt6-qtdeclarative-devel', 'qt6-qtsvg', 'kf6-kirigami-devel', 'kf6-ki18n-devel', 'kf6-kirigami-addons', 'kf6-qqc2-desktop-style', 'xorg-x11-server-Xvfb', 'xauth', 'cpio', 'squashfs-tools']
     repo_flags = [] if args.artifact else ['--disablerepo=updates']
     run(['dnf', *repo_flags, '--setopt=install_weak_deps=False', 'install', '-y', *packages])
 
