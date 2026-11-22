@@ -21,14 +21,46 @@ mod object {
     }
 
     impl SettingsController {
-        qproperty!("auto_update", Read = get_auto_update, Notify = auto_update_changed);
-        qproperty!("update_frequency", Read = get_update_frequency, Notify = update_frequency_changed);
-        qproperty!("update_time", Read = get_update_time, Notify = update_time_changed);
-        qproperty!("is_authenticated", Read = get_is_authenticated, Notify = is_authenticated_changed);
-        qproperty!("oauth_provider", Read = get_oauth_provider, Notify = oauth_provider_changed);
-        qproperty!("oauth_username", Read = get_oauth_username, Notify = oauth_username_changed);
-        qproperty!("oauth_avatar_url", Read = get_oauth_avatar_url, Notify = oauth_avatar_url_changed);
-        qproperty!("odrs_user_hash", Read = get_odrs_user_hash, Notify = odrs_user_hash_changed);
+        qproperty!(
+            "auto_update",
+            Read = get_auto_update,
+            Notify = auto_update_changed
+        );
+        qproperty!(
+            "update_frequency",
+            Read = get_update_frequency,
+            Notify = update_frequency_changed
+        );
+        qproperty!(
+            "update_time",
+            Read = get_update_time,
+            Notify = update_time_changed
+        );
+        qproperty!(
+            "is_authenticated",
+            Read = get_is_authenticated,
+            Notify = is_authenticated_changed
+        );
+        qproperty!(
+            "oauth_provider",
+            Read = get_oauth_provider,
+            Notify = oauth_provider_changed
+        );
+        qproperty!(
+            "oauth_username",
+            Read = get_oauth_username,
+            Notify = oauth_username_changed
+        );
+        qproperty!(
+            "oauth_avatar_url",
+            Read = get_oauth_avatar_url,
+            Notify = oauth_avatar_url_changed
+        );
+        qproperty!(
+            "odrs_user_hash",
+            Read = get_odrs_user_hash,
+            Notify = odrs_user_hash_changed
+        );
 
         fn get_auto_update(&self) -> bool {
             self.auto_update
@@ -115,7 +147,8 @@ mod object {
 
         #[qslot]
         fn login(&mut self, provider: String) {
-            let Some(provider) = kiosque_core::flathub::oauth::OAuthProvider::from_str(&provider) else {
+            let Some(provider) = kiosque_core::flathub::oauth::OAuthProvider::from_str(&provider)
+            else {
                 self.login_failed(format!("unknown provider {provider:?}"));
                 return;
             };

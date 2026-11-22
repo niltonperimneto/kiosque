@@ -96,9 +96,12 @@ mod object {
                 }
                 let distro = kiosque_core::config::distro_id();
                 let day = chrono::Local::now().format("%Y-%m-%d").to_string();
-                let items =
-                    crate::view::featured::fetch(&crate::services::services().flathub, &distro, &day)
-                        .await;
+                let items = crate::view::featured::fetch(
+                    &crate::services::services().flathub,
+                    &distro,
+                    &day,
+                )
+                .await;
                 if !items.is_empty() {
                     let _ = crate::disk_cache::save_featured_cache(&items).await;
                 }

@@ -97,24 +97,57 @@ mod object {
     }
 
     impl AppDetails {
-        qproperty!("appId", Read = get_app_id, Write = set_app_id, Notify = app_id_changed);
+        qproperty!(
+            "appId",
+            Read = get_app_id,
+            Write = set_app_id,
+            Notify = app_id_changed
+        );
         qproperty!("loading", Read = get_loading, Notify = loading_changed);
-        qproperty!("errorMessage", Read = get_error_message, Notify = error_message_changed);
+        qproperty!(
+            "errorMessage",
+            Read = get_error_message,
+            Notify = error_message_changed
+        );
         qproperty!("name", Read = get_name, Notify = details_changed);
         qproperty!("summary", Read = get_summary, Notify = details_changed);
-        qproperty!("description", Read = get_description, Notify = details_changed);
+        qproperty!(
+            "description",
+            Read = get_description,
+            Notify = details_changed
+        );
         qproperty!("iconUrl", Read = get_icon_url, Notify = details_changed);
         qproperty!("developer", Read = get_developer, Notify = details_changed);
         qproperty!("license", Read = get_license, Notify = details_changed);
-        qproperty!("screenshots", Read = get_screenshots, Notify = details_changed);
-        qproperty!("permissions", Read = get_permissions, Notify = details_changed);
+        qproperty!(
+            "screenshots",
+            Read = get_screenshots,
+            Notify = details_changed
+        );
+        qproperty!(
+            "permissions",
+            Read = get_permissions,
+            Notify = details_changed
+        );
         qproperty!("links", Read = get_links, Notify = details_changed);
-        qproperty!("isInstalled", Read = get_is_installed, Notify = is_installed_changed);
+        qproperty!(
+            "isInstalled",
+            Read = get_is_installed,
+            Notify = is_installed_changed
+        );
         qproperty!("busy", Read = get_busy, Notify = busy_changed);
-        qproperty!("installProgress", Read = get_install_progress, Notify = install_progress_changed);
+        qproperty!(
+            "installProgress",
+            Read = get_install_progress,
+            Notify = install_progress_changed
+        );
         qproperty!("ratings", Read = get_ratings, Notify = reviews_changed);
         qproperty!("reviews", Read = get_reviews, Notify = reviews_changed);
-        qproperty!("reviewsLoading", Read = get_reviews_loading, Notify = reviews_loading_changed);
+        qproperty!(
+            "reviewsLoading",
+            Read = get_reviews_loading,
+            Notify = reviews_loading_changed
+        );
         qproperty!("developerApps", Member = developer_apps, Constant);
         qproperty!("similarApps", Member = similar_apps, Constant);
 
@@ -229,15 +262,18 @@ mod object {
             let handle = self.get_thread_handle();
             crate::bridge::spawn(async move {
                 let s = crate::services::services();
-                let (result, _installed) =
-                    tokio::join!(details::load(&s.flathub, &app_id), ops::is_installed(&app_id));
+                let (result, _installed) = tokio::join!(
+                    details::load(&s.flathub, &app_id),
+                    ops::is_installed(&app_id)
+                );
                 let ok = result.is_ok();
                 handle.invoke_mut(move |d| d.finish_details(generation, result));
                 if ok {
                     let reviews = details::load_reviews(&s.odrs, &app_id).await;
                     handle.invoke_mut(move |d| d.finish_reviews(generation, reviews));
                 } else {
-                    handle.invoke_mut(move |d| d.finish_reviews(generation, ReviewsData::default()));
+                    handle
+                        .invoke_mut(move |d| d.finish_reviews(generation, ReviewsData::default()));
                 }
             });
         }
@@ -291,7 +327,13 @@ mod object {
         /// Submit an ODRS review; version, distribution and locale are
         /// filled in from the installed app and the environment.
         #[qslot(qml_name = "submitReview")]
-        fn submit_review(&mut self, rating: i32, summary: String, description: String, anonymous: bool) {
+        fn submit_review(
+            &mut self,
+            rating: i32,
+            summary: String,
+            description: String,
+            anonymous: bool,
+        ) {
             let app_id = self.app_id.clone();
             let handle = self.get_thread_handle();
             crate::bridge::spawn(async move {
@@ -432,8 +474,12 @@ mod object {
             } else {
                 data.links
             };
-            self.developer_apps.borrow_mut().set_entries(data.developer_apps);
-            self.similar_apps.borrow_mut().set_entries(data.similar_apps);
+            self.developer_apps
+                .borrow_mut()
+                .set_entries(data.developer_apps);
+            self.similar_apps
+                .borrow_mut()
+                .set_entries(data.similar_apps);
             self.details_changed();
         }
 

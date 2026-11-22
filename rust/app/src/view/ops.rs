@@ -118,7 +118,11 @@ pub async fn update(ids: &[String], progress: impl Fn(JobProgress) + Send) -> Re
 }
 
 pub async fn launch(id: &str) -> Result<(), String> {
-    services().backend.launch(id).await.map_err(|e| e.to_string())
+    services()
+        .backend
+        .launch(id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 pub async fn remotes() -> Result<Vec<RemoteInfo>, String> {

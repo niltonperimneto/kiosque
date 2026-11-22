@@ -345,8 +345,15 @@ mod tests {
         let data = ReviewsData {
             ratings: RatingSummary::default(),
             reviews: vec![
-                ReviewEntry { date: 1, ..Default::default() },
-                ReviewEntry { date: 2, review_id: 7, ..Default::default() },
+                ReviewEntry {
+                    date: 1,
+                    ..Default::default()
+                },
+                ReviewEntry {
+                    date: 2,
+                    review_id: 7,
+                    ..Default::default()
+                },
             ],
         };
         assert_eq!(data.reviews_value()[0]["review_id"], 7);

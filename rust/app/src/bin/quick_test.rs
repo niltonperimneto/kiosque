@@ -46,7 +46,9 @@ fn main() {
         .map_err(|e| e.to_string())
         .and_then(|_| kiosque::services::install_test_services(&endpoint, &root))
     {
-        eprintln!("kiosque-quick-test: an isolated fixture server and writable storage are required: {e}");
+        eprintln!(
+            "kiosque-quick-test: an isolated fixture server and writable storage are required: {e}"
+        );
         std::process::exit(2);
     }
 

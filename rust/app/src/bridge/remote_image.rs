@@ -34,7 +34,12 @@ mod object {
 
     impl RemoteImage {
         qproperty!("url", Read = get_url, Write = set_url, Notify = url_changed);
-        qproperty!("kind", Read = get_kind, Write = set_kind, Notify = kind_changed);
+        qproperty!(
+            "kind",
+            Read = get_kind,
+            Write = set_kind,
+            Notify = kind_changed
+        );
         qproperty!("source", Read = get_source, Notify = source_changed);
         qproperty!("failed", Read = get_failed, Notify = failed_changed);
 

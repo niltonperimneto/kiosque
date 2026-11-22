@@ -104,15 +104,47 @@ mod object {
     impl InstalledModel {
         qproperty!("loading", Read = get_loading, Notify = loading_changed);
         qproperty!("count", Read = get_count, Notify = count_changed);
-        qproperty!("uninstalling_app_id", Read = get_uninstalling_app_id, Notify = uninstalling_app_id_changed);
-        qproperty!("uninstall_progress", Read = get_uninstall_progress, Notify = uninstall_progress_changed);
-        qproperty!("checking_updates", Read = get_checking_updates, Notify = checking_updates_changed);
+        qproperty!(
+            "uninstalling_app_id",
+            Read = get_uninstalling_app_id,
+            Notify = uninstalling_app_id_changed
+        );
+        qproperty!(
+            "uninstall_progress",
+            Read = get_uninstall_progress,
+            Notify = uninstall_progress_changed
+        );
+        qproperty!(
+            "checking_updates",
+            Read = get_checking_updates,
+            Notify = checking_updates_changed
+        );
         qproperty!("updating", Read = get_updating, Notify = updating_changed);
-        qproperty!("update_progress", Read = get_update_progress, Notify = update_progress_changed);
-        qproperty!("update_status_text", Read = get_update_status_text, Notify = update_status_text_changed);
-        qproperty!("updates_available_count", Read = get_updates_available_count, Notify = updates_available_count_changed);
-        qproperty!("updates_checked_count", Read = get_updates_checked_count, Notify = updates_checked_count_changed);
-        qproperty!("show_runtimes", Read = get_show_runtimes, Notify = show_runtimes_changed);
+        qproperty!(
+            "update_progress",
+            Read = get_update_progress,
+            Notify = update_progress_changed
+        );
+        qproperty!(
+            "update_status_text",
+            Read = get_update_status_text,
+            Notify = update_status_text_changed
+        );
+        qproperty!(
+            "updates_available_count",
+            Read = get_updates_available_count,
+            Notify = updates_available_count_changed
+        );
+        qproperty!(
+            "updates_checked_count",
+            Read = get_updates_checked_count,
+            Notify = updates_checked_count_changed
+        );
+        qproperty!(
+            "show_runtimes",
+            Read = get_show_runtimes,
+            Notify = show_runtimes_changed
+        );
 
         fn get_loading(&self) -> bool {
             self.loading

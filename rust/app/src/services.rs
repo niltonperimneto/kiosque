@@ -89,7 +89,9 @@ pub fn install_test_services(endpoint: &str, root: &std::path::Path) -> Result<(
         cache::AppCache, flathub::client::HttpClient, transactions::TransactionManager,
     };
     if !endpoint.starts_with("http://127.0.0.1:") {
-        return Err(format!("fixture endpoint must be loopback, got {endpoint:?}"));
+        return Err(format!(
+            "fixture endpoint must be loopback, got {endpoint:?}"
+        ));
     }
     let backend = Arc::new(MockBackend::with_installed(vec![InstalledApp {
         id: "org.kiosque.Fixture".into(),
@@ -118,9 +120,7 @@ pub fn install_test_services(endpoint: &str, root: &std::path::Path) -> Result<(
             odrs: OdrsClient::with_dependencies(HttpClient::default(), endpoint, AppCache::new()),
             disk: DiskCache::new(root.join("cache")),
             settings: SettingsStore::new(root.join("settings.json")),
-            images: Arc::new(
-                ImageLoader::new(root.join("cache/img/v2")).allow_http_loopback(),
-            ),
+            images: Arc::new(ImageLoader::new(root.join("cache/img/v2")).allow_http_loopback()),
             local_transactions: Some(Arc::new(Transactions::Local(manager))),
         })
         .map_err(|_| "services were already initialised".to_string())
@@ -129,9 +129,8 @@ pub fn install_test_services(endpoint: &str, root: &std::path::Path) -> Result<(
 /// Stop the isolated transaction worker installed by [`install_test_services`].
 #[cfg(feature = "test-util")]
 pub fn shutdown_test_services() {
-    if let Some(Transactions::Local(manager)) = SERVICES
-        .get()
-        .and_then(|s| s.local_transactions.as_deref())
+    if let Some(Transactions::Local(manager)) =
+        SERVICES.get().and_then(|s| s.local_transactions.as_deref())
     {
         kiosque_core::runtime::runtime().block_on(manager.shutdown());
     }

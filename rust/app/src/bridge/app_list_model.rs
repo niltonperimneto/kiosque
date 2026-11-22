@@ -113,7 +113,8 @@ mod object {
                 if source == AppSource::Popular
                     && let Some((stamp, cached)) = crate::disk_cache::load_popular_cache().await
                 {
-                    let fresh = kiosque_core::disk_cache::now_secs().saturating_sub(stamp) <= POPULAR_TTL;
+                    let fresh =
+                        kiosque_core::disk_cache::now_secs().saturating_sub(stamp) <= POPULAR_TTL;
                     let items = cached.clone();
                     handle.invoke_mut(move |m| m.apply(generation, Ok(items), !fresh));
                     if fresh {
