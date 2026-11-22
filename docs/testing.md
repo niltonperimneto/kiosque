@@ -19,6 +19,8 @@ Run suites from the repository root with `python3 scripts/test.py <suite>`. Comm
 
 Use `--backend native` (default) or `--backend broker` for desktop suites. Each desktop configuration has its own Meson build directory. Meson tests can also be selected with `meson test -C build/tests-native --suite qt --print-errorlogs` after starting the fixture server through the shared runner.
 
+The QML suite imports `org.kde.ki18n` at runtime. Use KI18n 6.21 or newer and install its QML module if your distribution packages it separately. The runtime also needs Qt’s SVG image plugin to load the packaged logo.
+
 The desktop CI base is pinned by OCI digest. `tests/Containerfile` provides the corresponding developer environment. Install desktop dependencies in a disposable Fedora environment:
 
 ```sh
