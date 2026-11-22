@@ -85,6 +85,59 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(model->property("updates_available_count").toInt(), 0, 10000);
         QTRY_VERIFY_WITH_TIMEOUT(!model->property("checking_updates").toBool(), 10000);
     }
+    void jobsFollowRegistryAndCanBeCancelled() {
+        QQmlEngine engine; setup.qmlEngineAvailable(&engine);
+        QQmlComponent component(&engine);
+        component.setData("import QtQml\nimport com.kiosque\n"
+                          "QtObject { property JobsModel jobs: JobsModel {}\n"
+                          "           property var store: StoreController }", QUrl());
+        QScopedPointer<QObject> object(component.create());
+        QVERIFY2(object, qPrintable(component.errorString()));
+        auto* model = qobject_cast<QAbstractItemModel*>(object->property("jobs").value<QObject*>());
+        auto* store = object->property("store").value<QObject*>();
+        QVERIFY(model && store);
+        QAbstractItemModelTester tester(model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        const auto roles = model->roleNames();
+        const int idRole = roles.key("jobId");
+        const int stateRole = roles.key("jobState");
+        const int activeRole = roles.key("active");
+        const int appRole = roles.key("appId");
+        QVERIFY(idRole && stateRole && activeRole && appRole);
+        QVERIFY(QMetaObject::invokeMethod(model, "clearFinished"));
+        QCOMPARE(model->rowCount(), 0);
+        QSignalSpy finished(model, SIGNAL(jobFinished(QString,QString,QString,QString)));
+
+        // A held operation is listed as active, whoever started it, and can be cancelled.
+        kiosque_test_hold_operations(true);
+        QVERIFY(QMetaObject::invokeMethod(store, "installApp", Q_ARG(QString, QStringLiteral("org.kiosque.JobsFixture"))));
+        QTRY_COMPARE_WITH_TIMEOUT(model->property("active_count").toInt(), 1, 10000);
+        QCOMPARE(model->rowCount(), 1);
+        const QModelIndex job = model->index(0, 0);
+        QVERIFY(job.data(activeRole).toBool());
+        QCOMPARE(job.data(appRole).toString(), QStringLiteral("org.kiosque.JobsFixture"));
+        QVERIFY(QMetaObject::invokeMethod(model, "cancel", Q_ARG(std::int64_t, std::int64_t(job.data(idRole).toLongLong()))));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        QCOMPARE(finished.at(0).at(2).toString(), QStringLiteral("cancelled"));
+        QCOMPARE(model->property("active_count").toInt(), 0);
+        QCOMPARE(model->property("finished_count").toInt(), 1);
+        QCOMPARE(model->index(0, 0).data(stateRole).toString(), QStringLiteral("cancelled"));
+        kiosque_test_hold_operations(false);
+
+        // A completed operation is reported once, then can be cleared.
+        QVERIFY(QMetaObject::invokeMethod(store, "installApp", Q_ARG(QString, QStringLiteral("org.kiosque.JobsFixture"))));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 2, 10000);
+        QCOMPARE(finished.at(1).at(1).toString(), QStringLiteral("install"));
+        QCOMPARE(finished.at(1).at(2).toString(), QStringLiteral("done"));
+        QCOMPARE(model->property("finished_count").toInt(), 2);
+        QVERIFY(QMetaObject::invokeMethod(model, "clearFinished"));
+        QCOMPARE(model->rowCount(), 0);
+        QCOMPARE(model->property("finished_count").toInt(), 0);
+
+        QVERIFY(QMetaObject::invokeMethod(store, "uninstallApp", Q_ARG(QString, QStringLiteral("org.kiosque.JobsFixture"))));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 3, 10000);
+        QCOMPARE(finished.at(2).at(1).toString(), QStringLiteral("uninstall"));
+        QCOMPARE(model->rowCount(), 1);
+    }
     void imageProviderDecodesOwnedPixels() {
         QTemporaryDir root;
         QImage fixture(4, 4, QImage::Format_RGBA8888); fixture.fill(Qt::red);

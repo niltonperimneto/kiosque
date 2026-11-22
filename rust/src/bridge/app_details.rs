@@ -60,6 +60,7 @@ pub mod qobject {
         #[qproperty(QList_QVariant, similar_apps, READ, NOTIFY)]
         #[qproperty(QList_QVariant, reviews, READ, NOTIFY)]
         #[qproperty(bool, reviews_loading, READ, NOTIFY)]
+        #[qproperty(QMap_QString_QVariant, latest_release, READ, NOTIFY)]
         type AppDetails = super::AppDetailsRust;
 
         fn set_app_id(self: Pin<&mut AppDetails>, app_id: QString);
@@ -72,6 +73,10 @@ pub mod qobject {
 
         #[qinvokable]
         fn cancel(self: Pin<&mut AppDetails>);
+
+        /// Start the installed application.
+        #[qinvokable]
+        fn launch(self: &AppDetails);
 
         #[qinvokable]
         fn reload(self: Pin<&mut AppDetails>);
@@ -136,6 +141,7 @@ pub struct AppDetailsRust {
     similar_apps: QVariantList,
     reviews: QVariantList,
     reviews_loading: bool,
+    latest_release: QVariantMap,
     /// Load request generation: completions of superseded loads are dropped.
     generation: u64,
     /// The job this object started (for `operationFinished` and early cancel).
@@ -169,6 +175,7 @@ impl Default for AppDetailsRust {
             similar_apps: Default::default(),
             reviews: Default::default(),
             reviews_loading: false,
+            latest_release: Default::default(),
             generation: 0,
             job: None,
             watch: None,
@@ -297,6 +304,12 @@ impl qobject::AppDetails {
         update!(self, license, license_changed, empty());
         replace!(self, screenshots, screenshots_changed, Default::default());
         replace!(self, urls, urls_changed, Default::default());
+        replace!(
+            self,
+            latest_release,
+            latest_release_changed,
+            Default::default()
+        );
         update!(self, permissions_known, permissions_known_changed, false);
         replace!(self, permissions, permissions_changed, Default::default());
         replace!(self, ratings, ratings_changed, Default::default());
@@ -419,6 +432,12 @@ impl qobject::AppDetails {
         );
         replace!(
             self,
+            latest_release,
+            latest_release_changed,
+            util::json_to_qvariant_map(&details.latest_release)
+        );
+        replace!(
+            self,
             developer_apps,
             developer_apps_changed,
             apps_list(&details.developer_apps)
@@ -506,6 +525,18 @@ impl qobject::AppDetails {
             },
             title,
         );
+    }
+
+    pub fn launch(&self) {
+        let app_id = self.app_id.to_string();
+        if app_id.is_empty() || !self.installed {
+            return;
+        }
+        crate::runtime::runtime().spawn(async move {
+            if let Err(e) = crate::flatpak::cli::launch_app(&app_id).await {
+                kerr!("AppDetails::launch: {}", e);
+            }
+        });
     }
 
     /// Cancel the active job for this app (whoever started it) through

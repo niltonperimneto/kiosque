@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import com.kiosque
+import org.kde.kirigami as Kirigami
 
 TestCase {
     name: "PageRegressions"
@@ -137,6 +138,166 @@ TestCase {
         verify(banner.visible && banner.text.indexOf("Synthetic transaction failure") !== -1)
         page.details.operationFinished(true, "")
         compare(banner.visible, false)
+    }
+    function test_detail_actions_follow_installed_state() {
+        let root = window()
+        root.pushAppDetail("org.kiosque.Fixture")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        tryCompare(page.details, "installed", true, 10000)
+        let primary = findChild(page, "installRemoveButton")
+        let remove = findChild(page, "removeButton")
+        compare(primary.text, "Open")
+        verify(primary.enabled)
+        verify(remove.visible)
+        // Removing asks for confirmation; dismissing it changes nothing.
+        let before = backendFixture.operationCount()
+        remove.clicked()
+        let confirm = findChild(page, "removeConfirmDialog")
+        tryCompare(confirm, "opened", true, 5000)
+        confirm.close()
+        tryCompare(confirm, "opened", false)
+        wait(200)
+        compare(backendFixture.operationCount(), before)
+        compare(page.details.installed, true)
+
+        root.pushAppDetail("org.kiosque.Reviews")
+        page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        compare(page.details.installed, false)
+        compare(findChild(page, "installRemoveButton").text, "Install")
+        verify(!findChild(page, "removeButton").visible)
+    }
+    function test_permission_summary_levels() {
+        let root = window()
+        root.pushAppDetail("org.kiosque.Fixture")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        compare(page.computePermissionLevel({}, true), "sandboxed")
+        compare(page.computePermissionLevel({ filesystems: ["host"] }, true), "full")
+        compare(page.computePermissionLevel({ sockets: ["wayland", "network", "pulseaudio"], devices: ["dri"] }, true), "sandboxed")
+        compare(page.computePermissionLevel({ filesystems: ["xdg-download:ro"] }, true), "limited")
+        compare(page.computePermissionLevel({ sockets: ["x11"] }, true), "limited")
+        compare(page.computePermissionLevel({ devices: ["all"] }, true), "full")
+        compare(page.computePermissionLevel({ "session-bus": { talk: ["org.freedesktop.Flatpak"] } }, true), "full")
+        compare(page.computePermissionLevel({ "session-bus": { talk: ["org.freedesktop.Notifications"] } }, true), "sandboxed")
+        // Unverifiable permissions are never summarised as safe.
+        compare(page.computePermissionLevel({}, false), "unknown")
+        root.pushAppDetail("org.kiosque.UnknownPermissions")
+        page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        compare(page.permissionLevel, "unknown")
+        compare(findChild(page, "permissionChip").text, "Permissions unknown")
+    }
+    function test_release_notes_and_links() {
+        let root = window()
+        root.pushAppDetail("org.kiosque.Screenshots")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        compare(page.details.latestRelease.version, "2.0")
+        let section = findChild(page, "whatsNewSection")
+        verify(section.visible)
+        let notes = findChild(page, "releaseNotesText")
+        compare(notes.textFormat, Text.PlainText)
+        verify(notes.text.indexOf("Faster startup.") !== -1, notes.text)
+        verify(notes.text.indexOf("New gallery") !== -1, notes.text)
+        verify(notes.text.indexOf("<") === -1, notes.text)
+        // Only present, secure links are listed.
+        compare(page.linkEntries.map(l => l.key).join(","), "homepage,bugtracker")
+        verify(findChild(page, "linksCard").visible)
+
+        root.pushAppDetail("org.kiosque.Fixture")
+        page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        verify(!findChild(page, "whatsNewSection").visible)
+        compare(page.linkEntries.length, 0)
+    }
+    function test_search_page_states() {
+        let root = window()
+        // The storefront field hands its query to the Search page.
+        let field = findChild(root.pageStack.currentItem, "storefrontSearchField")
+        verify(field !== null)
+        field.text = "Editor"
+        field.accepted()
+        tryVerify(() => root.pageStack.currentItem.objectName === "searchPage", 5000)
+        let page = root.pageStack.currentItem
+        compare(root.currentSection, "search")
+        compare(field.text, "")
+        tryCompare(page.resultsModel, "loading", false, 10000)
+        tryVerify(() => rows(page.resultsModel) === 1, 10000)
+        compare(page.resultsModel.error_message, "")
+
+        root.openSearch("empty")
+        page = root.pageStack.currentItem
+        tryCompare(page.resultsModel, "loading", false, 10000)
+        tryVerify(() => findChild(page, "searchEmptyMessage").visible, 10000)
+        verify(!findChild(page, "searchErrorMessage").visible)
+
+        // A failed search is reported as such, not as "no results".
+        root.openSearch("error")
+        page = root.pageStack.currentItem
+        tryCompare(page.resultsModel, "loading", false, 10000)
+        tryVerify(() => findChild(page, "searchErrorMessage").visible, 10000)
+        verify(!findChild(page, "searchEmptyMessage").visible)
+        verify(page.resultsModel.error_message.indexOf("503") !== -1)
+
+        // Without a query the page invites a search instead.
+        root.navigate("search")
+        page = root.pageStack.currentItem
+        verify(findChild(page, "searchPromptMessage").visible)
+    }
+    function test_navigation_surfaces_follow_window_width() {
+        let root = window()
+        let tabs = findChild(root, "navigationTabBar")
+        verify(tabs !== null)
+        root.width = 60 * Kirigami.Units.gridUnit
+        tryCompare(root, "compact", false)
+        verify(!tabs.visible)
+        verify(!root.globalDrawer.modal)
+        root.width = 25 * Kirigami.Units.gridUnit
+        tryCompare(root, "compact", true)
+        verify(tabs.visible)
+        verify(root.globalDrawer.modal)
+        // Sections replace each other in a single column with a back button.
+        root.navigate("installed")
+        compare(root.currentSection, "installed")
+        root.navigate("updates")
+        compare(root.pageStack.depth, 2)
+        compare(root.pageStack.currentItem.objectName, "updatesPage")
+        compare(root.title, "Updates — Kiosque")
+        root.navigate("shopfront")
+        compare(root.pageStack.depth, 1)
+        compare(root.title, "Kiosque")
+    }
+    function test_tasks_dialog_lists_and_cancels_background_work() {
+        let root = window()
+        let jobs = root.jobsModel
+        jobs.clearFinished()
+        let tasksAction = root.navigationActions[6]
+        compare(tasksAction.objectName, "navTasks")
+        verify(!tasksAction.visible)
+        backendFixture.holdOperations(true)
+        StoreController.installApp("org.kiosque.TasksFixture")
+        tryCompare(jobs, "active_count", 1, 10000)
+        verify(tasksAction.visible)
+        compare(tasksAction.text, "Tasks (1)")
+        root.openTasks()
+        let dialog = findChild(root, "tasksDialog")
+        tryCompare(dialog, "opened", true, 5000)
+        let list = findItem(dialog.contentItem, "tasksList")
+        verify(list !== null)
+        tryCompare(list, "count", 1, 5000)
+        let id = jobs.data(jobs.index(0, 0), 256)
+        let cancel = findItem(list, "cancelTask_" + id)
+        verify(cancel !== null && cancel.visible)
+        cancel.clicked()
+        tryCompare(jobs, "active_count", 0, 10000)
+        compare(jobs.finished_count, 1)
+        backendFixture.holdOperations(false)
+        dialog.close()
+        jobs.clearFinished()
+        compare(rows(jobs), 0)
+        verify(!tasksAction.visible)
     }
     function test_screenshot_popup_releases_scene_on_close() {
         let root = window()
@@ -306,10 +467,46 @@ TestCase {
         verify(status.messageText.indexOf("no such remote") !== -1)
         status.close()
     }
+    function test_manual_repository_is_inspected_before_adding() {
+        let root = window()
+        root.switchToPage("qrc:/qml/pages/SettingsPage.qml")
+        let page = root.pageStack.currentItem
+        let dialog = findChild(root, "repoFileDialog")
+        verify(dialog !== null)
+        remoteAddedSpy.clear()
+        let add = findChild(page, "addRepositoryButton")
+        verify(add !== null && add.visible)
+        add.clicked()
+        tryCompare(dialog, "opened", true, 5000)
+        compare(dialog.phase, "enter")
+        // Nothing can be inspected until an address is entered.
+        verify(!findItem(dialog.contentItem, "repoContinueButton").enabled)
+        findItem(dialog.contentItem, "repoSourceField").text = fixtureEndpoint + "/files/fixture.flatpakrepo"
+        findItem(dialog.contentItem, "repoManualNameField").text = "manual-fixture"
+        press(dialog, "repoContinueButton")
+        tryCompare(dialog, "phase", "confirm", 10000)
+        // The descriptor's origin is shown and the requested name is kept.
+        compare(dialog.repoUrl, "https://example.org/kiosque-fixture/")
+        compare(findItem(dialog.contentItem, "repoFileNameField").text, "manual-fixture")
+        compare(remoteAddedSpy.count, 0)
+        press(dialog, "repoCancelButton")
+        tryCompare(dialog, "opened", false)
+        wait(200)
+        compare(remoteAddedSpy.count, 0)
+
+        // An unreadable address is reported instead of being added.
+        add.clicked()
+        tryCompare(dialog, "opened", true, 5000)
+        findItem(dialog.contentItem, "repoSourceField").text = fixtureEndpoint + "/files/missing.flatpakrepo"
+        press(dialog, "repoContinueButton")
+        tryCompare(dialog, "phase", "failed", 10000)
+        verify(dialog.errorText.length > 0)
+        press(dialog, "repoCancelButton")
+        compare(remoteAddedSpy.count, 0)
+    }
     function test_installed_page_uninstall_and_update_progress_and_cancel() {
         let root = window()
-        root.currentSection = "installed"
-        root.switchToPage("qrc:/qml/pages/InstalledPage.qml")
+        root.navigate("installed")
         let page = root.pageStack.currentItem
         let model = root.installedModel
         model.refresh()
@@ -338,12 +535,20 @@ TestCase {
         model.checkForUpdates()
         tryCompare(model, "updates_available_count", 1, 10000)
         tryCompare(model, "checking_updates", false, 10000)
+        // The Installed page links to the Updates page, which owns updating.
+        let banner = findChild(page, "updatesAvailableMessage")
+        verify(banner !== null)
+        tryCompare(banner, "visible", true)
+        root.navigate("updates")
+        let updates = root.pageStack.currentItem
+        compare(updates.objectName, "updatesPage")
+        compare(rows(model), 1)
         model.updateSelectedApps()
         compare(model.updating, true)
-        let label = findChild(page, "updateStatusLabel")
+        let label = findChild(updates, "updateStatusLabel")
         verify(label !== null)
         compare(label.text, "Initializing update…")
-        let cancelUpdate = findChild(page, "cancelUpdateButton")
+        let cancelUpdate = findChild(updates, "cancelUpdateButton")
         verify(cancelUpdate !== null && cancelUpdate.visible)
         cancelUpdate.clicked()
         tryCompare(model, "updating", false, 10000)
@@ -352,6 +557,13 @@ TestCase {
         model.checkForUpdates()
         tryCompare(model, "updates_available_count", 0, 10000)
         tryCompare(model, "checking_updates", false, 10000)
+        let upToDate = findChild(updates, "upToDateMessage")
+        tryCompare(upToDate, "visible", true)
+        compare(upToDate.text, "Up to Date")
+        // Leaving the Updates page restores the full installed list.
+        root.navigate("installed")
+        page = root.pageStack.currentItem
+        tryVerify(() => rows(model) === 1, 10000)
 
         // An uninstall that is not cancelled completes and removes the row.
         model.uninstallApp(0)

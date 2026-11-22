@@ -48,6 +48,8 @@ cpp = meson.get_compiler('cpp')
 rust_dep = declare_dependency(dependencies: [backend_deps, cpp.find_library('dl'), cpp.find_library('pthread'), cpp.find_library('m')])
 
 qrc_files = qt6.compile_resources(sources: 'resources.qrc')
+# Monochrome logos for the updater's tray icon.
+update_qrc_files = qt6.compile_resources(name: 'update_resources', sources: 'update_resources.qrc')
 
 subdir('po')
 
@@ -73,7 +75,7 @@ executable('kiosque',
 )
 
 executable('kiosque-update',
-  sources: ['src/update_main.cpp', update_daemon_moc],
+  sources: ['src/update_main.cpp', update_daemon_moc, update_qrc_files],
   link_with: rust_lib[0],
   objects: [rust_lib[1]],
   dependencies: [qt_deps, rust_dep, dbus_dep, ki18n_dep],
@@ -112,6 +114,11 @@ endif
 install_data('qml/images/logo.svg',
   rename: 'org.kiosque.Kiosque.svg',
   install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps'
+)
+
+# Monochrome icon for places that use symbolic app icons (tray, panels).
+install_data('data/icons/org.kiosque.Kiosque-symbolic.svg',
+  install_dir: get_option('datadir') / 'icons/hicolor/symbolic/apps'
 )
 
 gnome = import('gnome')

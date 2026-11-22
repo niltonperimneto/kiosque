@@ -14,7 +14,10 @@ import org.kde.kirigamiaddons.components as KirigamiAddons
 Kirigami.ApplicationWindow {
     id: root
 
-    title: "Kiosque"
+    readonly property string pageTitle: pageStack.currentItem && pageStack.currentItem.title !== undefined
+                                        ? pageStack.currentItem.title : ""
+    title: pageTitle !== "" && pageStack.depth > 1 ? i18nc("@title:window %1 is the page", "%1 — Kiosque", pageTitle)
+                                                   : i18nc("@title:window", "Kiosque")
     width: Kirigami.Units.gridUnit * 50
     height: Kirigami.Units.gridUnit * 38
     minimumWidth: Kirigami.Units.gridUnit * 20
@@ -28,10 +31,9 @@ Kirigami.ApplicationWindow {
     property AppListModel appListModel: AppListModel {}
     property FeaturedModel featuredModel: FeaturedModel {}
     property InstalledModel installedModel: InstalledModel {}
-    property alias categoriesModel: categoriesModel
+    // Every installation, removal and update, for the Tasks dialog.
+    property JobsModel jobsModel: JobsModel {}
 
-    // Expose search query for page bindings (no longer bound to a header text field)
-    property string searchQuery: ""
     property string currentCategory: ""
 
     // ── Detail page component (created fresh each time) ─────────────────
@@ -96,74 +98,202 @@ Kirigami.ApplicationWindow {
     }
 
     function openRepoFile(path, name) {
-        repoFileDialog.requestedName = name || "";
-        repoFileDialog.inspect(path);
+        repoFileDialog.inspect(path, name);
     }
 
-    // ── Navigation button grouping ──────────────────────────────────────
-    Controls.ButtonGroup {
-        id: navigationGroup
+    // Manual "Add Repository": asks for a .flatpakrepo address, then inspects it.
+    function openAddRepository() {
+        repoFileDialog.openManual();
     }
 
-    // ── Global Navigation Drawer ────────────────────────────────────────
+    // ── Navigation ──────────────────────────────────────────────────────
+    // Narrow windows and phones use a bottom tab bar instead of the sidebar.
+    readonly property bool compact: Kirigami.Settings.isMobile || root.width < Kirigami.Units.gridUnit * 30
+
+    // One page at a time: sections and details replace the view (with the
+    // toolbar's back button) instead of squeezing previous pages into columns.
+    pageStack.columnView.columnResizeMode: Kirigami.ColumnView.SingleColumn
+    pageStack.globalToolBar.showNavigationButtons: Kirigami.ApplicationHeaderStyle.ShowBackButton
+
+    readonly property int updatesCount: installedModel.updates_available_count
+
+    // Top-level destinations shared by the sidebar and the tab bar.
+    function navigate(section) {
+        root.currentCategory = "";
+        root.currentSection = section;
+        switch (section) {
+        case "shopfront":
+            root.switchToPage("qrc:/qml/pages/ShopfrontPage.qml");
+            break;
+        case "search":
+            root.switchToPage("qrc:/qml/pages/SearchPage.qml");
+            break;
+        case "categories":
+            root.switchToPage("qrc:/qml/pages/CategoriesPage.qml");
+            break;
+        case "installed":
+            root.switchToPage("qrc:/qml/pages/InstalledPage.qml");
+            installedModel.refresh();
+            break;
+        case "updates":
+            root.switchToPage("qrc:/qml/pages/UpdatesPage.qml");
+            break;
+        case "settings":
+            root.switchToPage("qrc:/qml/pages/SettingsPage.qml");
+            break;
+        }
+    }
+
+    function openSearch(query) {
+        root.currentCategory = "";
+        root.currentSection = "search";
+        root.switchToPage("qrc:/qml/pages/SearchPage.qml", { query: query || "" });
+    }
+
+    function openCategories() {
+        root.navigate("categories");
+    }
+
+    function signIn(provider) {
+        root.navigate("settings");
+        SettingsController.login(provider);
+    }
+
+    readonly property list<Kirigami.Action> navigationActions: [
+        Kirigami.Action {
+            objectName: "navHome"
+            text: i18n("Home")
+            icon.name: "go-home-symbolic"
+            checked: root.currentSection === "shopfront"
+            onTriggered: root.navigate("shopfront")
+        },
+        Kirigami.Action {
+            objectName: "navSearch"
+            text: i18n("Search")
+            icon.name: "search-symbolic"
+            checked: root.currentSection === "search"
+            onTriggered: root.navigate("search")
+        },
+        Kirigami.Action {
+            objectName: "navCategories"
+            text: i18n("Categories")
+            icon.name: "applications-all-symbolic"
+            checked: root.currentSection === "categories" || root.currentSection === "category"
+            onTriggered: root.navigate("categories")
+        },
+        Kirigami.Action {
+            objectName: "navInstalled"
+            text: i18n("Installed")
+            icon.name: "view-list-details-symbolic"
+            checked: root.currentSection === "installed"
+            onTriggered: root.navigate("installed")
+        },
+        Kirigami.Action {
+            objectName: "navUpdates"
+            text: root.updatesCount > 0 ? i18n("Updates (%1)", root.updatesCount) : i18n("Updates")
+            icon.name: root.updatesCount > 0 ? "update-none-symbolic" : "system-software-update-symbolic"
+            checked: root.currentSection === "updates"
+            onTriggered: root.navigate("updates")
+        },
+        Kirigami.Action {
+            objectName: "navSettings"
+            text: i18n("Settings")
+            icon.name: "settings-configure-symbolic"
+            checked: root.currentSection === "settings"
+            onTriggered: root.navigate("settings")
+        },
+        // Shown once something was installed, removed or updated this session.
+        Kirigami.Action {
+            objectName: "navTasks"
+            text: root.jobsModel.active_count > 0
+                ? i18n("Tasks (%1)", root.jobsModel.active_count) : i18n("Tasks")
+            icon.name: root.jobsModel.active_count > 0 ? "process-working-symbolic" : "view-task"
+            visible: root.jobsModel.active_count + root.jobsModel.finished_count > 0
+            checkable: false
+            onTriggered: tasksDialog.open()
+        }
+    ]
+
+    // Ctrl+F: pages with their own search field handle it (Kirigami.SearchField
+    // binds StandardKey.Find); everywhere else it opens the Search page.
+    Shortcut {
+        sequences: [StandardKey.Find]
+        enabled: !(root.pageStack.currentItem && root.pageStack.currentItem.hasOwnSearch === true)
+        onActivated: root.navigate("search")
+    }
+
+    // Ctrl+R / F5: reload the current page.
+    Shortcut {
+        sequences: [StandardKey.Refresh, "Ctrl+R"]
+        onActivated: {
+            const page = root.pageStack.currentItem;
+            if (page && typeof page.reload === "function") {
+                page.reload();
+            } else if (page && page.supportsRefreshing) {
+                page.refreshing = true;
+            }
+        }
+    }
+
+    footer: Kirigami.NavigationTabBar {
+        objectName: "navigationTabBar"
+        visible: root.compact
+        // The drawer is sized from the footer height, visible or not.
+        height: visible ? implicitHeight : 0
+        // Categories stay reachable from Home and Search on small screens.
+        actions: [root.navigationActions[0], root.navigationActions[1], root.navigationActions[3],
+                  root.navigationActions[4], root.navigationActions[5], root.navigationActions[6]]
+    }
+
+    // ── Sidebar ─────────────────────────────────────────────────────────
     globalDrawer: Kirigami.GlobalDrawer {
         id: mainDrawer
+        objectName: "mainDrawer"
         isMenu: false
-        // Desktop: persistent collapsible sidebar. Mobile: modal overlay drawer.
-        modal: Kirigami.Settings.isMobile
-        collapsible: !Kirigami.Settings.isMobile
+        // Compact windows navigate with the tab bar; the drawer stays hidden.
+        modal: root.compact
+        // The sidebar collapses with its own button; compact windows use tabs.
+        handleVisible: false
+        collapsible: !root.compact
 
-        // Start retracted to the icon-only rail on desktop, giving content the
-        // full width; the user can expand it via the handle.
-        Component.onCompleted: if (!Kirigami.Settings.isMobile) collapsed = true;
+        // Expanded on roomy desktop windows, an icon rail otherwise; the user
+        // can toggle it with the handle at the bottom.
+        Component.onCompleted: {
+            if (!root.compact) {
+                collapsed = root.width < Kirigami.Units.gridUnit * 44;
+            }
+        }
 
-        // Standard fixed sidebar width; the built-in handle collapses it to an
-        // icon-only rail (collapsedSize) rather than allowing free resizing.
-        width: !collapsed ? Kirigami.Units.gridUnit * 16 : collapsedSize
+        width: !collapsed ? Kirigami.Units.gridUnit * 14 : collapsedSize
 
         header: Controls.ItemDelegate {
             id: headerDelegate
+            objectName: "accountButton"
             implicitWidth: parent ? parent.width : 0
-            implicitHeight: mainDrawer.collapsed ? Kirigami.Units.gridUnit * 3 : Kirigami.Units.gridUnit * 4.5
+            implicitHeight: mainDrawer.collapsed ? Kirigami.Units.gridUnit * 3 : Kirigami.Units.gridUnit * 4
             padding: Kirigami.Units.largeSpacing
 
-            // Inherit the drawer's palette and keep the rest state transparent so
-            // the header blends with the drawer background instead of painting a
-            // mismatched View/Button-coloured block.
-            Kirigami.Theme.inherit: true
-
-            background: Rectangle {
-                color: headerDelegate.pressed
-                    ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.2)
-                    : headerDelegate.hovered
-                        ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.1)
-                        : "transparent"
-                Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
-            }
-
-            Controls.ToolTip.text: i18n("Open Settings")
+            Accessible.name: SettingsController.is_authenticated
+                ? i18n("Account: %1", SettingsController.oauth_username)
+                : i18n("Sign in to write reviews")
+            Controls.ToolTip.text: Accessible.name
             Controls.ToolTip.visible: mainDrawer.collapsed && hovered
             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
 
-            onClicked: {
-                if (Kirigami.Settings.isMobile) {
-                    mainDrawer.close();
-                }
-                root.currentSection = "settings";
-                root.currentCategory = "";
-                root.switchToPage("qrc:/qml/pages/SettingsPage.qml");
-            }
+            onClicked: (SettingsController.is_authenticated ? accountMenu : signInMenu).popup(headerDelegate, 0, headerDelegate.height)
 
             contentItem: RowLayout {
                 spacing: Kirigami.Units.mediumSpacing
 
                 KirigamiAddons.Avatar {
-                    id: userAvatar
                     Layout.preferredWidth: mainDrawer.collapsed ? Kirigami.Units.iconSizes.medium : Kirigami.Units.iconSizes.large
                     Layout.preferredHeight: Layout.preferredWidth
                     Layout.alignment: Qt.AlignVCenter
-                    source: SettingsController.is_authenticated && SettingsController.oauth_avatar_url !== "" ? SettingsController.oauth_avatar_url : ""
+                    source: SettingsController.is_authenticated ? SettingsController.oauth_avatar_url : ""
                     name: SettingsController.is_authenticated ? SettingsController.oauth_username : ""
+                    initialsMode: SettingsController.is_authenticated
+                        ? KirigamiAddons.Avatar.InitialsMode.UseInitials
+                        : KirigamiAddons.Avatar.InitialsMode.UseIcon
                 }
 
                 ColumnLayout {
@@ -180,255 +310,78 @@ Kirigami.ApplicationWindow {
                     }
 
                     Controls.Label {
-                        text: SettingsController.is_authenticated ? i18n("Settings & Reviews") : i18n("Local Profile")
+                        text: SettingsController.is_authenticated ? i18n("Reviews account") : i18n("To rate and review apps")
                         font: Kirigami.Theme.smallFont
                         color: Kirigami.Theme.disabledTextColor
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
                 }
+
+                Kirigami.Icon {
+                    visible: !mainDrawer.collapsed
+                    source: "arrow-down-symbolic"
+                    implicitWidth: Kirigami.Units.iconSizes.small
+                    implicitHeight: implicitWidth
+                }
+            }
+
+            Controls.Menu {
+                id: signInMenu
+                objectName: "signInMenu"
+                Controls.MenuItem {
+                    text: i18n("Sign in with GitHub")
+                    icon.name: "user-identity"
+                    enabled: !SettingsController.login_in_progress
+                    onTriggered: root.signIn("github")
+                }
+                Controls.MenuItem {
+                    text: i18n("Sign in with GitLab")
+                    icon.name: "user-identity"
+                    enabled: !SettingsController.login_in_progress
+                    onTriggered: root.signIn("gitlab")
+                }
+                Controls.MenuItem {
+                    text: i18n("Sign in with KDE GitLab")
+                    icon.name: "kde"
+                    enabled: !SettingsController.login_in_progress
+                    onTriggered: root.signIn("kde_gitlab")
+                }
+                Controls.MenuItem {
+                    text: i18n("Sign in with GNOME GitLab")
+                    icon.name: "user-identity"
+                    enabled: !SettingsController.login_in_progress
+                    onTriggered: root.signIn("gnome_gitlab")
+                }
+            }
+
+            Controls.Menu {
+                id: accountMenu
+                objectName: "accountMenu"
+                Controls.MenuItem {
+                    text: i18n("Account Settings")
+                    icon.name: "configure"
+                    onTriggered: root.navigate("settings")
+                }
+                Controls.MenuSeparator {}
+                Controls.MenuItem {
+                    text: i18n("Sign Out")
+                    icon.name: "system-log-out"
+                    onTriggered: SettingsController.logout()
+                }
             }
         }
 
-        actions: [
-            Kirigami.Action {
-                text: i18n("Home")
-                icon.name: "go-home-symbolic"
-                checked: root.currentSection === "shopfront"
-                onTriggered: {
-                    root.currentSection = "shopfront";
-                    root.currentCategory = "";
-                    root.switchToPage("qrc:/qml/pages/ShopfrontPage.qml");
-                    appListModel.refresh();
-                }
-            },
-            Kirigami.Action {
-                id: categoriesAction
-                text: i18n("Categories")
-                icon.name: "applications-all-symbolic"
-                checked: root.currentSection === "category" || root.currentSection === "categories"
-                onTriggered: {
-                    if (mainDrawer.collapsed) {
-                        mainDrawer.collapsed = false;
-                    }
-                }
-
-                // Helper used by every child to navigate to a category listing.
-                function openCategory(catId, catName) {
-                    root.currentSection = "category";
-                    root.currentCategory = catId;
-                    root.switchToPage("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: catId, categoryName: catName });
-                }
-
-                Kirigami.Action {
-                    text: i18n("All Categories")
-                    icon.name: "applications-all-symbolic"
-                    checked: root.currentSection === "categories"
-                    onTriggered: {
-                        root.currentSection = "categories";
-                        root.currentCategory = "";
-                        root.switchToPage("qrc:/qml/pages/CategoriesPage.qml");
-                    }
-                }
-                Kirigami.Action {
-                    text: i18n("Audio & Video")
-                    icon.name: "applications-multimedia-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "AudioVideo"
-                    onTriggered: categoriesAction.openCategory("AudioVideo", i18n("Audio & Video"))
-                }
-                Kirigami.Action {
-                    text: i18n("Games")
-                    icon.name: "applications-games-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "Game"
-                    onTriggered: categoriesAction.openCategory("Game", i18n("Games"))
-                }
-                Kirigami.Action {
-                    text: i18n("Office")
-                    icon.name: "applications-office-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "Office"
-                    onTriggered: categoriesAction.openCategory("Office", i18n("Office"))
-                }
-                Kirigami.Action {
-                    text: i18n("Graphics")
-                    icon.name: "applications-graphics-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "Graphics"
-                    onTriggered: categoriesAction.openCategory("Graphics", i18n("Graphics"))
-                }
-                Kirigami.Action {
-                    text: i18n("Development")
-                    icon.name: "applications-development-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "Development"
-                    onTriggered: categoriesAction.openCategory("Development", i18n("Development"))
-                }
-                Kirigami.Action {
-                    text: i18n("Internet")
-                    icon.name: "applications-internet-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "Network"
-                    onTriggered: categoriesAction.openCategory("Network", i18n("Internet"))
-                }
-                Kirigami.Action {
-                    text: i18n("Utilities")
-                    icon.name: "applications-utilities-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "Utility"
-                    onTriggered: categoriesAction.openCategory("Utility", i18n("Utilities"))
-                }
-                Kirigami.Action {
-                    text: i18n("Education")
-                    icon.name: "applications-education-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "Education"
-                    onTriggered: categoriesAction.openCategory("Education", i18n("Education"))
-                }
-                Kirigami.Action {
-                    text: i18n("System")
-                    icon.name: "applications-system-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "System"
-                    onTriggered: categoriesAction.openCategory("System", i18n("System"))
-                }
-                Kirigami.Action {
-                    text: i18n("Science")
-                    icon.name: "applications-science-symbolic"
-                    checked: root.currentSection === "category" && root.currentCategory === "Science"
-                    onTriggered: categoriesAction.openCategory("Science", i18n("Science"))
-                }
-            },
-            Kirigami.Action {
-                text: i18n("Installed")
-                icon.name: "view-list-details-symbolic"
-                checked: root.currentSection === "installed"
-                onTriggered: {
-                    root.currentSection = "installed";
-                    root.currentCategory = "";
-                    root.switchToPage("qrc:/qml/pages/InstalledPage.qml");
-                    installedModel.refresh();
-                }
-            },
-            Kirigami.Action {
-                text: i18n("Settings")
-                icon.name: "settings-configure-symbolic"
-                checked: root.currentSection === "settings"
-                onTriggered: {
-                    root.currentSection = "settings";
-                    root.currentCategory = "";
-                    root.switchToPage("qrc:/qml/pages/SettingsPage.qml");
-                }
-            }
-        ]
+        actions: root.navigationActions
     }
 
-    // ── Local categories list model ─────────────────────────────────────
-    ListModel {
-        id: categoriesModel
-        ListElement { text: "All Categories"; icon: "applications-all-symbolic"; category: "" }
-        ListElement { text: "Audio & Video"; icon: "applications-multimedia-symbolic"; category: "AudioVideo" }
-        ListElement { text: "Games"; icon: "applications-games-symbolic"; category: "Game" }
-        ListElement { text: "Office"; icon: "applications-office-symbolic"; category: "Office" }
-        ListElement { text: "Graphics"; icon: "applications-graphics-symbolic"; category: "Graphics" }
-        ListElement { text: "Development"; icon: "applications-development-symbolic"; category: "Development" }
-        ListElement { text: "Internet"; icon: "applications-internet-symbolic"; category: "Network" }
-        ListElement { text: "Utilities"; icon: "applications-utilities-symbolic"; category: "Utility" }
-        ListElement { text: "Education"; icon: "applications-education-symbolic"; category: "Education" }
-        ListElement { text: "System"; icon: "applications-system-symbolic"; category: "System" }
-        ListElement { text: "Science"; icon: "applications-science-symbolic"; category: "Science" }
-    }
+    // ── Category tree (single source, translated) ───────────────────────
+    property Components.Categories categories: Components.Categories {}
+    // Kept for pages that list the top-level categories.
+    readonly property var categoriesModel: categories.all
 
     function getSubcategories(category) {
-        if (category === "Game") {
-            return [
-                { text: "Games", icon: "applications-games-symbolic", categoryId: "Game-Game" },
-                { text: "Emulators", icon: "input-gamepad-symbolic", categoryId: "Game-Emulator" },
-                { text: "Game Launchers", icon: "system-run-symbolic", categoryId: "Game-Launcher" },
-                { text: "Game Tools", icon: "applications-utilities-symbolic", categoryId: "Game-Tool" }
-            ];
-        } else if (category === "AudioVideo") {
-            return [
-                { text: "Audio & Video", icon: "applications-multimedia-symbolic", categoryId: "AudioVideo-All" },
-                { text: "Players", icon: "multimedia-player-symbolic", categoryId: "AudioVideo-Player" },
-                { text: "Recorders", icon: "media-record-symbolic", categoryId: "AudioVideo-Recorder" },
-                { text: "Editors & Creators", icon: "document-edit-symbolic", categoryId: "AudioVideo-Editing" }
-            ];
-        } else if (category === "Development") {
-            return [
-                { text: "Developer Tools", icon: "applications-development-symbolic", categoryId: "Development-All" },
-                { text: "IDEs", icon: "code-context-symbolic", categoryId: "Development-IDE" },
-                { text: "Debuggers", icon: "debug-run-symbolic", categoryId: "Development-Debugger" },
-                { text: "Web Development", icon: "applications-internet-symbolic", categoryId: "Development-Web" }
-            ];
-        } else if (category === "Graphics") {
-            return [
-                { text: "Graphics", icon: "applications-graphics-symbolic", categoryId: "Graphics-All" },
-                { text: "3D Graphics", icon: "draw-cuboid-symbolic", categoryId: "Graphics-3D" },
-                { text: "Vector Graphics", icon: "draw-bezier-curves-symbolic", categoryId: "Graphics-Vector" },
-                { text: "Raster Graphics", icon: "draw-brush-symbolic", categoryId: "Graphics-Raster" },
-                { text: "Photography", icon: "camera-photo-symbolic", categoryId: "Graphics-Photography" }
-            ];
-        } else if (category === "Office") {
-            return [
-                { text: "Office", icon: "applications-office-symbolic", categoryId: "Office-All" },
-                { text: "Word Processors", icon: "document-new-symbolic", categoryId: "Office-WordProcessor" },
-                { text: "Spreadsheets", icon: "table-symbolic", categoryId: "Office-Spreadsheet" },
-                { text: "Presentations", icon: "view-presentation-symbolic", categoryId: "Office-Presentation" },
-                { text: "Finance", icon: "taxes-finances-symbolic", categoryId: "Office-Finance" }
-            ];
-        }
-        return [];
-    }
-
-
-
-    // ── Add Repository overlay sheet ────────────────────────────────────
-    Kirigami.OverlaySheet {
-        id: addRepoSheet
-        
-        title: i18n("Add Flatpak Repository")
-
-        ColumnLayout {
-            spacing: Kirigami.Units.largeSpacing
-            implicitWidth: Kirigami.Units.gridUnit * 18
-
-            Controls.Label {
-                text: i18n("Add a new Flatpak remote repository. User-scoped repositories do not require administrator privileges.")
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-            }
-
-            Kirigami.FormLayout {
-                Layout.fillWidth: true
-
-                Controls.TextField {
-                    id: repoNameField
-                    Kirigami.FormData.label: i18n("Name:")
-                    placeholderText: "flathub-beta"
-                    Layout.fillWidth: true
-                }
-
-                Controls.TextField {
-                    id: repoUrlField
-                    Kirigami.FormData.label: i18n("URL:")
-                    placeholderText: "https://dl.flathub.org/beta-repo/flathub-beta.flatpakrepo"
-                    Layout.fillWidth: true
-                }
-            }
-
-            RowLayout {
-                Layout.alignment: Qt.AlignRight
-                spacing: Kirigami.Units.mediumSpacing
-
-                Controls.Button {
-                    text: i18n("Cancel")
-                    onClicked: addRepoSheet.close()
-                }
-
-                Controls.Button {
-                    text: i18n("Add")
-                    highlighted: true
-                    enabled: repoNameField.text.length > 0 && repoUrlField.text.length > 0
-                    onClicked: {
-                        root.openRepoFile(repoUrlField.text, repoNameField.text);
-                        addRepoSheet.close();
-                    }
-                }
-            }
-        }
+        return categories.subcategories(category);
     }
 
     // ── Repository addition status dialog ──────────────────────────────
@@ -621,6 +574,13 @@ Kirigami.ApplicationWindow {
                     }
                 }
                 Controls.Button {
+                    objectName: "refBackgroundButton"
+                    visible: refFileDialog.phase === "installing"
+                    text: i18n("Continue in Background")
+                    icon.name: "window-minimize"
+                    onClicked: refFileDialog.close()
+                }
+                Controls.Button {
                     objectName: "refCancelInstallButton"
                     visible: refFileDialog.phase === "installing"
                     text: i18n("Cancel Installation")
@@ -671,141 +631,48 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    // ── Background tasks ────────────────────────────────────────────────
+    Components.TasksDialog {
+        id: tasksDialog
+        jobs: root.jobsModel
+    }
+
+    function openTasks() {
+        tasksDialog.open();
+    }
+
+    // Report finished work in the window, or on the desktop when Kiosque is
+    // in the background. Cancellations were requested by the user and are
+    // not announced.
     Connections {
-        target: RepoModel
-        function onRepoFileInspected(success, suggestedName, title, url, error) {
-            if (repoFileDialog.phase !== "loading") {
+        target: root.jobsModel
+        function onJobFinished(title, kind, state, error) {
+            let message = "";
+            if (state === "done") {
+                message = kind === "uninstall" ? i18n("%1 was removed.", title)
+                        : kind === "update" ? i18n("%1 was updated.", title)
+                        : i18n("%1 was installed.", title);
+            } else if (state === "failed") {
+                message = kind === "uninstall" ? i18n("Could not remove %1: %2", title, error)
+                        : kind === "update" ? i18n("Could not update %1: %2", title, error)
+                        : i18n("Could not install %1: %2", title, error);
+            } else {
                 return;
             }
-            if (success) {
-                repoFileDialog.repoTitle = title;
-                repoFileDialog.repoUrl = url;
-                repoFileNameField.text = repoFileDialog.requestedName !== "" ? repoFileDialog.requestedName : suggestedName;
-                repoFileDialog.phase = "confirm";
+            if (root.active) {
+                root.showPassiveNotification(message, state === "failed" ? "long" : "short",
+                                             i18n("Details"), root.openTasks);
             } else {
-                repoFileDialog.errorText = i18n("Could not open the file: %1", error);
-                repoFileDialog.phase = "failed";
+                root.jobsModel.notifyDesktop(state === "failed" ? i18n("Operation Failed") : i18n("Kiosque"),
+                                             message,
+                                             state === "failed" ? "dialog-error" : "system-software-install");
             }
         }
     }
 
-    // ── .flatpakrepo confirmation ──────────────────────────────────────
-    Kirigami.Dialog {
+    // ── Repository addition (.flatpakrepo or manual URL) ────────────────
+    Components.AddRepositoryDialog {
         id: repoFileDialog
-        objectName: "repoFileDialog"
-
-        property string phase: "loading"
-        property string source: ""
-        property string requestedName: ""
-        property string repoTitle: ""
-        property string repoUrl: ""
-        property string errorText: ""
-
-        function inspect(path) {
-            source = path;
-            repoTitle = "";
-            repoUrl = "";
-            errorText = "";
-            repoFileNameField.text = "";
-            phase = "loading";
-            open();
-            RepoModel.inspectRepoFile(path);
-        }
-
-        title: phase === "failed" ? i18n("Cannot Add Repository") : i18n("Add Repository?")
-        preferredWidth: Kirigami.Units.gridUnit * 24
-        padding: Kirigami.Units.largeSpacing
-
-        onRejected: RepoModel.discardRepoFile()
-
-        // Buttons live in the content; see refFileDialog.
-
-        ColumnLayout {
-            spacing: Kirigami.Units.largeSpacing
-
-            Controls.BusyIndicator {
-                Layout.alignment: Qt.AlignHCenter
-                visible: repoFileDialog.phase === "loading"
-                running: visible
-            }
-
-            Kirigami.FormLayout {
-                Layout.fillWidth: true
-                visible: repoFileDialog.phase === "confirm"
-
-                Controls.Label {
-                    Kirigami.FormData.label: i18n("Title:")
-                    visible: repoFileDialog.repoTitle !== ""
-                    text: repoFileDialog.repoTitle
-                    textFormat: Text.PlainText
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
-                }
-                Controls.Label {
-                    Kirigami.FormData.label: i18n("URL:")
-                    text: repoFileDialog.repoUrl
-                    textFormat: Text.PlainText
-                    wrapMode: Text.WrapAnywhere
-                    Layout.fillWidth: true
-                }
-                Controls.TextField {
-                    id: repoFileNameField
-                    objectName: "repoFileNameField"
-                    Kirigami.FormData.label: i18n("Name:")
-                    placeholderText: "flathub-beta"
-                    Layout.fillWidth: true
-                }
-            }
-
-            Controls.Label {
-                Layout.fillWidth: true
-                visible: repoFileDialog.phase === "confirm"
-                text: i18n("Repository signing key SHA-256: %1", RepoModel.repo_key_sha256)
-                textFormat: Text.PlainText
-                wrapMode: Text.WrapAnywhere
-            }
-
-            Kirigami.InlineMessage {
-                Layout.fillWidth: true
-                visible: repoFileDialog.phase === "confirm"
-                type: Kirigami.MessageType.Warning
-                text: i18n("Applications from this repository will be offered in Kiosque. Only add repositories you trust.")
-            }
-
-            Kirigami.InlineMessage {
-                Layout.fillWidth: true
-                visible: repoFileDialog.phase === "failed"
-                type: Kirigami.MessageType.Error
-                text: repoFileDialog.errorText
-            }
-
-            RowLayout {
-                Layout.alignment: Qt.AlignRight
-                spacing: Kirigami.Units.smallSpacing
-
-                Controls.Button {
-                    objectName: "repoAddButton"
-                    visible: repoFileDialog.phase === "confirm"
-                    enabled: /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(repoFileNameField.text)
-                    text: i18n("Add")
-                    icon.name: "list-add"
-                    onClicked: {
-                        RepoModel.addInspectedRemote(repoFileNameField.text);
-                        repoFileDialog.phase = "done";
-                        repoFileDialog.close();
-                    }
-                }
-                Controls.Button {
-                    objectName: "repoCancelButton"
-                    text: repoFileDialog.phase === "failed" ? i18n("Close") : i18n("Cancel")
-                    icon.name: "dialog-cancel"
-                    onClicked: {
-                        RepoModel.discardRepoFile();
-                        repoFileDialog.close();
-                    }
-                }
-            }
-        }
     }
 
     // ── Auto-check for updates ──────────────────────────────────────────

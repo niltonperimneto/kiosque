@@ -14,18 +14,22 @@ Kirigami.ScrollablePage {
 
     title: i18n("Storefront")
     supportsRefreshing: true
+    // Its title search field handles Ctrl+F (see Main.qml).
+    readonly property bool hasOwnSearch: true
 
-    // Search lives in the toolbar so it stays accessible while scrolling.
+    // The toolbar field starts a catalog search on the Search page.
     titleDelegate: Kirigami.SearchField {
         id: searchField
+        objectName: "storefrontSearchField"
         Layout.fillWidth: true
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
         placeholderText: i18n("Search applications…")
+        autoAccept: false
         onAccepted: {
-            if (text.length > 0) {
-                appListModel.search(text);
-            } else {
-                appListModel.refresh();
+            const query = text.trim();
+            if (query.length > 0) {
+                text = "";
+                applicationWindow().openSearch(query);
             }
         }
     }
@@ -47,10 +51,6 @@ Kirigami.ScrollablePage {
             return ({});
         }
     }
-
-    property string activeSearchQuery: typeof searchField !== 'undefined' && searchField ? searchField.text : ""
-
-    property bool isDefaultView: page.activeSearchQuery.length === 0
 
     // Cap content width on large displays and centre it, like a modern storefront.
     readonly property real contentMaxWidth: Kirigami.Units.gridUnit * 70
@@ -83,6 +83,24 @@ Kirigami.ScrollablePage {
         spacing: Kirigami.Units.gridUnit * 2
         // No animation to prevent blank screen issues
 
+        Kirigami.InlineMessage {
+            objectName: "storefrontErrorMessage"
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.contentMaxWidth
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: Kirigami.Units.largeSpacing
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            type: Kirigami.MessageType.Error
+            visible: !page.popularModel.loading && page.popularModel.error_message !== ""
+            text: i18n("Flathub could not be reached: %1", page.popularModel.error_message)
+            actions: Kirigami.Action {
+                text: i18n("Try Again")
+                icon.name: "view-refresh"
+                onTriggered: page.refreshing = true
+            }
+        }
+
         // ── Hero carousel ───────────────────────────────────────────────
         Components.HeroCarousel {
             // The carousel insets its own card (for shadow room), so it aligns
@@ -92,7 +110,6 @@ Kirigami.ScrollablePage {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: Kirigami.Units.largeSpacing
             model: page.featuredModel
-            visible: page.isDefaultView
         }
 
         // ── App of the Day spotlight ────────────────────────────────────
@@ -101,7 +118,7 @@ Kirigami.ScrollablePage {
         // CardsLayout constrains the card to a prominent-but-not-edge-to-edge
         // column width.
         Kirigami.CardsLayout {
-            visible: page.isDefaultView && !!page.aotd.appId
+            visible: !!page.aotd.appId
             Layout.fillWidth: true
             Layout.maximumWidth: page.contentMaxWidth
             Layout.alignment: Qt.AlignHCenter
@@ -127,7 +144,6 @@ Kirigami.ScrollablePage {
             Layout.maximumWidth: page.contentMaxWidth
             Layout.alignment: Qt.AlignHCenter
             spacing: Kirigami.Units.smallSpacing
-            visible: page.isDefaultView
 
             Kirigami.Heading {
                 level: 2
@@ -162,7 +178,7 @@ Kirigami.ScrollablePage {
                     Components.CategoryChip {
                         id: chip
                         anchors.verticalCenter: parent.verticalCenter
-                        label: i18n(categoryDelegate.text)
+                        label: categoryDelegate.text
                         categoryId: categoryDelegate.category
                         onClicked: {
                             applicationWindow().currentSection = "categories";
@@ -181,7 +197,6 @@ Kirigami.ScrollablePage {
             Layout.maximumWidth: page.contentMaxWidth
             Layout.alignment: Qt.AlignHCenter
             spacing: Kirigami.Units.gridUnit * 2
-            visible: page.isDefaultView
 
             Components.HorizontalAppList {
                 Layout.fillWidth: true
@@ -212,91 +227,6 @@ Kirigami.ScrollablePage {
                 Layout.fillWidth: true
                 title: i18n("Recently Updated")
                 appModel: page.updatedModel
-            }
-        }
-
-        // ── Section: Search / Category Applications ──────────────────────
-        ColumnLayout {
-            Layout.fillWidth: true
-            Layout.maximumWidth: page.contentMaxWidth
-            Layout.alignment: Qt.AlignHCenter
-            Layout.leftMargin: Kirigami.Units.largeSpacing
-            Layout.rightMargin: Kirigami.Units.largeSpacing
-            spacing: Kirigami.Units.mediumSpacing
-            visible: !page.isDefaultView
-
-            Kirigami.Heading {
-                level: 2
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: appGrid.count > 0
-                    ? i18np("%1 result for “%2”", "%1 results for “%2”", appGrid.count, page.activeSearchQuery)
-                    : i18n("Search Results")
-            }
-
-            // Loading state
-            Controls.BusyIndicator {
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: Kirigami.Units.gridUnit * 4
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 4
-                Layout.preferredHeight: Kirigami.Units.gridUnit * 4
-                running: page.appListModel && page.appListModel.loading
-                visible: running
-            }
-
-            // Empty state
-            Kirigami.PlaceholderMessage {
-                Layout.fillWidth: true
-                Layout.preferredHeight: Kirigami.Units.gridUnit * 8
-                icon.name: "edit-find"
-                text: i18n("No Applications Found")
-                explanation: i18n("Try a different search term or category")
-                visible: (!page.appListModel || !page.appListModel.loading) && appGrid.count === 0
-            }
-
-            // ── App grid ────────────────────────────────────────────────
-            GridLayout {
-                id: appGrid
-
-                Layout.fillWidth: true
-
-                property int count: appGridRepeater.count
-                property int minCellWidth: Kirigami.Units.gridUnit * 12
-                columns: Math.max(1, Math.floor(width / minCellWidth))
-                columnSpacing: Kirigami.Units.largeSpacing
-                rowSpacing: Kirigami.Units.largeSpacing
-
-                visible: count > 0
-
-                Repeater {
-                    id: appGridRepeater
-                    model: page.appListModel
-
-                    delegate: Item {
-                        id: delegateWrapper
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: Kirigami.Units.gridUnit * 12
-
-                        required property string appId
-                        required property string name
-                        required property string summary
-                        required property string iconUrl
-
-                        Components.StorefrontAppCard {
-                            anchors.fill: parent
-                            appName: delegateWrapper.name
-                            appSummary: delegateWrapper.summary
-                            iconUrl: delegateWrapper.iconUrl
-                            onClicked: applicationWindow().pushAppDetail(delegateWrapper.appId)
-
-                            opacity: 0
-                            Component.onCompleted: opacity = 1.0
-                            Behavior on opacity {
-                                NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic }
-                            }
-                        }
-                    }
-                }
             }
         }
 

@@ -31,6 +31,7 @@ pub mod qobject {
         #[base = QAbstractListModel]
         #[qml_element]
         #[qproperty(bool, loading)]
+        #[qproperty(QString, error_message)]
         type AppListModel = super::AppListModelRust;
 
         #[qinvokable]
@@ -96,6 +97,8 @@ pub use kiosque_core::entries::AppEntry;
 pub struct AppListModelRust {
     pub items: Vec<AppEntry>,
     pub loading: bool,
+    /// Why the last load failed; empty after a successful load.
+    pub error_message: cxx_qt_lib::QString,
     generation: u64,
 }
 
@@ -182,6 +185,7 @@ impl qobject::AppListModel {
             // SWR Step 2: Fetch from network if cache is expired or missing
             if is_expired || cached_items.is_none() {
                 let client = crate::services::services().flathub.clone();
+                let mut error = String::new();
                 let items = match client.fetch_popular().await {
                     Ok(apps) => {
                         klog!(
@@ -199,6 +203,7 @@ impl qobject::AppListModel {
                     }
                     Err(e) => {
                         kerr!("AppListModel::refresh: {}", e);
+                        error = e.to_string();
                         vec![]
                     }
                 };
@@ -216,6 +221,9 @@ impl qobject::AppListModel {
                         "AppListModel::refresh: updating UI with fresh {} items",
                         items.len()
                     );
+                    qobject
+                        .as_mut()
+                        .set_error_message(cxx_qt_lib::QString::from(&error));
                     qobject.as_mut().apply_items(items);
                     qobject.as_mut().set_loading(false);
                 });
@@ -237,6 +245,7 @@ impl qobject::AppListModel {
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let client = crate::services::services().flathub.clone();
+            let mut error = String::new();
             let items = match client.fetch_popular().await {
                 Ok(apps) => apps
                     .into_iter()
@@ -247,7 +256,10 @@ impl qobject::AppListModel {
                         app_id: app.app_id,
                     })
                     .collect(),
-                Err(_) => vec![],
+                Err(e) => {
+                    error = e.to_string();
+                    vec![]
+                }
             };
             let _ = qt_thread.queue(move |mut qobject| {
                 if qobject.generation != generation {
@@ -257,6 +269,9 @@ impl qobject::AppListModel {
                     "AppListModel::load_popular: updating UI with {} items",
                     items.len()
                 );
+                qobject
+                    .as_mut()
+                    .set_error_message(cxx_qt_lib::QString::from(&error));
                 qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
             });
@@ -270,6 +285,7 @@ impl qobject::AppListModel {
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let client = crate::services::services().flathub.clone();
+            let mut error = String::new();
             let items = match client.fetch_recently_added().await {
                 Ok(apps) => apps
                     .into_iter()
@@ -280,7 +296,10 @@ impl qobject::AppListModel {
                         app_id: app.app_id,
                     })
                     .collect(),
-                Err(_) => vec![],
+                Err(e) => {
+                    error = e.to_string();
+                    vec![]
+                }
             };
             let _ = qt_thread.queue(move |mut qobject| {
                 if qobject.generation != generation {
@@ -290,6 +309,9 @@ impl qobject::AppListModel {
                     "AppListModel::load_new: updating UI with {} items",
                     items.len()
                 );
+                qobject
+                    .as_mut()
+                    .set_error_message(cxx_qt_lib::QString::from(&error));
                 qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
             });
@@ -303,6 +325,7 @@ impl qobject::AppListModel {
         let qt_thread = self.qt_thread();
         crate::runtime::runtime().spawn(async move {
             let client = crate::services::services().flathub.clone();
+            let mut error = String::new();
             let items = match client.fetch_recently_updated().await {
                 Ok(apps) => apps
                     .into_iter()
@@ -313,7 +336,10 @@ impl qobject::AppListModel {
                         app_id: app.app_id,
                     })
                     .collect(),
-                Err(_) => vec![],
+                Err(e) => {
+                    error = e.to_string();
+                    vec![]
+                }
             };
             let _ = qt_thread.queue(move |mut qobject| {
                 if qobject.generation != generation {
@@ -323,6 +349,9 @@ impl qobject::AppListModel {
                     "AppListModel::load_updated: updating UI with {} items",
                     items.len()
                 );
+                qobject
+                    .as_mut()
+                    .set_error_message(cxx_qt_lib::QString::from(&error));
                 qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
             });
@@ -337,6 +366,7 @@ impl qobject::AppListModel {
         let query_str = query.to_string();
         crate::runtime::runtime().spawn(async move {
             let client = crate::services::services().flathub.clone();
+            let mut error = String::new();
             let items = match client.search(&query_str).await {
                 Ok(apps) => {
                     klog!(
@@ -355,6 +385,7 @@ impl qobject::AppListModel {
                 }
                 Err(e) => {
                     kerr!("AppListModel::search: {}", e);
+                    error = e.to_string();
                     vec![]
                 }
             };
@@ -367,6 +398,9 @@ impl qobject::AppListModel {
                     "AppListModel::search: updating UI with {} items",
                     items.len()
                 );
+                qobject
+                    .as_mut()
+                    .set_error_message(cxx_qt_lib::QString::from(&error));
                 qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
             });
@@ -387,6 +421,8 @@ impl qobject::AppListModel {
             } else {
                 &category_str
             };
+
+            let mut error = String::new();
 
             let items = match client.fetch_category(api_category).await {
                 Ok(apps) => {
@@ -424,6 +460,7 @@ impl qobject::AppListModel {
                 }
                 Err(e) => {
                     kerr!("AppListModel::load_category: {}", e);
+                    error = e.to_string();
                     vec![]
                 }
             };
@@ -436,6 +473,9 @@ impl qobject::AppListModel {
                     "AppListModel::load_category: updating UI with {} items",
                     items.len()
                 );
+                qobject
+                    .as_mut()
+                    .set_error_message(cxx_qt_lib::QString::from(&error));
                 qobject.as_mut().apply_items(items);
                 qobject.as_mut().set_loading(false);
             });
@@ -482,6 +522,7 @@ impl qobject::AppListModel {
                 }
                 Some((category, sort)) => client.fetch_category_sorted(&category, &sort).await,
             };
+            let mut error = String::new();
             let items: Vec<AppEntry> = match result {
                 Ok(apps) => apps
                     .into_iter()
@@ -492,8 +533,9 @@ impl qobject::AppListModel {
                         app_id: app.app_id,
                     })
                     .collect(),
-                Err(error) => {
-                    kerr!("storefront collection: {}", error);
+                Err(e) => {
+                    kerr!("storefront collection: {}", e);
+                    error = e.to_string();
                     vec![]
                 }
             };
@@ -501,6 +543,9 @@ impl qobject::AppListModel {
                 if model.generation != generation {
                     return;
                 }
+                model
+                    .as_mut()
+                    .set_error_message(cxx_qt_lib::QString::from(&error));
                 model.as_mut().apply_items(items);
                 model.as_mut().set_loading(false);
             });

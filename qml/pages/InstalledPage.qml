@@ -8,17 +8,14 @@ import org.kde.kirigami as Kirigami
 import org.kde.ki18n
 import com.kiosque
 
-// Installed applications manager.
-//
-// Layout follows the rest of the app (Kirigami.ScrollablePage, search in the
-// title delegate, global controls in the toolbar) and the KDE HIG: a dense,
-// editable list of rows with contextual actions — not discovery cards. Update
-// handling is consolidated into a single "Pending Updates" card at the top of
-// the list (à la Bazaar's library page) instead of being spread across a banner,
-// header checkboxes and a multi-state footer.
+// Installed applications manager: a dense list of rows with contextual
+// actions (KDE HIG). Pending updates are handled on the Updates page; this
+// page only links to it.
 Kirigami.ScrollablePage {
     id: page
     title: i18n("Installed")
+    // Its title search field handles Ctrl+F (see Main.qml).
+    readonly property bool hasOwnSearch: true
     supportsRefreshing: true
 
     property var installedModel: applicationWindow().installedModel
@@ -27,18 +24,12 @@ Kirigami.ScrollablePage {
     property string sortCriterion: "name"
     property bool sortAscending: true
 
-    // Filter state mirrored locally so the toolbar menu can show check marks.
-    property bool showUpdatesOnly: false
-
-    // Whether an update check has completed at least once this session, so we
-    // don't claim "up to date" before the user has actually checked.
-    property bool hasChecked: false
-
     titleDelegate: Kirigami.SearchField {
         id: searchField
         Layout.fillWidth: true
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-        placeholderText: i18n("Search installed…")
+        objectName: "installedFilterField"
+        placeholderText: i18n("Filter installed…")
         onTextChanged: page.installedModel.applySearchFilter(text)
     }
 
@@ -52,16 +43,15 @@ Kirigami.ScrollablePage {
         }
     }
 
-    Component.onCompleted: installedModel.sortModel(sortCriterion, sortAscending)
-
-    // Mark hasChecked once a check finishes (checking_updates goes true → false).
-    Connections {
-        target: page.installedModel
-        ignoreUnknownSignals: true
-        function onChecking_updatesChanged() {
-            if (page.installedModel && !page.installedModel.checking_updates) {
-                page.hasChecked = true;
-            }
+    // The model is shared with the Updates page; set and clear this page's filters.
+    Component.onCompleted: {
+        installedModel.applyShowUpdatesOnly(false);
+        installedModel.applySearchFilter("");
+        installedModel.sortModel(sortCriterion, sortAscending);
+    }
+    Component.onDestruction: {
+        if (installedModel) {
+            installedModel.applySearchFilter("");
         }
     }
 
@@ -103,23 +93,14 @@ Kirigami.ScrollablePage {
             }
         },
         Kirigami.Action {
-            text: i18n("Filter")
+            text: i18n("View")
             icon.name: "view-filter"
 
             Kirigami.Action {
-                text: i18n("Show platform & SDK updates")
+                text: i18n("Show runtimes")
                 checkable: true
                 checked: page.installedModel && page.installedModel.show_runtimes
                 onTriggered: page.installedModel.applyShowRuntimes(checked)
-            }
-            Kirigami.Action {
-                text: i18n("Updates only")
-                checkable: true
-                checked: page.showUpdatesOnly
-                onTriggered: {
-                    page.showUpdatesOnly = checked;
-                    page.installedModel.applyShowUpdatesOnly(checked);
-                }
             }
         }
     ]
@@ -157,136 +138,25 @@ Kirigami.ScrollablePage {
             text: section === "updates" ? i18n("Updates Available") : i18n("Up to Date")
         }
 
-        // ── Pending Updates card ───────────────────────────────────────────────
-        // Collapses to zero height when there is nothing to update. Owns the
-        // batch update actions and the update-in-progress indicator.
+        // ── Link to pending updates ────────────────────────────────────────────
         header: Item {
             width: listView.width
-            implicitHeight: updatesCard.visible
-                ? updatesCard.implicitHeight + Kirigami.Units.largeSpacing * 2
-                : 0
+            height: updatesMessage.visible ? updatesMessage.implicitHeight : 0
 
-            Kirigami.AbstractCard {
-                id: updatesCard
+            Kirigami.InlineMessage {
+                id: updatesMessage
+                objectName: "updatesAvailableMessage"
+                width: parent.width
+                position: Kirigami.InlineMessage.Position.Header
+                type: Kirigami.MessageType.Information
                 visible: page.installedModel && page.installedModel.updates_available_count > 0
-
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: Kirigami.Units.largeSpacing
-
-                readonly property bool busy: page.installedModel
-                    && (page.installedModel.updating || page.installedModel.checking_updates)
-
-                contentItem: ColumnLayout {
-                    spacing: Kirigami.Units.smallSpacing
-
-                    // ── Update-in-progress indicator ───────────────────────────
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: Kirigami.Units.smallSpacing / 2
-                        visible: updatesCard.busy
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Kirigami.Units.smallSpacing
-
-                            Controls.ProgressBar {
-                                id: updateProgressBar
-                                objectName: "updateProgressBar"
-                                Layout.fillWidth: true
-                                value: page.installedModel ? Math.max(0, page.installedModel.update_progress) : 0
-                                indeterminate: page.installedModel && page.installedModel.updating
-                                    && page.installedModel.update_progress <= 0.01
-                            }
-
-                            Controls.Button {
-                                objectName: "cancelUpdateButton"
-                                visible: page.installedModel && page.installedModel.updating
-                                text: i18n("Cancel")
-                                icon.name: "dialog-cancel"
-                                onClicked: page.installedModel.cancelUpdate()
-                            }
-                        }
-
-                        Controls.Label {
-                            objectName: "updateStatusLabel"
-                            Layout.fillWidth: true
-                            horizontalAlignment: Text.AlignHCenter
-                            font: Kirigami.Theme.smallFont
-                            color: Kirigami.Theme.disabledTextColor
-                            elide: Text.ElideRight
-                            text: {
-                                if (!page.installedModel || !page.installedModel.updating)
-                                    return i18n("Checking for updates…");
-                                if (page.installedModel.update_status_text !== "")
-                                    return page.installedModel.update_status_text;
-                                return page.installedModel.update_progress < 0
-                                    ? i18n("Initializing update…") : i18n("Updating…");
-                            }
-                        }
-                    }
-
-                    // ── Update actions ─────────────────────────────────────────
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Kirigami.Units.largeSpacing
-                        visible: !updatesCard.busy
-
-                        Kirigami.Heading {
-                            Layout.fillWidth: true
-                            level: 4
-                            elide: Text.ElideRight
-                            text: i18np("%1 update available", "%1 updates available",
-                                        page.installedModel ? page.installedModel.updates_available_count : 0)
-                        }
-
-                        Controls.Button {
-                            text: i18n("Update All")
-                            icon.name: "system-software-update"
-                            highlighted: true
-                            onClicked: {
-                                page.installedModel.setAllUpdatesChecked(true);
-                                page.installedModel.updateSelectedApps();
-                            }
-                        }
-                    }
-
-                    // ── Selective update row ───────────────────────────────────
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Kirigami.Units.smallSpacing
-                        visible: !updatesCard.busy
-
-                        Controls.CheckBox {
-                            text: i18nc("%1 = count", "Select all (%1)",
-                                        page.installedModel ? page.installedModel.updates_available_count : 0)
-                            tristate: true
-                            checkState: {
-                                if (!page.installedModel) return Qt.Unchecked;
-                                const c = page.installedModel.updates_checked_count;
-                                const a = page.installedModel.updates_available_count;
-                                if (c === 0) return Qt.Unchecked;
-                                if (c === a) return Qt.Checked;
-                                return Qt.PartiallyChecked;
-                            }
-                            onClicked: {
-                                const allChecked = page.installedModel.updates_checked_count
-                                    === page.installedModel.updates_available_count;
-                                page.installedModel.setAllUpdatesChecked(!allChecked);
-                            }
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        Controls.Button {
-                            text: i18nc("%1 = count of selected updates", "Update (%1)",
-                                        page.installedModel ? page.installedModel.updates_checked_count : 0)
-                            icon.name: "system-software-update"
-                            enabled: page.installedModel && page.installedModel.updates_checked_count > 0
-                            onClicked: page.installedModel.updateSelectedApps()
-                        }
-                    }
+                text: i18np("%1 update is available.", "%1 updates are available.",
+                            page.installedModel ? page.installedModel.updates_available_count : 0)
+                actions: Kirigami.Action {
+                    objectName: "reviewUpdatesAction"
+                    text: i18n("Review Updates")
+                    icon.name: "system-software-update"
+                    onTriggered: applicationWindow().navigate("updates")
                 }
             }
         }
@@ -302,24 +172,8 @@ Kirigami.ScrollablePage {
                 && page.installedModel.uninstalling_app_id !== ""
                 && page.installedModel.uninstalling_app_id === model.appId
 
-            background: Rectangle {
-                color: delegateItem.pressed ? Kirigami.Theme.highlightColor
-                     : delegateItem.hovered ? Kirigami.Theme.alternateBackgroundColor
-                     : Kirigami.Theme.backgroundColor
-
-                Behavior on color { ColorAnimation { duration: Kirigami.Units.shortDuration } }
-            }
-
             contentItem: RowLayout {
                 spacing: Kirigami.Units.largeSpacing
-
-                // Update selection checkbox — only on rows that have an update.
-                Controls.CheckBox {
-                    Layout.alignment: Qt.AlignVCenter
-                    visible: model.hasUpdate
-                    checked: model.isChecked
-                    onToggled: page.installedModel.toggleUpdateChecked(index)
-                }
 
                 Kirigami.Icon {
                     Layout.preferredWidth: Kirigami.Units.iconSizes.large
@@ -389,7 +243,7 @@ Kirigami.ScrollablePage {
 
             actions: [
                 Kirigami.Action {
-                    text: i18n("Launch")
+                    text: i18n("Open")
                     icon.name: "media-playback-start"
                     visible: !model.isRuntime
                     onTriggered: page.installedModel.launchApp(index)
@@ -401,72 +255,6 @@ Kirigami.ScrollablePage {
                     onTriggered: page.installedModel.uninstallApp(index)
                 }
             ]
-        }
-    }
-
-    // ── Footer: persistent update-check control ────────────────────────────────
-    footer: Controls.ToolBar {
-        visible: page.installedModel !== null
-
-        contentItem: ColumnLayout {
-            spacing: Kirigami.Units.smallSpacing
-
-            // Indeterminate progress while checking (updating progress lives in
-            // the Pending Updates card).
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: Kirigami.Units.smallSpacing / 2
-                visible: page.installedModel && page.installedModel.checking_updates
-
-                Controls.ProgressBar {
-                    Layout.fillWidth: true
-                    indeterminate: true
-                }
-
-                Controls.Label {
-                    Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignHCenter
-                    font: Kirigami.Theme.smallFont
-                    color: Kirigami.Theme.disabledTextColor
-                    text: i18n("Checking for updates…")
-                }
-            }
-
-            // Idle row: status + check button.
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Kirigami.Units.smallSpacing
-                visible: page.installedModel
-                         && !page.installedModel.checking_updates && !page.installedModel.updating
-
-                Kirigami.Icon {
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                    visible: page.hasChecked && page.installedModel
-                             && page.installedModel.updates_available_count === 0
-                    source: "checkmark"
-                    color: Kirigami.Theme.positiveTextColor
-                    isMask: true
-                }
-
-                Controls.Label {
-                    Layout.fillWidth: true
-                    elide: Text.ElideRight
-                    color: Kirigami.Theme.disabledTextColor
-                    text: {
-                        if (page.installedModel && page.installedModel.updates_available_count > 0)
-                            return i18n("Updates are available");
-                        return page.hasChecked ? i18n("All applications are up to date")
-                                               : i18n("Check for available application updates");
-                    }
-                }
-
-                Controls.Button {
-                    text: i18n("Check for Updates")
-                    icon.name: "view-refresh"
-                    onClicked: page.installedModel.checkForUpdates()
-                }
-            }
         }
     }
 }
