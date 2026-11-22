@@ -11,9 +11,9 @@
   </p>
 </div>
 
-![Kiosque storefront on Plasma, with Blender in the featured carousel and the App of the Day below](docs/screenshots/home.png)
+![Kiosque on KDE Plasma: the storefront with Blender in the featured carousel and the App of the Day below](docs/screenshots/home.png)
 
-*Screenshots show Kiosque on KDE Plasma with Breeze window decorations and live Flathub data.*
+*Screenshots show Kiosque on KDE Plasma (KWin, Breeze) with live Flathub data.*
 
 ## Why Kiosque exists
 
@@ -45,13 +45,12 @@ Once it’s open, try **Games → New Releases**, then open a title and look at 
 - **Decide with the facts in front of you.** Screenshots, release notes, descriptions, ratings, and reviews help you judge the app itself. A chip shows which repository the app comes from, and Install uses that repository. The Sandbox Permissions panel lists the access the app requests, read from that repository’s own metadata. If the permissions cannot be verified, Kiosque does not offer to install the app.
 - **Come back to a usable library.** Search and sort installed Flatpaks and filter to pending updates. Installs, removals and updates run in the background and are listed in a Tasks dialog, where you can cancel them. For ongoing maintenance, the companion installs updates on a daily or weekly schedule, and catches up after the computer was off.
 
-![Krita’s detail page with screenshots, release notes, licence and the sandbox summary](docs/screenshots/details.png)
-
-| App of the Day, hovered | A category with subcategory filters |
+| | |
 | --- | --- |
-| ![The App of the Day card lifted on hover with an accent border and a spotlight following the pointer](docs/screenshots/app-of-the-day.png) | ![The Graphics category with 3D, vector, raster and photography filters](docs/screenshots/category.png) |
-| **Work in the background** | **Narrow windows** |
-| ![The Tasks dialog listing an installation in progress](docs/screenshots/tasks.png) | ![Search results in a phone-sized window with bottom navigation](docs/screenshots/mobile.png) |
+| ![The App of the Day card lifted on hover, with its screenshot collage following the pointer](docs/screenshots/app-of-the-day.png) | ![The Graphics category with 3D, vector, raster and photography filters](docs/screenshots/category.png) |
+| ![Search results for “music” drawn from the AppStream data on the computer](docs/screenshots/search.png) | ![Krita’s detail page with screenshots, release notes, licence and the sandbox summary](docs/screenshots/details.png) |
+| ![The permissions dialog listing network, display, audio, device and file access](docs/screenshots/permissions.png) | ![The Tasks dialog with an installation running in the background](docs/screenshots/tasks.png) |
+| ![Settings with weekly automatic updates at 03:00](docs/screenshots/settings.png) | ![Three narrow Kiosque windows fanned out: search, the storefront and an app page](docs/screenshots/narrow.png) |
 
 ### Beyond the storefront
 
@@ -83,7 +82,7 @@ The [desktop test prerequisites](docs/testing.md#suite-matrix) list package name
 
 ### Building & Installation
 
-Kiosque uses Meson to build the project. Meson drives Cargo, which builds the `kiosque` storefront and the `kiosque-update` companion as Rust binaries, and then installs them with the QML resources, translations and desktop integration.
+Kiosque uses Meson to build the project. Meson drives Cargo, which builds the `kiosque` storefront and the `kiosque-update` companion as Rust binaries; Meson then installs them with the QML resources, translations and desktop integration. The application has no C++ sources of its own.
 
 ```bash
 # Clone the repository
@@ -115,11 +114,13 @@ Kiosque splits the desktop UI, application services, and Flatpak execution into 
 
 ```mermaid
 flowchart TB
-    subgraph Desktop["Desktop · Qt GUI thread"]
+    subgraph Desktop["Desktop · kiosque (Rust + Qt Quick)"]
         Views["Qt Quick / Kirigami<br/>Storefront, app details, installed library"]
-        Models["qtbridge · com.kiosque<br/>AppListModel, AppDetails, InstalledModel<br/>Store and settings controllers"]
+        Models["Qt Bridge adapters · com.kiosque<br/>AppListModel, AppDetails, InstalledModel,<br/>RemoteImage, L10n, AppShell"]
+        ViewState["Qt-free view state · rust/app/src/view<br/>Queries, request generations, detail loading"]
         Views -->|Search, settings, install and update actions| Models
         Models -.->|Model roles, properties and Qt signals| Views
+        Models --> ViewState
     end
 
     subgraph Core["Application services · kiosque-core"]
@@ -138,7 +139,7 @@ flowchart TB
     subgraph Flatpak["Flatpak execution"]
         Backend{"Backend selected at build time"}
         Broker["Sandbox broker<br/>Typed requests to the host companion"]
-        Companion["kiosque-companion · host D-Bus service<br/>Checks caller identity and API version,<br/>validates inputs, runs automatic updates"]
+        Companion["kiosque-companion · kiosque-update<br/>Rust D-Bus service, tray and notifications<br/>Checks caller identity and API version,<br/>runs automatic updates"]
         Native["Native backend<br/>libflatpak on blocking workers"]
         Installations["User and system Flatpak installations"]
         Backend -->|Native package| Native
@@ -153,7 +154,7 @@ flowchart TB
     Flathub["Flathub<br/>Collections, popularity, search fallback"]
     ODRS["ODRS<br/>Ratings and reviews"]
 
-    Models -->|Catalog or detail request| Tokio
+    ViewState -->|Catalog or detail request| Tokio
     Tokio -.->|Queue current results on Qt GUI thread| Models
     Models -->|Submit through transaction client| Queue
     Registry -.->|Shared state and job updates| Models
@@ -161,15 +162,35 @@ flowchart TB
     Backend -.->|Progress and installation changes| Registry
     Clients <-->|Catalog and metadata| Flathub
     Clients <-->|Ratings and reviews| ODRS
+
+    classDef desktop fill:#dbeafe,stroke:#2563eb,color:#172554,stroke-width:2px
+    classDef service fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px
+    classDef state fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px
+    classDef execution fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:2px
+    classDef external fill:#fce7f3,stroke:#db2777,color:#831843,stroke-width:2px
+
+    class Views,Models,ViewState desktop
+    class Tokio,Catalog,Clients service
+    class Cache,Registry,Queue,Installations state
+    class Backend,Broker,Companion,Native execution
+    class Flathub,ODRS external
+
+    style Desktop fill:transparent,stroke:#2563eb,stroke-width:2px
+    style Core fill:transparent,stroke:#16a34a,stroke-width:2px
+    style Flatpak fill:transparent,stroke:#7c3aed,stroke-width:2px
 ```
+
+**Colors:** blue = desktop UI; green = application services; amber = state and storage; violet = Flatpak execution; pink = external APIs. Labels and group boundaries identify the same layers.
 
 Solid arrows show requests, reads, and operations. Dashed arrows show results and state flowing back to the interface.
 
-### Desktop views, Qt models, and the Rust bridge
+### Desktop views, Qt Bridge adapters and the view layer
 
 - **Views.** `ShopfrontPage.qml` binds app collections to cards and search results. `AppDetailPage.qml` gets its own `AppDetails` object for metadata, permissions, and operation feedback. The installed library uses `InstalledModel`. Controllers expose shared operations and settings to QML.
-- **Bindings.** Rust modules under `rust/app/src/bridge/` declare QObject types with [qtbridge](https://crates.io/crates/qtbridge) (pinned to 0.4.1) and expose Qt properties, signals and invokable methods, registered in the `com.kiosque` QML module. qtbridge still generates C++ glue internally, kept inside Cargo's target directory; the application itself has no C++ sources. [App manifest](rust/app/Cargo.toml) · [Bridge registration](rust/app/build.rs)
-- **Models and threads.** `AppListModel` is a Qt list model implemented in Rust. QML delegates read the `name`, `summary`, `iconUrl`, and `appId` roles. Tokio does network and filesystem work in the background. Each QObject owns its subscriptions, and results return to Qt’s GUI thread through a `QThreadHandle`, where the model emits updates.
+- **Bindings.** The storefront is a Rust binary. Its QML types come from [Qt Bridge](https://crates.io/crates/qtbridge) (`qtbridge`, pinned to 0.4.1): each adapter in `rust/app/src/bridge/` is a `#[qobject]` module whose `qproperty!`, `#[qslot]` and `#[qsignal]` declarations become Qt properties, invokable methods and signals, registered as `com.kiosque` types at start-up. Qt Bridge still generates C++ glue internally, kept inside Cargo's target directory. [App manifest](rust/app/Cargo.toml) · [Adapters](rust/app/src/bridge/mod.rs)
+- **View layer.** The adapters only translate. What to load, request generations, debouncing and detail assembly live in plain Rust under `rust/app/src/view/`, tested with `cargo test` and no Qt. [View state](rust/app/src/view/mod.rs)
+- **Models and threads.** `AppListModel` and the other lists use Qt Bridge's list-model base, and QML delegates read the `name`, `summary`, `iconUrl`, and `appId` roles. Tokio does network and filesystem work in the background. Results return through `QThreadHandle::invoke_mut`, which is silently dropped if the QML object was destroyed meanwhile. Adapters emit signals only after their state is updated. QML handlers that call back into the emitting object defer with `Qt.callLater`, because a nested mutable borrow during an emission would abort.
+- **Translations, images and start-up.** QML strings go through the `L10n` singleton (`L10n.i18n("%1 of %2", [a, b])`), backed by gettext catalogs. Images go through `RemoteImage`, described below. The `AppShell` singleton reports successful QML start-up for `kiosque --check-ui`. [L10n](rust/app/src/bridge/l10n.rs) · [AppShell](rust/app/src/bridge/app_shell.rs)
 
 Kirigami’s page stack gives the storefront, search results and app details a common navigation history. Opening another app replaces the existing detail page, so following a series of recommendations does not leave a stack of detail views behind. The storefront cards share typography, hover timing and shadow defaults through a QML style singleton. The cards inherit the desktop font and use Qt’s vector text rendering to keep labels sharp as a card scales on hover. App-specific screenshots and branding provide the variation across the shelf. [Page navigation](qml/Main.qml) · [Storefront styling](qml/style/Style.qml)
 
@@ -205,10 +226,14 @@ The same install from the Flatpak, across the sandbox boundary:
 ```mermaid
 sequenceDiagram
     autonumber
-    actor You
-    participant App as Kiosque (Flatpak)
-    participant Companion as kiosque-companion
-    participant Flatpak as libflatpak
+    box rgba(37,99,235,0.12) Desktop / sandbox
+        actor You
+        participant App as Kiosque (Flatpak)
+    end
+    box rgba(124,58,237,0.12) Host execution
+        participant Companion as kiosque-companion
+        participant Flatpak as libflatpak
+    end
     You->>App: Click Install
     App->>App: Check the app's permissions (Install stays off if unknown)
     App->>Companion: Install(app ID, repository, scope)
@@ -222,13 +247,15 @@ sequenceDiagram
     App-->>You: Tasks dialog, and a notification if the window is in the background
 ```
 
+The blue band contains the user and sandboxed app; violet contains the authenticated host companion and native Flatpak execution.
+
 #### When the storefront is closed
 
-The `kiosque-update` executable from `kiosque-companion` serves two uses. D-Bus activation starts it on demand to handle requests, and it exits after an idle interval. While automatic updates are on it stays in background mode. It switches modes at runtime, so turning automatic updates on or off takes effect immediately rather than at the next login. Its Rust services own scheduling and transactions, and a small Qt-free Rust shell shows the tray menu and notifications. The tray offers **Check for Updates** and **Update All**. The command-line `--check` mode checks **and installs** pending updates in one run. [Updater entry point and options](rust/updater/src/main.rs)
+The `kiosque-update` executable from `kiosque-companion` serves two uses. D-Bus activation starts it on demand to handle requests, and it exits after an idle interval. While automatic updates are on it stays in background mode. It switches modes at runtime, so turning automatic updates on or off takes effect immediately rather than at the next login. It is a Qt-free Rust program: the core daemon owns scheduling and transactions, the tray is a `StatusNotifierItem` with a D-Bus menu served on the daemon’s own bus connection, and notifications go to `org.freedesktop.Notifications`. Its behaviour (daemon events and tray commands in, notifications and tray changes out) is a pure state machine, tested without a bus. The tray offers **Check for Updates** and **Update All**. The command-line `--check` mode checks **and installs** pending updates in one run. [Updater entry point and options](rust/updater/src/main.rs) · [Notifier state machine](rust/updater/src/shell.rs)
 
 Every saved schedule is also sent to the running companion, which stores it. Enabling automatic updates also asks the desktop portal to start the companion at login. The settings controller waits for the response and restores the previous preference on rejection, so the switch reflects whether Kiosque could apply the change. Inside Flatpak, the login autostart runs `kiosque --update-companion`, which hands the schedule to the host companion and exits without opening a window. Enabling fails with an explanation when the companion is missing or too old.
 
-The companion records when automatic updates were enabled and when the last run succeeded. Any scheduled time that passed since then is due, so a laptop that was off at 02:00 updates five minutes after the next login. Enabling counts from that moment, so it never triggers an immediate run. A failed run is retried after an hour. [Update schedule](rust/core/src/daemon/schedule.rs) [Settings controller](rust/app/src/bridge/settings_controller.rs) · [Background integration](rust/core/src/settings.rs)
+The companion records when automatic updates were enabled and when the last run succeeded. Any scheduled time that passed since then is due, so a laptop that was off at 02:00 updates five minutes after the next login. Enabling counts from that moment, so it never triggers an immediate run. A failed run is retried after an hour. [Update schedule](rust/core/src/daemon/schedule.rs) · [Settings controller](rust/app/src/bridge/settings_controller.rs) · [Background integration](rust/core/src/settings.rs)
 
 ### Security boundaries
 
@@ -247,10 +274,10 @@ CI also includes dependency audits, redacted source and history secret scanning,
 
 ### What happens when you search
 
-1. Submitting the search field invokes the QML-visible `AppListModel.search(query)`.
-2. The Rust method receives a Qt `QString`, sets `loading`, and advances the model’s request generation. It captures a Qt thread handle and converts the query to a Rust string for the background task.
+1. Typing in the search field calls the QML-visible `AppListModel.search(query)`.
+2. The Qt Bridge slot hands the query to the view layer, which starts a new request generation and waits 250 ms. Another keystroke in that time supersedes the request, so only the last query is ever sent.
 3. On a Tokio worker, the app metadata policy ranks matches from the local AppStream catalog by name, keywords, ID and summary. This step never waits on the network. While Flathub’s own AppStream data is not on disk, results from `https://flathub.org/api/v2/search` are appended. A search fails only when neither source returned anything. Blocked apps are removed.
-4. The task queues the result back to the Qt thread. A generation check drops stale replies. For a changed result set, the model replaces its rows through qtbridge’s model reset. It then clears `loading`, and QML redraws the cards through the model roles. When the catalog is reindexed, for example after adding a repository, the model repeats its last search. [Search policy](rust/core/src/apps.rs) · [Search model](rust/app/src/bridge/app_list_model.rs)
+4. The result returns to the Qt thread through `QThreadHandle::invoke_mut`. A generation check drops stale replies, the model replaces its rows through a model reset and clears `loading`, and QML redraws the cards through the model roles. When the catalog is reindexed, for example after adding a repository, the model repeats its last search. [Search policy](rust/core/src/apps.rs) · [List queries](rust/app/src/view/app_list.rs) · [Search model](rust/app/src/bridge/app_list_model.rs)
 
 ## Development guidance and testing
 
@@ -263,7 +290,7 @@ python3 scripts/test.py services
 python3 scripts/test.py pr --backend native
 ```
 
-The split between the core and the adapter makes these checks useful at different points. The core suite can exercise transaction ordering and cancellation without loading Qt. Dedicated desktop test builds inject fixture endpoints, temporary settings and caches, and a mock Flatpak installation before creating QML objects. That lets a test exercise the same buttons, signals and model updates as the desktop app while controlling which requests succeed. [Service construction for tests](rust/app/src/services.rs)
+The split between the core, the view layer and the adapters makes these checks useful at different points. The core suite can exercise transaction ordering and cancellation without loading Qt, and the view layer has its own `cargo test` coverage. Desktop tests run in `kiosque-quick-test`, a Rust binary that installs fixture endpoints, temporary settings and caches, and a mock Flatpak installation before running Qt Quick Test over `tests/qml`. QML tests drive the fixtures through the `TestSupport` and `BackendFixture` singletons, so a test exercises the same buttons, signals and model updates as the desktop app while controlling which requests succeed. [Test runner](rust/app/src/bin/quick_test.rs) · [Service construction for tests](rust/app/src/services.rs)
 
 Real Flatpak lifecycle checks run only in disposable VMs. See the testing guide for desktop prerequisites, broker-only builds, artifact smoke tests and release qualification.
 
