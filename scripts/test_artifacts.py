@@ -13,13 +13,8 @@ def companion_rpm(directory):
 
 
 # Storefront RPMs are qualified together with their companion; the companion
-# alone has no storefront to start.
-artifacts = sorted(
-    path for path in root.rglob('*')
-    if path.parent.name != 'companion'
-    and (path.suffix.lower() in ('.flatpak', '.appimage')
-         or (path.suffix == '.rpm' and path.name.startswith('kiosque-') and path.name[len('kiosque-'):][:1].isdigit()))
-)
+# alone has no storefront to start, and debug packages are not applications.
+artifacts = sorted(path for path in root.rglob('*') if path.parent.name != 'companion' and (path.suffix.lower() in ('.flatpak', '.appimage') or path.match('kiosque-[0-9]*.rpm')))
 if not artifacts:
     sys.exit('no packaged artifacts found')
 for artifact in artifacts:
