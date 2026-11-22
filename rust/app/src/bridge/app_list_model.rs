@@ -105,6 +105,14 @@ mod object {
             let handle = self.get_thread_handle();
             let latest = self.latest.clone();
             crate::bridge::spawn(async move {
+                let client = &crate::services::services().flathub;
+                if let AppSource::Search(query) = &source
+                    && let Some(apps) = client.cached_search(query).await
+                {
+                    let entries = apps.into_iter().map(app_list::entry).collect();
+                    handle.invoke_mut(move |m| m.apply(generation, Ok(entries), false));
+                    return;
+                }
                 if let Some(delay) = source.debounce() {
                     tokio::time::sleep(delay).await;
                     if latest.load(Ordering::SeqCst) != generation {
@@ -122,7 +130,7 @@ mod object {
                         return;
                     }
                 }
-                let result = app_list::fetch(&crate::services::services().flathub, &source).await;
+                let result = app_list::fetch(client, &source).await;
                 if source == AppSource::Popular
                     && let Ok(items) = &result
                     && !items.is_empty()

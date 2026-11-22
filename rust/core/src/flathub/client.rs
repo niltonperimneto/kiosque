@@ -313,32 +313,31 @@ impl FlathubClient {
         .await
     }
 
-    // ── Search (NOT cached — queries are too varied) ────────────────────
+    /// Return a recent result for this exact query without making a request.
+    pub async fn cached_search(&self, query: &str) -> Option<Vec<FlathubApp>> {
+        self.cache.searches.get(query).await
+    }
 
     pub async fn search(&self, query: &str) -> Result<Vec<FlathubApp>, FlathubError> {
-        let resp = self
+        if let Some(apps) = self.cached_search(query).await {
+            return Ok(apps);
+        }
+        let url = self.url("search");
+        self.http.check_url(&url)?;
+        let response = self
             .http
             .client
-            .post(self.url("search"))
-            .json(&serde_json::json!({
-                "query": query,
-            }))
+            .post(url)
+            .json(&serde_json::json!({ "query": query }))
             .send()
             .await?;
-
-        let status = resp.status();
-        let body = resp.text().await?;
-        if !status.is_success() {
-            if status.as_u16() == 404 {
-                return Err(FlathubError::NotFound);
-            }
-            return Err(FlathubError::Http {
-                status: status.as_u16(),
-                message: "Request rejected by server".into(),
-            });
-        }
-
-        parse_collection(&body, &format!("search(\"{}\")", query))
+        let body = checked_text(response).await?;
+        let apps = parse_collection(&body, "search")?;
+        self.cache
+            .searches
+            .insert(query.to_owned(), apps.clone())
+            .await;
+        Ok(apps)
     }
 
     // ── App detail (cached) ─────────────────────────────────────────────

@@ -8,7 +8,7 @@ use kiosque_core::flathub::client::FlathubClient;
 use kiosque_core::flathub::types::FlathubApp;
 
 /// Delay before a search request is sent; newer keystrokes restart it.
-pub const SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
+pub const SEARCH_DEBOUNCE: Duration = Duration::from_millis(120);
 
 /// A collection an app list can show.
 #[derive(Debug, Clone, PartialEq, Eq)]

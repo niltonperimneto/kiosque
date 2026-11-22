@@ -212,6 +212,29 @@ TestCase {
         verify(!findChild(page, "whatsNewSection").visible)
         compare(page.linkEntries.length, 0)
     }
+    function test_type_to_search() {
+        const root = window()
+        root.requestActivate()
+        tryCompare(root, "active", true)
+        const home = root.pageStack.currentItem
+        home.forceActiveFocus()
+        keyClick(Qt.Key_E)
+        tryCompare(root, "currentSection", "search")
+
+        const page = root.pageStack.currentItem
+        tryVerify(() => page.searchField && page.searchField.activeFocus)
+        compare(page.searchField.text.toLowerCase(), "e")
+        for (const key of [Qt.Key_D, Qt.Key_I, Qt.Key_T, Qt.Key_O, Qt.Key_R]) {
+            keyClick(key)
+        }
+        tryCompare(page, "activeQuery", "editor")
+        tryVerify(() => !page.resultsModel.loading && rows(page.resultsModel) === 1, 10000)
+
+        keyClick(Qt.Key_A, Qt.ControlModifier)
+        keyClick(Qt.Key_Backspace)
+        tryVerify(() => findChild(page, "searchPromptMessage").visible)
+        compare(rows(page.resultsModel), 0)
+    }
     function test_search_page_states() {
         let root = window()
         // The storefront field hands its query to the Search page.
@@ -253,11 +276,21 @@ TestCase {
         root.width = 60 * Kirigami.Units.gridUnit
         tryCompare(root, "compact", false)
         verify(!tabs.visible)
-        verify(!root.globalDrawer.modal)
+        let sidebar = root.globalDrawer
+        tryCompare(sidebar, "visible", true)
+        sidebar.collapsed = true
         root.width = 25 * Kirigami.Units.gridUnit
         tryCompare(root, "compact", true)
         verify(tabs.visible)
-        verify(root.globalDrawer.modal)
+        tryCompare(sidebar, "visible", false)
+        tryCompare(root.contentItem, "width", root.width)
+        root.width = 60 * Kirigami.Units.gridUnit
+        tryCompare(root, "compact", false)
+        verify(!tabs.visible)
+        tryCompare(sidebar, "visible", true)
+        tryCompare(sidebar, "position", 1)
+        verify(sidebar.collapsed)
+        tryCompare(root.contentItem, "width", root.width - sidebar.width)
         // Sections replace each other in a single column with a back button.
         root.navigate("installed")
         compare(root.currentSection, "installed")
