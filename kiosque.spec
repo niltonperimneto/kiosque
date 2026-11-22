@@ -14,6 +14,7 @@ BuildRequires:  cargo
 BuildRequires:  rust
 BuildRequires:  cmake
 BuildRequires:  mold
+BuildRequires:  qt6-qtbase-private-devel
 BuildRequires:  qt6-qtbase-devel
 BuildRequires:  qt6-qtdeclarative-devel
 BuildRequires:  kf6-kirigami-devel
@@ -61,6 +62,7 @@ test -f %{buildroot}%{_datadir}/krunner/dbusplugins/org.kiosque.Kiosque.desktop
 %files
 %{_bindir}/kiosque
 %{_datadir}/applications/org.kiosque.Kiosque.desktop
+%{_datadir}/metainfo/org.kiosque.Kiosque.metainfo.xml
 %{_datadir}/icons/hicolor/scalable/apps/org.kiosque.Kiosque.svg
 
 # No desktop file: with the Kiosque Flatpak installed the companion must not

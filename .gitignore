@@ -12,3 +12,4 @@ repo/
 *.rpm
 *.flatpak
 *.AppImage
+.qmlls.ini

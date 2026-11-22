@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [rust, c-cpp, actions, python]
+        language: [rust, actions, python]
     env:
       CARGO_BUILD_JOBS: '2'
     steps:
@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
       - name: Install Rust build-script prerequisites
         if: matrix.language == 'rust'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config qt6-base-dev qt6-declarative-dev libflatpak-dev libdbus-1-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config qt6-base-dev qt6-base-private-dev qt6-declarative-dev libflatpak-dev libdbus-1-dev
       - uses: github/codeql-action/init@38112626f97ac1fd7acf3df7ebca51f4677c1b38 # v4
         with:
           languages: ${{ matrix.language }}

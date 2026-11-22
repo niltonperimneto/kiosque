@@ -16,13 +16,13 @@ TestCase {
 
     function init() {
         tryCompare(SettingsController, "saving_settings", false, 10000)
-        backgroundPortalFixture.denyNext = false
+        BackgroundPortalFixture.denyNext = false
         settingsSpy.clear()
         failOnWarning(/TypeError|ReferenceError/)
     }
     function cleanup() {
         reviewSpy.target = null
-        backendFixture.holdOperations(false)
+        BackendFixture.holdOperations(false)
     }
     function window() {
         let component = Qt.createComponent("qrc:/qml/Main.qml")
@@ -40,17 +40,17 @@ TestCase {
         root.switchToPage("qrc:/qml/pages/SettingsPage.qml")
         let page = root.pageStack.currentItem
         saveSettings(false, "Daily", "02:00")
-        let before = backgroundPortalFixture.requestCount
+        let before = BackgroundPortalFixture.requestCount
         saveSettings(true, "Weekly", "03:15")
-        compare(backgroundPortalFixture.requestCount, before + 1)
-        compare(backgroundPortalFixture.lastAutostart, true)
-        compare(backgroundPortalFixture.lastCommand.join(" "), "kiosque-update --background")
+        compare(BackgroundPortalFixture.requestCount, before + 1)
+        compare(BackgroundPortalFixture.lastAutostart, true)
+        compare(BackgroundPortalFixture.lastCommand.join(" "), "kiosque-update --background")
         compare(SettingsController.auto_update, true)
         // Editing the schedule does not prompt again for background permission.
         saveSettings(true, "Daily", "04:00")
-        compare(backgroundPortalFixture.requestCount, before + 1)
+        compare(BackgroundPortalFixture.requestCount, before + 1)
 
-        backgroundPortalFixture.denyNext = true
+        BackgroundPortalFixture.denyNext = true
         settingsSpy.clear()
         saveSettings(false, "Daily", "04:00")
         compare(settingsSpy.count, 1)
@@ -63,20 +63,20 @@ TestCase {
         compare(findChild(page, "autoUpdateSwitch").checked, true)
 
         saveSettings(false, "Daily", "02:00")
-        compare(backgroundPortalFixture.lastAutostart, false)
+        compare(BackgroundPortalFixture.lastAutostart, false)
         compare(SettingsController.auto_update, false)
     }
     function test_settings_page_does_not_write_during_initialization() {
         let root = window()
         saveSettings(true, "Weekly", "03:15")
         settingsSpy.clear()
-        let requests = backgroundPortalFixture.requestCount
+        let requests = BackgroundPortalFixture.requestCount
         root.switchToPage("qrc:/qml/pages/SettingsPage.qml")
         let page = root.pageStack.currentItem
         tryCompare(page, "readyForSaving", true)
         SettingsController.loadSettings()
         compare(settingsSpy.count, 0)
-        compare(backgroundPortalFixture.requestCount, requests)
+        compare(BackgroundPortalFixture.requestCount, requests)
         compare(SettingsController.auto_update, true)
         compare(SettingsController.update_frequency, "Weekly")
         compare(SettingsController.update_time, "03:15")
@@ -151,14 +151,14 @@ TestCase {
         verify(primary.enabled)
         verify(remove.visible)
         // Removing asks for confirmation; dismissing it changes nothing.
-        let before = backendFixture.operationCount()
+        let before = BackendFixture.operationCount()
         remove.clicked()
         let confirm = findChild(page, "removeConfirmDialog")
         tryCompare(confirm, "opened", true, 5000)
         confirm.close()
         tryCompare(confirm, "opened", false)
         wait(200)
-        compare(backendFixture.operationCount(), before)
+        compare(BackendFixture.operationCount(), before)
         compare(page.details.installed, true)
 
         root.pushAppDetail("org.kiosque.Reviews")
@@ -281,7 +281,7 @@ TestCase {
             visible: install.visible, text: install.text }))
         install.clicked()
         tryCompare(page.details, "installed", true, 10000)
-        compare(backendFixture.lastInstallRemote(), "fixture-repo")
+        compare(BackendFixture.lastInstallRemote(), "fixture-repo")
         page.details.uninstall()
         tryCompare(page.details, "installed", false, 10000)
 
@@ -333,7 +333,7 @@ TestCase {
         let tasksAction = root.navigationActions[6]
         compare(tasksAction.objectName, "navTasks")
         verify(!tasksAction.visible)
-        backendFixture.holdOperations(true)
+        BackendFixture.holdOperations(true)
         StoreController.installApp("org.kiosque.TasksFixture")
         tryCompare(jobs, "active_count", 1, 10000)
         verify(tasksAction.visible)
@@ -350,7 +350,7 @@ TestCase {
         cancel.clicked()
         tryCompare(jobs, "active_count", 0, 10000)
         compare(jobs.finished_count, 1)
-        backendFixture.holdOperations(false)
+        BackendFixture.holdOperations(false)
         dialog.close()
         jobs.clearFinished()
         compare(rows(jobs), 0)
@@ -372,6 +372,24 @@ TestCase {
         tryCompare(popup, "visible", true)
         popup.close()
         tryCompare(popup, "visible", false)
+    }
+
+    function test_screenshot_viewer_retains_source_resolution() {
+        let root = window()
+        root.pushAppDetail("org.kiosque.Screenshots")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        let popup = findChild(page, "largeScreenshotPopup")
+        popup.openWithIndex(0)
+        tryCompare(popup, "visible", true)
+        tryVerify(() => findItem(popup.contentItem, "largeScreenshotImage") !== null, 10000)
+        let image = findItem(popup.contentItem, "largeScreenshotImage")
+        tryCompare(image, "status", Image.Ready, 10000)
+        compare(image.implicitWidth, 1600)
+        compare(image.implicitHeight, 900)
+        image.parent.zoomScale = 2
+        compare(image.implicitWidth, 1600, "zoom must keep the full screenshot pixels")
+        popup.close()
     }
 
     function test_review_mutations_refresh_the_actual_page() {
@@ -407,8 +425,9 @@ TestCase {
         verify(banner.text.indexOf("fixture rejected review") === -1)
         compare(details.reviews.length, 1)
         details.dismissReview(second)
-        // The page reloads after each action, clearing reviews until it ends.
-        tryVerify(() => !details.reviewsLoading && details.reviews.length === 0, 10000)
+        // Reload clears reviews before ratings arrive. Wait for completed data.
+        tryVerify(() => !details.reviewsLoading
+                  && details.reviews.length === 0 && details.ratings.total === 0, 10000)
         compare(details.ratings.total, 0)
         compare(banner.visible, false)
     }
@@ -439,41 +458,41 @@ TestCase {
         let root = window()
         let dialog = findChild(root, "refFileDialog")
         verify(dialog !== null)
-        let before = backendFixture.operationCount()
+        let before = BackendFixture.operationCount()
 
         // Declining installs nothing, and a later confirm has nothing to install.
-        root.openRefFile(fixtureEndpoint + "/files/fixture.flatpakref")
+        root.openRefFile(TestSupport.endpoint + "/files/fixture.flatpakref")
         tryCompare(dialog, "phase", "confirm", 10000)
         tryCompare(dialog, "opened", true, 5000)
         compare(dialog.appTitle, "Ref Fixture")
         compare(dialog.appName, "org.kiosque.RefFixture")
         compare(dialog.originUrl, "https://example.org/kiosque-fixture/")
-        compare(backendFixture.operationCount(), before)
+        compare(BackendFixture.operationCount(), before)
         press(dialog, "refCancelButton")
         tryCompare(dialog, "opened", false)
         StoreController.confirmRefFileInstall()
         wait(200)
-        compare(backendFixture.operationCount(), before)
+        compare(BackendFixture.operationCount(), before)
 
         // Accepting starts exactly one install with visible progress; it can be cancelled.
-        backendFixture.holdOperations(true)
+        BackendFixture.holdOperations(true)
         installSpy.clear()
-        root.openRefFile(fixtureEndpoint + "/files/fixture.flatpakref")
+        root.openRefFile(TestSupport.endpoint + "/files/fixture.flatpakref")
         tryCompare(dialog, "phase", "confirm", 10000)
         press(dialog, "refInstallButton")
         compare(dialog.phase, "installing")
-        tryVerify(() => backendFixture.operationCount() === before + 1, 10000)
+        tryVerify(() => BackendFixture.operationCount() === before + 1, 10000)
         let progress = findItem(dialog.contentItem, "refInstallProgress")
         verify(progress !== null && progress.visible)
         press(dialog, "refCancelInstallButton")
         tryCompare(installSpy, "count", 1, 10000)
         compare(installSpy.signalArguments[0][0], false)
         tryCompare(dialog, "opened", false)
-        backendFixture.holdOperations(false)
+        BackendFixture.holdOperations(false)
 
         // A completed install is reported in the dialog.
         installSpy.clear()
-        root.openRefFile(fixtureEndpoint + "/files/fixture.flatpakref")
+        root.openRefFile(TestSupport.endpoint + "/files/fixture.flatpakref")
         tryCompare(dialog, "phase", "confirm", 10000)
         press(dialog, "refInstallButton")
         tryCompare(dialog, "phase", "done", 10000)
@@ -484,11 +503,11 @@ TestCase {
         tryCompare(installSpy, "count", 1, 10000)
 
         // Unreadable files are reported, never installed.
-        let count = backendFixture.operationCount()
-        root.openRefFile(fixtureEndpoint + "/files/missing.flatpakref")
+        let count = BackendFixture.operationCount()
+        root.openRefFile(TestSupport.endpoint + "/files/missing.flatpakref")
         tryCompare(dialog, "phase", "failed", 10000)
         verify(dialog.errorText.length > 0)
-        compare(backendFixture.operationCount(), count)
+        compare(BackendFixture.operationCount(), count)
         press(dialog, "refCloseButton")
     }
     function test_repo_file_requires_confirmation_and_removal_reports() {
@@ -496,7 +515,7 @@ TestCase {
         let dialog = findChild(root, "repoFileDialog")
         verify(dialog !== null)
         remoteAddedSpy.clear()
-        root.openRepoFile(fixtureEndpoint + "/files/fixture.flatpakrepo")
+        root.openRepoFile(TestSupport.endpoint + "/files/fixture.flatpakrepo")
         tryCompare(dialog, "phase", "confirm", 10000)
         compare(dialog.repoTitle, "Repo Fixture")
         compare(dialog.repoUrl, "https://example.org/kiosque-fixture/")
@@ -539,7 +558,7 @@ TestCase {
         compare(dialog.phase, "enter")
         // Nothing can be inspected until an address is entered.
         verify(!findItem(dialog.contentItem, "repoContinueButton").enabled)
-        findItem(dialog.contentItem, "repoSourceField").text = fixtureEndpoint + "/files/fixture.flatpakrepo"
+        findItem(dialog.contentItem, "repoSourceField").text = TestSupport.endpoint + "/files/fixture.flatpakrepo"
         findItem(dialog.contentItem, "repoManualNameField").text = "manual-fixture"
         press(dialog, "repoContinueButton")
         tryCompare(dialog, "phase", "confirm", 10000)
@@ -555,7 +574,7 @@ TestCase {
         // An unreadable address is reported instead of being added.
         add.clicked()
         tryCompare(dialog, "opened", true, 5000)
-        findItem(dialog.contentItem, "repoSourceField").text = fixtureEndpoint + "/files/missing.flatpakrepo"
+        findItem(dialog.contentItem, "repoSourceField").text = TestSupport.endpoint + "/files/missing.flatpakrepo"
         press(dialog, "repoContinueButton")
         tryCompare(dialog, "phase", "failed", 10000)
         verify(dialog.errorText.length > 0)
@@ -571,7 +590,7 @@ TestCase {
         tryCompare(model, "loading", false, 10000)
         compare(rows(model), 1)
 
-        backendFixture.holdOperations(true)
+        BackendFixture.holdOperations(true)
         model.uninstallApp(0)
         compare(model.uninstalling_app_id, "org.kiosque.Fixture")
         let bar = findChild(page, "uninstallProgressBar")
@@ -589,7 +608,7 @@ TestCase {
         tryCompare(model, "loading", false, 10000)
         compare(rows(model), 1)
 
-        verify(backendFixture.setUpdates(["org.kiosque.Fixture"]))
+        verify(BackendFixture.setUpdates(["org.kiosque.Fixture"]))
         model.checkForUpdates()
         tryCompare(model, "updates_available_count", 1, 10000)
         tryCompare(model, "checking_updates", false, 10000)
@@ -610,8 +629,8 @@ TestCase {
         verify(cancelUpdate !== null && cancelUpdate.visible)
         cancelUpdate.clicked()
         tryCompare(model, "updating", false, 10000)
-        backendFixture.holdOperations(false)
-        verify(backendFixture.setUpdates([]))
+        BackendFixture.holdOperations(false)
+        verify(BackendFixture.setUpdates([]))
         model.checkForUpdates()
         tryCompare(model, "updates_available_count", 0, 10000)
         tryCompare(model, "checking_updates", false, 10000)

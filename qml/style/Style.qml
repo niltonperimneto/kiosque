@@ -3,6 +3,7 @@
 
 pragma Singleton
 import QtQuick
+import com.kiosque
 import org.kde.kirigami as Kirigami
 
 // Centralized visual identity for the primitive-built storefront components.

@@ -17,3 +17,7 @@ pub mod settings;
 pub mod transactions;
 
 pub mod entries;
+
+pub mod l10n;
+
+pub mod sanitized_image;

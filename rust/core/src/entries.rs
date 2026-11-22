@@ -20,6 +20,8 @@ pub struct FeaturedEntry {
     #[serde(default)]
     pub screenshot_url: String,
     #[serde(default)]
+    pub screenshot_urls: Vec<String>,
+    #[serde(default)]
     pub brand_color_light: String,
     #[serde(default)]
     pub brand_color_dark: String,

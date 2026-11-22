@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import org.kde.ki18n
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 import "pages" as Pages
 import "components" as Components
@@ -14,10 +14,18 @@ import org.kde.kirigamiaddons.components as KirigamiAddons
 Kirigami.ApplicationWindow {
     id: root
 
+    // KDE Addons resolve these functions in their creation context.
+    KI18nContext { id: kdeTranslations; translationDomain: "kiosque" }
+    function i18nd() { return kdeTranslations.i18nd.apply(kdeTranslations, arguments); }
+    function i18ndc() { return kdeTranslations.i18ndc.apply(kdeTranslations, arguments); }
+    function i18ndp() { return kdeTranslations.i18ndp.apply(kdeTranslations, arguments); }
+    function i18ndcp() { return kdeTranslations.i18ndcp.apply(kdeTranslations, arguments); }
+    RemoteImage { id: userAvatar; url: SettingsController.oauth_avatar_url; kind: "avatar" }
+
     readonly property string pageTitle: pageStack.currentItem && pageStack.currentItem.title !== undefined
                                         ? pageStack.currentItem.title : ""
-    title: pageTitle !== "" && pageStack.depth > 1 ? i18nc("@title:window %1 is the page", "%1 — Kiosque", pageTitle)
-                                                   : i18nc("@title:window", "Kiosque")
+    title: pageTitle !== "" && pageStack.depth > 1 ? L10n.i18nc("@title:window %1 is the page", "%1 — Kiosque", [pageTitle])
+                                                   : L10n.i18nc("@title:window", "Kiosque", [])
     width: Kirigami.Units.gridUnit * 50
     height: Kirigami.Units.gridUnit * 38
     minimumWidth: Kirigami.Units.gridUnit * 20
@@ -32,7 +40,7 @@ Kirigami.ApplicationWindow {
     property FeaturedModel featuredModel: FeaturedModel {}
     property InstalledModel installedModel: InstalledModel {}
     // Every installation, removal and update, for the Tasks dialog.
-    property JobsModel jobsModel: JobsModel {}
+    property JobsModel jobsModel: JobsModel { Component.onCompleted: refresh() }
 
     property string currentCategory: ""
 
@@ -82,14 +90,14 @@ Kirigami.ApplicationWindow {
     // always set by main.cpp, but are guarded so test harnesses without them
     // still load. Files are never installed or added without confirmation.
     function openLaunchTarget() {
-        if (typeof initialAppId !== "undefined" && initialAppId !== "") {
-            root.pushAppDetail(initialAppId);
+        if (AppShell.initialAppId !== "") {
+            root.pushAppDetail(AppShell.initialAppId);
         }
-        if (typeof initialRefFile !== "undefined" && initialRefFile !== "") {
-            root.openRefFile(initialRefFile);
+        if (AppShell.initialRefFile !== "") {
+            root.openRefFile(AppShell.initialRefFile);
         }
-        if (typeof initialRepoFile !== "undefined" && initialRepoFile !== "") {
-            root.openRepoFile(initialRepoFile);
+        if (AppShell.initialRepoFile !== "") {
+            root.openRepoFile(AppShell.initialRepoFile);
         }
     }
 
@@ -162,42 +170,42 @@ Kirigami.ApplicationWindow {
     readonly property list<Kirigami.Action> navigationActions: [
         Kirigami.Action {
             objectName: "navHome"
-            text: i18n("Home")
+            text: L10n.i18n("Home", [])
             icon.name: "go-home-symbolic"
             checked: root.currentSection === "shopfront"
             onTriggered: root.navigate("shopfront")
         },
         Kirigami.Action {
             objectName: "navSearch"
-            text: i18n("Search")
+            text: L10n.i18n("Search", [])
             icon.name: "search-symbolic"
             checked: root.currentSection === "search"
             onTriggered: root.navigate("search")
         },
         Kirigami.Action {
             objectName: "navCategories"
-            text: i18n("Categories")
+            text: L10n.i18n("Categories", [])
             icon.name: "applications-all-symbolic"
             checked: root.currentSection === "categories" || root.currentSection === "category"
             onTriggered: root.navigate("categories")
         },
         Kirigami.Action {
             objectName: "navInstalled"
-            text: i18n("Installed")
+            text: L10n.i18n("Installed", [])
             icon.name: "view-list-details-symbolic"
             checked: root.currentSection === "installed"
             onTriggered: root.navigate("installed")
         },
         Kirigami.Action {
             objectName: "navUpdates"
-            text: root.updatesCount > 0 ? i18n("Updates (%1)", root.updatesCount) : i18n("Updates")
+            text: root.updatesCount > 0 ? L10n.i18n("Updates (%1)", [root.updatesCount]) : L10n.i18n("Updates", [])
             icon.name: root.updatesCount > 0 ? "update-none-symbolic" : "system-software-update-symbolic"
             checked: root.currentSection === "updates"
             onTriggered: root.navigate("updates")
         },
         Kirigami.Action {
             objectName: "navSettings"
-            text: i18n("Settings")
+            text: L10n.i18n("Settings", [])
             icon.name: "settings-configure-symbolic"
             checked: root.currentSection === "settings"
             onTriggered: root.navigate("settings")
@@ -206,7 +214,7 @@ Kirigami.ApplicationWindow {
         Kirigami.Action {
             objectName: "navTasks"
             text: root.jobsModel.active_count > 0
-                ? i18n("Tasks (%1)", root.jobsModel.active_count) : i18n("Tasks")
+                ? L10n.i18n("Tasks (%1)", [root.jobsModel.active_count]) : L10n.i18n("Tasks", [])
             icon.name: root.jobsModel.active_count > 0 ? "process-working-symbolic" : "view-task"
             visible: root.jobsModel.active_count + root.jobsModel.finished_count > 0
             checkable: false
@@ -259,6 +267,12 @@ Kirigami.ApplicationWindow {
         // Expanded on roomy desktop windows, an icon rail otherwise; the user
         // can toggle it with the handle at the bottom.
         Component.onCompleted: {
+        Qt.application.name = "Kiosque";
+        Qt.application.displayName = "Kiosque";
+        Qt.application.organization = "Kiosque";
+        Qt.application.domain = "kiosque.app";
+        Qt.application.version = AppShell.version;
+        if (AppShell.checkUi) return;
             if (!root.compact) {
                 collapsed = root.width < Kirigami.Units.gridUnit * 44;
             }
@@ -274,8 +288,8 @@ Kirigami.ApplicationWindow {
             padding: Kirigami.Units.largeSpacing
 
             Accessible.name: SettingsController.is_authenticated
-                ? i18n("Account: %1", SettingsController.oauth_username)
-                : i18n("Sign in to write reviews")
+                ? L10n.i18n("Account: %1", [SettingsController.oauth_username])
+                : L10n.i18n("Sign in to write reviews", [])
             Controls.ToolTip.text: Accessible.name
             Controls.ToolTip.visible: mainDrawer.collapsed && hovered
             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -289,7 +303,7 @@ Kirigami.ApplicationWindow {
                     Layout.preferredWidth: mainDrawer.collapsed ? Kirigami.Units.iconSizes.medium : Kirigami.Units.iconSizes.large
                     Layout.preferredHeight: Layout.preferredWidth
                     Layout.alignment: Qt.AlignVCenter
-                    source: SettingsController.is_authenticated ? SettingsController.oauth_avatar_url : ""
+                    source: SettingsController.is_authenticated ? userAvatar.source : ""
                     name: SettingsController.is_authenticated ? SettingsController.oauth_username : ""
                     initialsMode: SettingsController.is_authenticated
                         ? KirigamiAddons.Avatar.InitialsMode.UseInitials
@@ -303,14 +317,14 @@ Kirigami.ApplicationWindow {
                     Layout.alignment: Qt.AlignVCenter
 
                     Controls.Label {
-                        text: SettingsController.is_authenticated ? SettingsController.oauth_username : i18n("Sign In")
+                        text: SettingsController.is_authenticated ? SettingsController.oauth_username : L10n.i18n("Sign In", [])
                         font.weight: Font.Bold
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
 
                     Controls.Label {
-                        text: SettingsController.is_authenticated ? i18n("Reviews account") : i18n("To rate and review apps")
+                        text: SettingsController.is_authenticated ? L10n.i18n("Reviews account", []) : L10n.i18n("To rate and review apps", [])
                         font: Kirigami.Theme.smallFont
                         color: Kirigami.Theme.disabledTextColor
                         elide: Text.ElideRight
@@ -330,25 +344,25 @@ Kirigami.ApplicationWindow {
                 id: signInMenu
                 objectName: "signInMenu"
                 Controls.MenuItem {
-                    text: i18n("Sign in with GitHub")
+                    text: L10n.i18n("Sign in with GitHub", [])
                     icon.name: "user-identity"
                     enabled: !SettingsController.login_in_progress
                     onTriggered: root.signIn("github")
                 }
                 Controls.MenuItem {
-                    text: i18n("Sign in with GitLab")
+                    text: L10n.i18n("Sign in with GitLab", [])
                     icon.name: "user-identity"
                     enabled: !SettingsController.login_in_progress
                     onTriggered: root.signIn("gitlab")
                 }
                 Controls.MenuItem {
-                    text: i18n("Sign in with KDE GitLab")
+                    text: L10n.i18n("Sign in with KDE GitLab", [])
                     icon.name: "kde"
                     enabled: !SettingsController.login_in_progress
                     onTriggered: root.signIn("kde_gitlab")
                 }
                 Controls.MenuItem {
-                    text: i18n("Sign in with GNOME GitLab")
+                    text: L10n.i18n("Sign in with GNOME GitLab", [])
                     icon.name: "user-identity"
                     enabled: !SettingsController.login_in_progress
                     onTriggered: root.signIn("gnome_gitlab")
@@ -359,13 +373,13 @@ Kirigami.ApplicationWindow {
                 id: accountMenu
                 objectName: "accountMenu"
                 Controls.MenuItem {
-                    text: i18n("Account Settings")
+                    text: L10n.i18n("Account Settings", [])
                     icon.name: "configure"
                     onTriggered: root.navigate("settings")
                 }
                 Controls.MenuSeparator {}
                 Controls.MenuItem {
-                    text: i18n("Sign Out")
+                    text: L10n.i18n("Sign Out", [])
                     icon.name: "system-log-out"
                     onTriggered: SettingsController.logout()
                 }
@@ -389,7 +403,7 @@ Kirigami.ApplicationWindow {
         id: statusDialog
         objectName: "repositoryStatusDialog"
         anchors.centerIn: parent
-        title: i18n("Repository Status")
+        title: L10n.i18n("Repository Status", [])
         standardButtons: Controls.Dialog.Ok
 
         property string messageText: ""
@@ -405,14 +419,14 @@ Kirigami.ApplicationWindow {
         target: RepoModel
         function onRemoteAdded(success, message) {
             statusDialog.messageText = success
-                ? i18n("Repository added successfully.")
-                : i18n("Could not add the repository: %1", message);
+                ? L10n.i18n("Repository added successfully.", [])
+                : L10n.i18n("Could not add the repository: %1", [message]);
             statusDialog.open();
         }
         function onRemoteRemoved(success, message) {
             statusDialog.messageText = success
-                ? i18n("Repository removed successfully.")
-                : i18n("Could not remove the repository: %1", message);
+                ? L10n.i18n("Repository removed successfully.", [])
+                : L10n.i18n("Could not remove the repository: %1", [message]);
             statusDialog.open();
         }
     }
@@ -443,10 +457,10 @@ Kirigami.ApplicationWindow {
             StoreController.inspectRefFile(path);
         }
 
-        title: phase === "installing" ? i18n("Installing…")
-             : phase === "done" ? i18n("Installation Complete")
-             : phase === "failed" ? i18n("Installation Failed")
-             : isRuntime ? i18n("Install Runtime?") : i18n("Install Application?")
+        title: phase === "installing" ? L10n.i18n("Installing…", [])
+             : phase === "done" ? L10n.i18n("Installation Complete", [])
+             : phase === "failed" ? L10n.i18n("Installation Failed", [])
+             : isRuntime ? L10n.i18n("Install Runtime?", []) : L10n.i18n("Install Application?", [])
         closePolicy: phase === "installing" ? Controls.Popup.NoAutoClose
                                             : Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
         showCloseButton: phase !== "installing"
@@ -476,7 +490,7 @@ Kirigami.ApplicationWindow {
                 visible: refFileDialog.phase === "loading"
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
-                text: i18n("Reading %1…", refFileDialog.source)
+                text: L10n.i18n("Reading %1…", [refFileDialog.source])
             }
 
             Kirigami.FormLayout {
@@ -486,7 +500,7 @@ Kirigami.ApplicationWindow {
 
                 Controls.Label {
                     objectName: "refTitleLabel"
-                    Kirigami.FormData.label: i18n("Name:")
+                    Kirigami.FormData.label: L10n.i18n("Name:", [])
                     text: refFileDialog.appTitle
                     textFormat: Text.PlainText
                     font.weight: Font.Bold
@@ -494,7 +508,7 @@ Kirigami.ApplicationWindow {
                     Layout.fillWidth: true
                 }
                 Controls.Label {
-                    Kirigami.FormData.label: i18n("Identifier:")
+                    Kirigami.FormData.label: L10n.i18n("Identifier:", [])
                     text: refFileDialog.appName
                     textFormat: Text.PlainText
                     wrapMode: Text.WrapAnywhere
@@ -502,8 +516,8 @@ Kirigami.ApplicationWindow {
                 }
                 Controls.Label {
                     objectName: "refOriginLabel"
-                    Kirigami.FormData.label: i18n("Source:")
-                    text: refFileDialog.originUrl !== "" ? refFileDialog.originUrl : i18n("Unknown")
+                    Kirigami.FormData.label: L10n.i18n("Source:", [])
+                    text: refFileDialog.originUrl !== "" ? refFileDialog.originUrl : L10n.i18n("Unknown", [])
                     textFormat: Text.PlainText
                     wrapMode: Text.WrapAnywhere
                     Layout.fillWidth: true
@@ -513,7 +527,7 @@ Kirigami.ApplicationWindow {
             Controls.Label {
                 Layout.fillWidth: true
                 visible: refFileDialog.phase === "confirm"
-                text: i18n("Repository signing key SHA-256: %1", StoreController.ref_key_sha256)
+                text: L10n.i18n("Repository signing key SHA-256: %1", [StoreController.ref_key_sha256])
                 textFormat: Text.PlainText
                 wrapMode: Text.WrapAnywhere
             }
@@ -522,7 +536,7 @@ Kirigami.ApplicationWindow {
                 Layout.fillWidth: true
                 visible: refFileDialog.phase === "confirm"
                 type: Kirigami.MessageType.Warning
-                text: i18n("This file was opened from outside Kiosque. Only install software from sources you trust. It will be installed for your user only, and its repository may be added.")
+                text: L10n.i18n("This file was opened from outside Kiosque. Only install software from sources you trust. It will be installed for your user only, and its repository may be added.", [])
             }
 
             Controls.ProgressBar {
@@ -546,7 +560,7 @@ Kirigami.ApplicationWindow {
                 Layout.fillWidth: true
                 visible: refFileDialog.phase === "done"
                 type: Kirigami.MessageType.Positive
-                text: i18n("%1 was installed.", refFileDialog.appTitle)
+                text: L10n.i18n("%1 was installed.", [refFileDialog.appTitle])
             }
 
             RowLayout {
@@ -556,7 +570,7 @@ Kirigami.ApplicationWindow {
                 Controls.Button {
                     objectName: "refInstallButton"
                     visible: refFileDialog.phase === "confirm"
-                    text: i18n("Install")
+                    text: L10n.i18n("Install", [])
                     icon.name: "download"
                     onClicked: {
                         refFileDialog.phase = "installing";
@@ -566,7 +580,7 @@ Kirigami.ApplicationWindow {
                 Controls.Button {
                     objectName: "refCancelButton"
                     visible: refFileDialog.phase === "loading" || refFileDialog.phase === "confirm"
-                    text: i18n("Cancel")
+                    text: L10n.i18n("Cancel", [])
                     icon.name: "dialog-cancel"
                     onClicked: {
                         StoreController.discardRefFile();
@@ -576,21 +590,21 @@ Kirigami.ApplicationWindow {
                 Controls.Button {
                     objectName: "refBackgroundButton"
                     visible: refFileDialog.phase === "installing"
-                    text: i18n("Continue in Background")
+                    text: L10n.i18n("Continue in Background", [])
                     icon.name: "window-minimize"
                     onClicked: refFileDialog.close()
                 }
                 Controls.Button {
                     objectName: "refCancelInstallButton"
                     visible: refFileDialog.phase === "installing"
-                    text: i18n("Cancel Installation")
+                    text: L10n.i18n("Cancel Installation", [])
                     icon.name: "dialog-cancel"
                     onClicked: StoreController.cancelOperation()
                 }
                 Controls.Button {
                     objectName: "refCloseButton"
                     visible: refFileDialog.phase === "done" || refFileDialog.phase === "failed"
-                    text: i18n("Close")
+                    text: L10n.i18n("Close", [])
                     icon.name: "dialog-close"
                     onClicked: refFileDialog.close()
                 }
@@ -611,7 +625,7 @@ Kirigami.ApplicationWindow {
                 refFileDialog.isRuntime = isRuntime;
                 refFileDialog.phase = "confirm";
             } else {
-                refFileDialog.errorText = i18n("Could not open the file: %1", error);
+                refFileDialog.errorText = L10n.i18n("Could not open the file: %1", [error]);
                 refFileDialog.phase = "failed";
             }
         }
@@ -649,21 +663,21 @@ Kirigami.ApplicationWindow {
         function onJobFinished(title, kind, state, error) {
             let message = "";
             if (state === "done") {
-                message = kind === "uninstall" ? i18n("%1 was removed.", title)
-                        : kind === "update" ? i18n("%1 was updated.", title)
-                        : i18n("%1 was installed.", title);
+                message = kind === "uninstall" ? L10n.i18n("%1 was removed.", [title])
+                        : kind === "update" ? L10n.i18n("%1 was updated.", [title])
+                        : L10n.i18n("%1 was installed.", [title]);
             } else if (state === "failed") {
-                message = kind === "uninstall" ? i18n("Could not remove %1: %2", title, error)
-                        : kind === "update" ? i18n("Could not update %1: %2", title, error)
-                        : i18n("Could not install %1: %2", title, error);
+                message = kind === "uninstall" ? L10n.i18n("Could not remove %1: %2", [title, error])
+                        : kind === "update" ? L10n.i18n("Could not update %1: %2", [title, error])
+                        : L10n.i18n("Could not install %1: %2", [title, error]);
             } else {
                 return;
             }
             if (root.active) {
                 root.showPassiveNotification(message, state === "failed" ? "long" : "short",
-                                             i18n("Details"), root.openTasks);
+                                             L10n.i18n("Details", []), root.openTasks);
             } else {
-                root.jobsModel.notifyDesktop(state === "failed" ? i18n("Operation Failed") : i18n("Kiosque"),
+                Qt.callLater(root.jobsModel.notifyDesktop, state === "failed" ? L10n.i18n("Operation Failed", []) : L10n.i18n("Kiosque", []),
                                              message,
                                              state === "failed" ? "dialog-error" : "system-software-install");
             }
@@ -686,7 +700,7 @@ Kirigami.ApplicationWindow {
         triggeredOnStart: false
         onTriggered: {
             console.log("[kiosque] Auto check: periodic check for updates");
-            installedModel.checkForUpdates();
+            Qt.callLater(installedModel.checkForUpdates);
         }
     }
 
@@ -698,13 +712,28 @@ Kirigami.ApplicationWindow {
             if (!installedModel.loading && !root.initialUpdateCheckDone) {
                 root.initialUpdateCheckDone = true;
                 console.log("[kiosque] Auto check: initial check for updates on startup");
-                installedModel.checkForUpdates();
+                Qt.callLater(installedModel.checkForUpdates);
             }
         }
     }
 
+    Image {
+        id: packagedLogo
+        visible: false
+        source: AppShell.checkUi ? "qrc:/qml/images/logo.svg" : ""
+        onStatusChanged: {
+            if (!AppShell.checkUi || status === Image.Loading || status === Image.Null) return;
+            Qt.callLater(function() { AppShell.uiReady(packagedLogo.status === Image.Ready); Qt.quit(); });
+        }
+    }
     // ── Startup ─────────────────────────────────────────────────────────
     Component.onCompleted: {
+        Qt.application.name = "Kiosque";
+        Qt.application.displayName = "Kiosque";
+        Qt.application.organization = "Kiosque";
+        Qt.application.domain = "kiosque.app";
+        Qt.application.version = AppShell.version;
+        if (AppShell.checkUi) return;
         SettingsController.loadSettings();
         featuredModel.refresh();
         appListModel.refresh();

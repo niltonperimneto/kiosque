@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import "../style" as Styles
 import org.kde.kirigami as Kirigami
 
@@ -65,12 +66,12 @@ Item {
                 radius: Kirigami.Units.cornerRadius
                 color: Kirigami.Theme.alternateBackgroundColor
 
-                Image {
+                RemoteImageView {
                     id: cardIcon
                     anchors.centerIn: parent
                     width: Kirigami.Units.iconSizes.large
                     height: width
-                    source: root.iconUrl
+                    remoteSource: root.iconUrl
                     sourceSize: Qt.size(width, height)
                     fillMode: Image.PreserveAspectFit
                     mipmap: true

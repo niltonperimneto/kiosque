@@ -355,17 +355,21 @@ async fn featured_schema_invalidates_old_entries_without_affecting_other_caches(
     let entries = vec![kiosque_core::entries::FeaturedEntry {
         name: "Daily".into(),
         is_app_of_the_day: true,
+        screenshot_urls: vec![
+            "https://example.invalid/first.png".into(),
+            "https://example.invalid/second.png".into(),
+        ],
         ..Default::default()
     }];
-    disk.save_at("featured", 1, 10, &entries).await.unwrap();
+    disk.save_at("featured", 2, 10, &entries).await.unwrap();
     assert!(
-        disk.load::<Vec<kiosque_core::entries::FeaturedEntry>>("featured", 2)
+        disk.load::<Vec<kiosque_core::entries::FeaturedEntry>>("featured", 3)
             .await
             .is_none()
     );
-    disk.save_at("featured", 2, 20, &entries).await.unwrap();
+    disk.save_at("featured", 3, 20, &entries).await.unwrap();
     assert_eq!(
-        disk.load::<Vec<kiosque_core::entries::FeaturedEntry>>("featured", 2)
+        disk.load::<Vec<kiosque_core::entries::FeaturedEntry>>("featured", 3)
             .await
             .unwrap(),
         (20, entries)

@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import "../style" as Styles
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 
 // Bazaar-style spotlight banner: the app's logo, name and summary on the left,
 // its primary screenshot in a floating "window" bleeding off the bottom-right,
@@ -141,7 +141,7 @@ Item {
                     Kirigami.Heading {
                         font.family: Styles.Style.fontFamily
                         level: 5
-                        text: i18nc("@info:label badge on the featured banner", "App of the Day")
+                        text: L10n.i18nc("@info:label badge on the featured banner", "App of the Day", [])
                         color: root.fgColor
                         opacity: 0.8
                         font.capitalization: Font.AllUppercase
@@ -149,12 +149,12 @@ Item {
                     }
                 }
 
-                Image {
+                RemoteImageView {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: root.compact ? Kirigami.Units.iconSizes.huge
                                         : Kirigami.Units.iconSizes.enormous
                     height: width
-                    source: root.iconUrl
+                    remoteSource: root.iconUrl
                     sourceSize: Qt.size(width, height)
                     fillMode: Image.PreserveAspectFit
                     mipmap: true

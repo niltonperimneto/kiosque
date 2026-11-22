@@ -170,6 +170,7 @@ msgstr "Preparando…"
 msgid "%1 Review"
 msgid_plural "%1 Reviews"
 msgstr[0] "%1 avaliação"
+msgstr[1] "%1 avaliações"
 
 msgid "Anonymous"
 msgstr "Anônimo"

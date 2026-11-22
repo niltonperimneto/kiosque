@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import org.kde.kirigami as Kirigami
 
 // A screenshot frame with rounded corners that crops from the TOP of the
@@ -12,7 +13,7 @@ import org.kde.kirigami as Kirigami
 Item {
     id: root
 
-    property alias source: img.source
+    property alias source: img.remoteSource
     property alias status: img.status
     property alias asynchronous: img.asynchronous
     // Width-only request: the image backend scales preserving aspect ratio
@@ -22,8 +23,9 @@ Item {
     property alias shadow: texture.shadow
     property alias color: texture.color
 
-    Image {
+    RemoteImageView {
         id: img
+        imageKind: "screenshot"
         anchors.fill: parent
         visible: false
         fillMode: Image.PreserveAspectCrop

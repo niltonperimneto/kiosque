@@ -4,7 +4,6 @@
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 
 // Self-contained "Games" zone: one level-2 heading over semantic level-3
@@ -44,28 +43,28 @@ ColumnLayout {
         Kirigami.Heading {
             Layout.fillWidth: true
             level: 2
-            text: i18n("Games")
+            text: L10n.i18n("Games", [])
         }
     }
 
     HorizontalAppList {
         Layout.fillWidth: true
         headingLevel: 3
-        title: i18n("New Releases")
+        title: L10n.i18n("New Releases", [])
         appModel: root.newReleasesModel
     }
 
     HorizontalAppList {
         Layout.fillWidth: true
         headingLevel: 3
-        title: i18n("Trending")
+        title: L10n.i18n("Trending", [])
         appModel: root.trendingModel
     }
 
     HorizontalAppList {
         Layout.fillWidth: true
         headingLevel: 3
-        title: i18n("Most Popular")
+        title: L10n.i18n("Most Popular", [])
         appModel: root.popularModel
     }
 }

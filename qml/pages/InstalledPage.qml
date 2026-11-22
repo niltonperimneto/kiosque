@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 
 // Installed applications manager: a dense list of rows with contextual
@@ -13,7 +12,7 @@ import com.kiosque
 // page only links to it.
 Kirigami.ScrollablePage {
     id: page
-    title: i18n("Installed")
+    title: L10n.i18n("Installed", [])
     // Its title search field handles Ctrl+F (see Main.qml).
     readonly property bool hasOwnSearch: true
     supportsRefreshing: true
@@ -29,7 +28,7 @@ Kirigami.ScrollablePage {
         Layout.fillWidth: true
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
         objectName: "installedFilterField"
-        placeholderText: i18n("Filter installed…")
+        placeholderText: L10n.i18n("Filter installed…", [])
         onTextChanged: page.installedModel.applySearchFilter(text)
     }
 
@@ -58,46 +57,46 @@ Kirigami.ScrollablePage {
     // ── Toolbar: refresh + sort + filter ───────────────────────────────────────
     actions: [
         Kirigami.Action {
-            text: i18n("Refresh")
+            text: L10n.i18n("Refresh", [])
             icon.name: "view-refresh"
             onTriggered: page.installedModel.refresh()
         },
         Kirigami.Action {
-            text: i18n("Sort")
+            text: L10n.i18n("Sort", [])
             icon.name: "view-sort"
 
             Kirigami.Action {
-                text: i18n("Name")
+                text: L10n.i18n("Name", [])
                 checkable: true
                 checked: page.sortCriterion === "name"
                 onTriggered: page.sortCriterion = "name"
             }
             Kirigami.Action {
-                text: i18n("Size")
+                text: L10n.i18n("Size", [])
                 checkable: true
                 checked: page.sortCriterion === "size"
                 onTriggered: page.sortCriterion = "size"
             }
             Kirigami.Action { separator: true }
             Kirigami.Action {
-                text: i18n("Ascending")
+                text: L10n.i18n("Ascending", [])
                 checkable: true
                 checked: page.sortAscending
                 onTriggered: page.sortAscending = true
             }
             Kirigami.Action {
-                text: i18n("Descending")
+                text: L10n.i18n("Descending", [])
                 checkable: true
                 checked: !page.sortAscending
                 onTriggered: page.sortAscending = false
             }
         },
         Kirigami.Action {
-            text: i18n("View")
+            text: L10n.i18n("View", [])
             icon.name: "view-filter"
 
             Kirigami.Action {
-                text: i18n("Show runtimes")
+                text: L10n.i18n("Show runtimes", [])
                 checkable: true
                 checked: page.installedModel && page.installedModel.show_runtimes
                 onTriggered: page.installedModel.applyShowRuntimes(checked)
@@ -125,9 +124,9 @@ Kirigami.ScrollablePage {
             anchors.centerIn: parent
             width: parent.width - Kirigami.Units.gridUnit * 4
             visible: listView.count === 0 && !(page.installedModel && page.installedModel.loading)
-            text: page.installedModel && page.installedModel.installed_error ? i18n("Could not read installed applications") : i18n("No Flatpak Applications Installed")
+            text: page.installedModel && page.installedModel.installed_error ? L10n.i18n("Could not read installed applications", []) : L10n.i18n("No Flatpak Applications Installed", [])
             icon.name: "application-x-executable"
-            explanation: page.installedModel && page.installedModel.installed_error ? page.installedModel.installed_error : i18n("Install applications from the Storefront tab")
+            explanation: page.installedModel && page.installedModel.installed_error ? page.installedModel.installed_error : L10n.i18n("Install applications from the Storefront tab", [])
         }
 
         // ── Section headers (Updates Available / Up to Date) ───────────────────
@@ -135,7 +134,7 @@ Kirigami.ScrollablePage {
         section.criteria: ViewSection.FullString
         section.delegate: Kirigami.ListSectionHeader {
             width: ListView.view ? ListView.view.width : 0
-            text: section === "updates" ? i18n("Updates Available") : i18n("Up to Date")
+            text: section === "updates" ? L10n.i18n("Updates Available", []) : L10n.i18n("Up to Date", [])
         }
 
         // ── Link to pending updates ────────────────────────────────────────────
@@ -150,11 +149,10 @@ Kirigami.ScrollablePage {
                 position: Kirigami.InlineMessage.Position.Header
                 type: Kirigami.MessageType.Information
                 visible: page.installedModel && page.installedModel.updates_available_count > 0
-                text: i18np("%1 update is available.", "%1 updates are available.",
-                            page.installedModel ? page.installedModel.updates_available_count : 0)
+                text: L10n.i18np("%1 update is available.", "%1 updates are available.", page.installedModel ? page.installedModel.updates_available_count : 0, [])
                 actions: Kirigami.Action {
                     objectName: "reviewUpdatesAction"
-                    text: i18n("Review Updates")
+                    text: L10n.i18n("Review Updates", [])
                     icon.name: "system-software-update"
                     onTriggered: applicationWindow().navigate("updates")
                 }
@@ -235,7 +233,7 @@ Kirigami.ScrollablePage {
                     objectName: "cancelUninstallButton"
                     Layout.alignment: Qt.AlignVCenter
                     visible: delegateItem.uninstalling
-                    text: i18n("Cancel")
+                    text: L10n.i18n("Cancel", [])
                     icon.name: "dialog-cancel"
                     onClicked: page.installedModel.cancelUninstall()
                 }
@@ -243,13 +241,13 @@ Kirigami.ScrollablePage {
 
             actions: [
                 Kirigami.Action {
-                    text: i18n("Open")
+                    text: L10n.i18n("Open", [])
                     icon.name: "media-playback-start"
                     visible: !model.isRuntime
                     onTriggered: page.installedModel.launchApp(index)
                 },
                 Kirigami.Action {
-                    text: i18n("Uninstall")
+                    text: L10n.i18n("Uninstall", [])
                     icon.name: "edit-delete"
                     enabled: !(page.installedModel && page.installedModel.uninstalling_app_id !== "")
                     onTriggered: page.installedModel.uninstallApp(index)

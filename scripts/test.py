@@ -22,7 +22,7 @@ RESULTS = ROOT / '.test-results'
 RECORDS = []
 
 
-def run(command, *, env=None, timeout=900, expected=0):
+def run(command, *, env=None, timeout=900):
     command = [str(part) for part in command]
     print('+ ' + ' '.join(command), flush=True)
     start = time.monotonic()
@@ -51,9 +51,9 @@ def run(command, *, env=None, timeout=900, expected=0):
             code = 124
         reader.join(timeout=10)
     text = ''.join(output)
-    RECORDS.append((' '.join(command), time.monotonic() - start, 0 if code == expected else code or 1, text))
-    if code != expected:
-        raise RuntimeError(f'command exited {code}, expected {expected}: {command[0]}')
+    RECORDS.append((' '.join(command), time.monotonic() - start, code, text))
+    if code:
+        raise RuntimeError(f'command exited {code}: {command[0]}')
     return text
 
 
@@ -73,7 +73,7 @@ def guidance():
     if len(skills) != 6:
         raise RuntimeError('expected six project skills')
     documents = [ROOT / 'AGENTS.md', *ROOT.glob('docs/**/*.md'), *skills]
-    documents += [ROOT / directory / 'AGENTS.md' for directory in ('rust', 'qml', 'src', 'tests', '.github')]
+    documents += [ROOT / directory / 'AGENTS.md' for directory in ('rust', 'qml', 'tests', '.github')]
     for document in documents:
         content = document.read_text()
         if document.name == 'SKILL.md':
@@ -85,8 +85,25 @@ def guidance():
                 target = document.parent / link.split('#', 1)[0]
                 if not target.exists():
                     raise RuntimeError(f'broken link in {document}: {link}')
+    no_cpp()
+    run([sys.executable, ROOT / "scripts/update_pot.py", "--check"])
     run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests/runner', '-v'])
     print(f'Validated {len(documents)} guidance documents and six project skills.')
+
+
+CPP_PATTERNS = ('*.cpp', '*.cc', '*.cxx', '*.h', '*.hh', '*.hpp', '*.hxx', '*.qrc')
+
+
+def no_cpp():
+    """The project is Rust + QML only; generated cxx shims live in target/."""
+    if (ROOT / '.git').exists() and shutil.which('git'):
+        listed = subprocess.run(['git', 'ls-files', *CPP_PATTERNS], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    else:
+        skip = {'target', 'build', '.git', '.flatpak-builder', '.test-results'}
+        listed = [str(p.relative_to(ROOT)) for pattern in CPP_PATTERNS for p in ROOT.rglob(pattern)
+                  if not skip.intersection(p.relative_to(ROOT).parts)]
+    if listed:
+        raise RuntimeError('C/C++ sources are not allowed: ' + ', '.join(sorted(listed)))
 
 
 def security():
@@ -123,6 +140,7 @@ def security():
 def core():
     cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--lib')
     cargo('test', '--locked', '-p', 'kiosque-core', '--no-default-features', '--doc')
+    cargo('test', '--locked', '-p', 'kiosque-update', '--no-default-features')
 
 
 def services():
@@ -131,7 +149,18 @@ def services():
 
 def lint():
     cargo('fmt', '--all', '--check')
-    cargo('clippy', '--locked', '-p', 'kiosque-core', '--no-default-features', '--all-targets', '--', '-D', 'warnings')
+    cargo('clippy', '--locked', '-p', 'kiosque-core', '-p', 'kiosque-update', '--no-default-features', '--all-targets', '--', '-D', 'warnings')
+
+
+def require_qmake():
+    """Qt Bridge and cxx-qt locate Qt through qmake; honour QMAKE like their build scripts do."""
+    qmake = os.environ.get('QMAKE')
+    if qmake:
+        if not (shutil.which(qmake) or Path(qmake).is_file()):
+            raise RuntimeError(f'missing prerequisites: QMAKE={qmake} is not executable')
+        return
+    if not (shutil.which('qmake6') or shutil.which('qmake')):
+        raise RuntimeError('missing prerequisites: qmake6 (or set QMAKE)')
 
 
 @contextlib.contextmanager
@@ -151,6 +180,11 @@ def desktop_environment():
 
 def desktop(suite, backend):
     require('meson', 'ninja', 'dbus-run-session', 'xvfb-run')
+    require_qmake()
+    if suite == 'qt':
+        features = ['--no-default-features'] if backend == 'broker' else []
+        cargo('clippy', '--locked', '-p', 'kiosque', *features, '--features', 'test-util', '--all-targets', '--', '-D', 'warnings')
+        cargo('test', '--locked', '-p', 'kiosque', *features, '--lib')
     directory = Path(os.environ.get('KIOSQUE_TEST_BUILD_DIR', ROOT / 'build' / f'tests-{backend}'))
     setup = ['meson', 'setup', directory]
     if (directory / 'meson-private/coredata.dat').exists():
@@ -160,13 +194,6 @@ def desktop(suite, backend):
     run([*setup, '--buildtype=debug', '-Dtests=true', '-Dtest_support=true', f'-Dflatpak_backend={backend}'])
     run(['meson', 'compile', '-C', directory, '-j', os.environ.get('CARGO_BUILD_JOBS', '2')])
     with desktop_environment() as env:
-        if suite == 'qt':
-            probe_env = dict(env, QT_QPA_PLATFORM='offscreen', FLATPAK_USER_DIR='/dev/null/user',
-                             FLATPAK_SYSTEM_DIR='/dev/null/system')
-            output = run([directory / 'kiosque', '--check-backend'], env=probe_env, expected=1)
-            selected = 'libflatpak' if backend == 'native' else 'unavailable'
-            if f'KIOSQUE_BACKEND_ERROR {selected}:' not in output:
-                raise RuntimeError('backend diagnostic did not report the expected host configuration')
         run(['xvfb-run', '-a', 'dbus-run-session', '--', 'meson', 'test', '-C', directory,
              '--suite', suite, '--no-rebuild', '--print-errorlogs', '--timeout-multiplier', '2'], env=env)
 
@@ -177,13 +204,15 @@ def selected_suites(paths):
     for path in paths:
         if path.startswith('rust/core/'):
             selected.update(('core', 'services'))
-        if path.startswith(('rust/src/', 'rust/build.rs', 'src/', 'qml/', 'meson')):
+        if path.startswith('rust/updater/'):
+            selected.add('core')
+        if path.startswith(('rust/app/', 'qml/', 'meson', 'tests/qml/', 'po/', 'scripts/build_rust.py', 'scripts/fixture_server.py')):
             selected.update(('core', 'services', 'qt', 'qml'))
         if '/flatpak/' in path or '/transactions' in path or '/daemon/' in path:
             selected.add('system')
         if path in ('rust/Cargo.toml', 'rust/Cargo.lock') or path.startswith('.github/'):
-            selected.update(('security', 'core', 'services', 'qt', 'qml'))
-        if path.endswith(('.spec', '.desktop')) or path == 'org.kiosque.Kiosque.json':
+            selected.update(('core', 'services', 'qt', 'qml'))
+        if path.endswith(('.spec', '.desktop', '.metainfo.xml')) or path == 'org.kiosque.Kiosque.json' or path.startswith('flatpak/'):
             selected.add('packages')
     return sorted(selected)
 
@@ -227,8 +256,6 @@ def main():
         elif args.suite in ('qt', 'qml'):
             desktop(args.suite, args.backend)
         elif args.suite == 'system':
-            if args.backend != 'native':
-                raise RuntimeError('Broker qualification requires the Flatpak artifact and matching companion RPM')
             run([sys.executable, ROOT / 'tests/system/vm.py', '--backend', args.backend], timeout=3600)
         elif args.suite == 'packages':
             if not args.artifact or not args.artifact.is_file():

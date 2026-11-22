@@ -90,10 +90,13 @@ ColumnLayout {
                 width: Kirigami.Units.gridUnit * 11
                 height: listView.height
 
-                required property string appId
-                required property string name
-                required property string summary
-                required property string iconUrl
+                required property var model
+                readonly property var entry: model.modelData !== undefined ? model.modelData : model
+                readonly property string appId: entry.appId || ""
+                readonly property string name: entry.name || ""
+                readonly property string summary: entry.summary || ""
+                readonly property string iconUrl: entry.iconUrl || ""
+
 
                 StorefrontAppCard {
                     anchors.fill: parent

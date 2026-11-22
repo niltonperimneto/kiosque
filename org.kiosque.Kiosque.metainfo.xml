@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+<component type="desktop-application">
+  <id>org.kiosque.Kiosque</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Kiosque</name>
+  <summary>Browse, install and update Flatpak applications</summary>
+  <description>
+    <p>
+      Kiosque is a Flatpak storefront for the Plasma desktop. Browse Flathub
+      collections and categories, read ratings and reviews, and install,
+      update or remove applications.
+    </p>
+    <ul>
+      <li>Curated shopfront with search and categories</li>
+      <li>Installed applications with selectable updates</li>
+      <li>Optional background update notifier with automatic updates</li>
+      <li>Repository management</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">org.kiosque.Kiosque.desktop</launchable>
+  <developer id="org.kiosque">
+    <name>Kiosque Contributors</name>
+  </developer>
+  <url type="homepage">https://github.com/niltonperimneto/kiosque</url>
+  <url type="bugtracker">https://github.com/niltonperimneto/kiosque/issues</url>
+  <url type="vcs-browser">https://github.com/niltonperimneto/kiosque</url>
+  <categories>
+    <category>System</category>
+    <category>PackageManager</category>
+  </categories>
+  <provides>
+    <binary>kiosque</binary>
+    <binary>kiosque-update</binary>
+  </provides>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-11-14">
+      <description>
+        <p>Rust and QML only: Qt Bridge for Rust front end, Rust update notifier, sanitized image cache and a native host companion for Flatpak operations.</p>
+      </description>
+    </release>
+  </releases>
+</component>

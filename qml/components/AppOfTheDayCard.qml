@@ -2,16 +2,17 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import QtQuick.Window
 import "../style" as Styles
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 
 // Flathub's daily pick on the shared FeatureCard surface, so it has the same
 // hover lift, accent border, shadow and glow as the other feature surfaces.
-// Its screenshot sits in a pointer-following spotlight.
+// Up to three screenshots sit in a collage under a pointer-following
+// spotlight.
 FeatureCard {
     id: root
 
@@ -19,11 +20,13 @@ FeatureCard {
     property string appSummary
     property string developer
     property url    iconUrl
+    property var    screenshots: []
     property url    screenshotUrl
+    readonly property var collageImages: screenshots.length > 0 ? screenshots.slice(0, 3)
+                                          : (String(screenshotUrl).length > 0 ? [screenshotUrl] : [])
 
     readonly property bool isNarrow: width < Kirigami.Units.gridUnit * 30
-    readonly property bool hasScreenshot: String(root.screenshotUrl).length > 0
-                                          && dailyScreenshot.status !== Image.Error
+    readonly property bool hasScreenshot: collageImages.length > 0
 
     implicitWidth: Kirigami.Units.gridUnit * 30
     implicitHeight: layout.implicitHeight + Kirigami.Units.largeSpacing * 4
@@ -35,7 +38,7 @@ FeatureCard {
     Keys.onSpacePressed: root.clicked()
 
     Accessible.role: Accessible.Button
-    Accessible.name: i18nc("@info:accessible daily pick card", "App of the Day: %1", root.appName)
+    Accessible.name: L10n.i18nc("@info:accessible daily pick card", "App of the Day: %1", [root.appName])
     Accessible.description: root.appSummary
     Accessible.onPressAction: root.clicked()
 
@@ -99,22 +102,41 @@ FeatureCard {
                 }
             }
 
-            Image {
-                id: dailyScreenshot
-                objectName: "dailyScreenshot"
-                anchors.centerIn: parent
-                // Bound logical size by the decoded pixel size, including HiDPI.
-                width: Math.min(parent.width * 0.85, implicitWidth / Screen.devicePixelRatio)
-                height: Math.min(parent.height * 0.82, implicitHeight / Screen.devicePixelRatio)
-                source: root.screenshotUrl
-                sourceSize.width: 1600
-                fillMode: Image.PreserveAspectFit
-                asynchronous: true
-                mipmap: true
-                visible: status === Image.Ready
-                // Rises slightly with the card on hover.
-                scale: root.hovered ? 1.03 : 1.0
-                Behavior on scale { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic } }
+            // The first screenshot in front; up to two more tilted behind it,
+            // drifting slightly with the pointer.
+            Repeater {
+                model: root.collageImages
+                delegate: Item {
+                    id: tile
+                    required property int index
+                    required property var modelData
+                    readonly property bool center: index === 0
+                    width: Math.min(spotlight.width * (center ? 0.64 : 0.48), Kirigami.Units.gridUnit * 34)
+                    height: spotlight.height * (center ? 0.82 : 0.66)
+                    x: (spotlight.width - width) / 2 + (index === 1 ? -spotlight.width * 0.26 : index === 2 ? spotlight.width * 0.26 : 0)
+                       + (spotlight.lightX / Math.max(1, spotlight.width) - 0.5) * (center ? 12 : 24)
+                    y: (spotlight.height - height) / 2 + (index === 1 ? -12 : index === 2 ? 18 : 0)
+                       + (spotlight.lightY / Math.max(1, spotlight.height) - 0.5) * (center ? 8 : 16)
+                    rotation: index === 1 ? -8 : index === 2 ? 8 : 0
+                    z: center ? 2 : 1
+                    // Rises slightly with the card on hover.
+                    scale: root.hovered ? 1.03 : 1.0
+                    Behavior on scale { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.OutCubic } }
+                    RemoteImageView {
+                        imageKind: "screenshot"
+                        objectName: tile.center ? "dailyScreenshot" : "dailyScreenshot" + tile.index
+                        anchors.centerIn: parent
+                        // Bound logical size by the decoded pixel size, including HiDPI.
+                        width: Math.min(parent.width, implicitWidth / Screen.devicePixelRatio)
+                        height: Math.min(parent.height, implicitHeight / Screen.devicePixelRatio)
+                        remoteSource: tile.modelData
+                        sourceSize.width: 1600
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        mipmap: true
+                        visible: status === Image.Ready
+                    }
+                }
             }
         }
 
@@ -122,12 +144,12 @@ FeatureCard {
             Layout.fillWidth: true
             spacing: Kirigami.Units.largeSpacing * 1.5
 
-            Image {
+            RemoteImageView {
                 id: dailyIcon
                 Layout.preferredWidth: root.isNarrow ? Kirigami.Units.iconSizes.large : Kirigami.Units.iconSizes.huge
                 Layout.preferredHeight: Layout.preferredWidth
                 Layout.alignment: Qt.AlignVCenter
-                source: root.iconUrl
+                remoteSource: root.iconUrl
                 sourceSize: Qt.size(Layout.preferredWidth, Layout.preferredWidth)
                 fillMode: Image.PreserveAspectFit
                 mipmap: true
@@ -151,7 +173,7 @@ FeatureCard {
                 // Eyebrow label in the accent colour, so the pick reads at a glance.
                 Controls.Label {
                     Layout.fillWidth: true
-                    text: i18nc("@info:label eyebrow on the daily pick card", "App of the Day")
+                    text: L10n.i18nc("@info:label eyebrow on the daily pick card", "App of the Day", [])
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                     font.bold: true
                     font.capitalization: Font.AllUppercase
@@ -180,7 +202,7 @@ FeatureCard {
             }
 
             Controls.Button {
-                text: i18n("View Details")
+                text: L10n.i18n("View Details", [])
                 icon.name: "go-next-symbolic"
                 highlighted: true
                 visible: !root.isNarrow

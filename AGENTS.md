@@ -1,6 +1,6 @@
 # Working on Kiosque
 
-Kiosque is a Linux Flatpak storefront: Rust domain/services → cxx-qt models → Qt6/Kirigami QML, built with Meson and Cargo. Read [architecture](docs/architecture.md) before changing boundaries and [testing](docs/testing.md) before selecting checks.
+Kiosque is a Linux Flatpak storefront: Rust domain/services → qtbridge models → Qt6/Kirigami QML, built with Meson and Cargo. Read [architecture](docs/architecture.md) before changing boundaries and [testing](docs/testing.md) before selecting checks.
 
 ## Local rules
 

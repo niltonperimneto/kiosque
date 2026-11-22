@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 
 Kirigami.ShadowedRectangle {
@@ -67,7 +66,7 @@ Kirigami.ShadowedRectangle {
                 spacing: 0
 
                 Controls.Label {
-                    text: root.userName !== "" ? root.userName : i18n("Anonymous")
+                    text: root.userName !== "" ? root.userName : L10n.i18n("Anonymous", [])
                     textFormat: Text.PlainText
                     font.bold: true
                     Layout.fillWidth: true
@@ -93,7 +92,7 @@ Kirigami.ShadowedRectangle {
                 Controls.Label {
                     id: versionLabel
                     anchors.centerIn: parent
-                    text: i18n("v%1", root.version)
+                    text: L10n.i18n("v%1", [root.version])
                     font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
                     color: Kirigami.Theme.textColor
                     opacity: 0.8
@@ -150,7 +149,7 @@ Kirigami.ShadowedRectangle {
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
                 onClicked: if (root.controller) root.controller.upvoteReview(root.reviewId)
-                Controls.ToolTip.text: i18n("Helpful")
+                Controls.ToolTip.text: L10n.i18n("Helpful", [])
                 Controls.ToolTip.visible: hovered
             }
 
@@ -162,7 +161,7 @@ Kirigami.ShadowedRectangle {
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
                 onClicked: if (root.controller) root.controller.downvoteReview(root.reviewId)
-                Controls.ToolTip.text: i18n("Unhelpful")
+                Controls.ToolTip.text: L10n.i18n("Unhelpful", [])
                 Controls.ToolTip.visible: hovered
             }
 
@@ -173,7 +172,7 @@ Kirigami.ShadowedRectangle {
                 flat: true
                 enabled: root.userHash !== SettingsController.odrs_user_hash
                 onClicked: if (root.controller) root.controller.dismissReview(root.reviewId)
-                Controls.ToolTip.text: i18n("Report Review")
+                Controls.ToolTip.text: L10n.i18n("Report Review", [])
                 Controls.ToolTip.visible: hovered
             }
 
@@ -185,7 +184,7 @@ Kirigami.ShadowedRectangle {
             Controls.Button {
                 id: deleteButton
                 icon.name: "edit-delete"
-                text: i18n("Delete")
+                text: L10n.i18n("Delete", [])
                 flat: true
                 visible: root.userHash === SettingsController.odrs_user_hash && SettingsController.is_authenticated
                 onClicked: deleteConfirmDialog.open()
@@ -196,12 +195,12 @@ Kirigami.ShadowedRectangle {
     // Delete confirmation dialog
     Kirigami.Dialog {
         id: deleteConfirmDialog
-        title: i18n("Delete Review?")
+        title: L10n.i18n("Delete Review?", [])
         standardButtons: Kirigami.Dialog.Yes | Kirigami.Dialog.No
         onAccepted: if (root.controller) root.controller.removeReview(root.reviewId)
         
         Controls.Label {
-            text: i18n("Are you sure you want to permanently delete your review?")
+            text: L10n.i18n("Are you sure you want to permanently delete your review?", [])
             wrapMode: Text.WordWrap
             width: Kirigami.Units.gridUnit * 15
         }

@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
@@ -59,11 +60,11 @@ Kirigami.AbstractCard {
     contentItem: ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
-        Image {
+        RemoteImageView {
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: Kirigami.Units.iconSizes.huge
             Layout.preferredHeight: Kirigami.Units.iconSizes.huge
-            source: root.iconUrl
+            remoteSource: root.iconUrl
             sourceSize.width: Kirigami.Units.iconSizes.huge
             sourceSize.height: Kirigami.Units.iconSizes.huge
             asynchronous: true

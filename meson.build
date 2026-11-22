@@ -1,96 +1,64 @@
-project('kiosque', 'cpp',
-  meson_version: '>=1.1.0',
+# Thin driver: Cargo builds everything; Meson installs it, builds
+# translations and runs the Qt Quick tests. No compiled language is used.
+project('kiosque',
+  meson_version: '>=1.4.0',
   version: run_command('python3', '-c', '''
 import subprocess
 try:
     s = subprocess.run(["git", "describe", "--tags"], capture_output=True, text=True)
-    version = s.stdout.strip().lstrip("v") if (s.returncode == 0 and s.stdout.strip()) else "0.8"
+    version = s.stdout.strip().lstrip("v") if (s.returncode == 0 and s.stdout.strip()) else "1.0.0"
 except Exception:
-    version = "0.8"
+    version = "1.0.0"
 print(version)
 ''', check: true).stdout().strip(),
-  default_options: ['cpp_std=c++17']
 )
-
-qt6 = import('qt6')
-
-# Dependencies
-qt_deps = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'QuickControls2', 'DBus', 'Widgets'])
-kirigami_dep = dependency('KF6Kirigami')
-dbus_dep = dependency('dbus-1', required: false)
-ki18n_dep = dependency('KF6I18n', method: 'cmake', modules: ['KF6::I18n'])
-ki18n_qml_dep = dependency('KF6I18n', method: 'cmake', modules: ['KF6::I18nQml'])
-
 
 python = find_program('python3')
 is_release = get_option('buildtype') != 'debug'
-cargo_profile = is_release ? 'release' : 'debug'
+bindir = get_option('bindir')
+localedir_path = get_option('prefix') / get_option('localedir')
 cargo_target_dir = get_option('cargo_target_dir') == '' ? meson.current_build_dir() / 'cargo_target' : get_option('cargo_target_dir')
-rust_lib = custom_target(
+
+if get_option('tests') and not get_option('test_support')
+  error('tests requires -Dtest_support=true')
+endif
+
+binaries = ['kiosque', 'kiosque-update']
+install_dirs = [bindir, bindir]
+if get_option('tests')
+  # The Qt Quick Test runner is built for tests only and never installed.
+  binaries += 'kiosque-quick-test'
+  install_dirs += false
+endif
+
+rust = custom_target(
   'cargo-build',
   build_by_default: true,
   build_always_stale: true,
-  output: ['libkiosque.a', 'kiosque_initializers.o'],
+  output: binaries,
   console: true,
+  install: true,
+  install_dir: install_dirs,
   command: [python, files('scripts/build_rust.py'),
     '--manifest', meson.current_source_dir() / 'rust/Cargo.toml',
     '--target-dir', cargo_target_dir,
-    '--profile', cargo_profile,
+    '--profile', is_release ? 'release' : 'debug',
     '--backend', get_option('flatpak_backend'),
     '--test-support', get_option('test_support') ? 'true' : 'false',
-    '--output', '@OUTPUT0@', '--initializers', '@OUTPUT1@']
+    '--version', meson.project_version(),
+    '--localedir', localedir_path,
+    '--out-dir', '@OUTDIR@',
+    '--bins', binaries],
 )
-backend_deps = []
-if get_option('flatpak_backend') == 'native'
-  backend_deps += dependency('flatpak')
-endif
-cpp = meson.get_compiler('cpp')
-rust_dep = declare_dependency(dependencies: [backend_deps, cpp.find_library('dl'), cpp.find_library('pthread'), cpp.find_library('m')])
-
-qrc_files = qt6.compile_resources(sources: 'resources.qrc')
-# Monochrome logos for the updater's tray icon.
-update_qrc_files = qt6.compile_resources(name: 'update_resources', sources: 'update_resources.qrc')
 
 subdir('po')
-
-# Preprocess Qt files
-update_daemon_moc = qt6.preprocess(
-  moc_sources: ['src/update_main.cpp']
-)
-
-localedir_path = get_option('prefix') / get_option('localedir')
-
-# Application executable
-executable('kiosque',
-  sources: ['src/main.cpp', qrc_files],
-  link_with: rust_lib[0],
-  objects: [rust_lib[1]],
-  dependencies: [qt_deps, kirigami_dep, rust_dep, dbus_dep, ki18n_dep, ki18n_qml_dep],
-  cpp_args: [
-    '-DTRANSLATION_DOMAIN="kiosque"',
-    '-DPROJECT_VERSION="' + meson.project_version() + '"',
-    '-DLOCALE_INSTALL_DIR="' + localedir_path + '"'
-  ],
-  install: true
-)
-
-executable('kiosque-update',
-  sources: ['src/update_main.cpp', update_daemon_moc, update_qrc_files],
-  link_with: rust_lib[0],
-  objects: [rust_lib[1]],
-  dependencies: [qt_deps, rust_dep, dbus_dep, ki18n_dep],
-  cpp_args: [
-    '-DTRANSLATION_DOMAIN="kiosque"',
-    '-DPROJECT_VERSION="' + meson.project_version() + '"',
-    '-DLOCALE_INSTALL_DIR="' + localedir_path + '"'
-  ],
-  install: true
-)
 
 install_data('org.kiosque.Kiosque.desktop',
   install_dir: get_option('datadir') / 'applications'
 )
-
+install_data('org.kiosque.Kiosque.metainfo.xml',
+  install_dir: get_option('datadir') / 'metainfo'
+)
 # D-Bus activation of the daemon. Started without arguments it serves
 # on-demand clients (the GUI, KRunner) and exits when idle; autostart via the
 # Background portal passes --background instead (rust/core/src/settings.rs).
@@ -117,7 +85,6 @@ install_data('qml/images/logo.svg',
   install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps'
 )
 
-# Monochrome icon for places that use symbolic app icons (tray, panels).
 install_data('data/icons/org.kiosque.Kiosque-symbolic.svg',
   install_dir: get_option('datadir') / 'icons/hicolor/symbolic/apps'
 )
@@ -128,10 +95,13 @@ gnome.post_install(
   update_desktop_database: true
 )
 
-
 if get_option('tests')
-  if not get_option('test_support')
-    error('tests requires -Dtest_support=true')
-  endif
-  subdir('tests/qt')
+  quick_test = rust[2]
+  test_env = {'KIOSQUE_QML_TEST_DIR': meson.current_source_dir() / 'tests/qml'}
+  test('models', quick_test, suite: 'qt', is_parallel: false, timeout: 90, env: test_env,
+    args: ['-input', meson.current_source_dir() / 'tests/qml/tst_models.qml'])
+  foreach t : ['navigation', 'services', 'regressions', 'storefront', 'qtbridge']
+    test(t, quick_test, suite: 'qml', is_parallel: false, timeout: 120, env: test_env,
+      args: ['-input', meson.current_source_dir() / 'tests/qml/tst_' + t + '.qml'])
+  endforeach
 endif

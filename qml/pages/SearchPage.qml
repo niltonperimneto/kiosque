@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 import "../components" as Components
 
@@ -14,7 +13,7 @@ Kirigami.ScrollablePage {
     id: page
     objectName: "searchPage"
 
-    title: i18n("Search")
+    title: L10n.i18n("Search", [])
     // Its title search field handles Ctrl+F (see Main.qml).
     readonly property bool hasOwnSearch: true
 
@@ -47,7 +46,7 @@ Kirigami.ScrollablePage {
         objectName: "globalSearchField"
         Layout.fillWidth: true
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-        placeholderText: i18n("Search applications…")
+        placeholderText: L10n.i18n("Search applications…", [])
         text: page.query
         // Accept automatically, shortly after typing stops.
         delaySearch: true
@@ -73,8 +72,8 @@ Kirigami.ScrollablePage {
             Layout.topMargin: Kirigami.Units.gridUnit * 4
             visible: page.activeQuery.length === 0
             icon.name: "search"
-            text: i18n("Search for Applications")
-            explanation: i18n("Type a name, a feature or a developer to search Flathub.")
+            text: L10n.i18n("Search for Applications", [])
+            explanation: L10n.i18n("Type a name, a feature or a developer to search Flathub.", [])
         }
 
         Kirigami.Heading {
@@ -83,7 +82,7 @@ Kirigami.ScrollablePage {
             Layout.leftMargin: Kirigami.Units.largeSpacing
             visible: page.activeQuery.length > 0 && resultsRepeater.count > 0
             wrapMode: Text.WordWrap
-            text: i18np("%1 result for “%2”", "%1 results for “%2”", resultsRepeater.count, page.activeQuery)
+            text: L10n.i18np("%1 result for “%2”", "%1 results for “%2”", resultsRepeater.count, [page.activeQuery])
         }
 
         Controls.BusyIndicator {
@@ -101,11 +100,11 @@ Kirigami.ScrollablePage {
                      && page.resultsModel.error_message !== ""
             type: Kirigami.PlaceholderMessage.Type.Actionable
             icon.name: "network-disconnect"
-            text: i18n("Search Is Unavailable")
+            text: L10n.i18n("Search Is Unavailable", [])
             explanation: page.resultsModel.error_message
             helpfulAction: Kirigami.Action {
                 icon.name: "view-refresh"
-                text: i18n("Try Again")
+                text: L10n.i18n("Try Again", [])
                 onTriggered: page.runSearch()
             }
         }
@@ -117,11 +116,11 @@ Kirigami.ScrollablePage {
             visible: page.activeQuery.length > 0 && !page.resultsModel.loading
                      && page.resultsModel.error_message === "" && resultsRepeater.count === 0
             icon.name: "edit-find"
-            text: i18n("No Applications Found")
-            explanation: i18n("Try a different search term, or browse the categories.")
+            text: L10n.i18n("No Applications Found", [])
+            explanation: L10n.i18n("Try a different search term, or browse the categories.", [])
             helpfulAction: Kirigami.Action {
                 icon.name: "applications-all-symbolic"
-                text: i18n("Browse Categories")
+                text: L10n.i18n("Browse Categories", [])
                 onTriggered: applicationWindow().openCategories()
             }
         }

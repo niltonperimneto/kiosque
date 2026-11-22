@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 
 // Pending updates. Uses the window's shared InstalledModel so an update in
@@ -14,7 +13,7 @@ import com.kiosque
 Kirigami.ScrollablePage {
     id: page
     objectName: "updatesPage"
-    title: i18n("Updates")
+    title: L10n.i18n("Updates", [])
     supportsRefreshing: true
 
     property var installedModel: applicationWindow().installedModel
@@ -63,7 +62,7 @@ Kirigami.ScrollablePage {
     actions: [
         Kirigami.Action {
             objectName: "updateAllAction"
-            text: i18n("Update All")
+            text: L10n.i18n("Update All", [])
             icon.name: "system-software-update"
             visible: page.availableCount > 0
             enabled: !page.updating && !page.checking
@@ -74,7 +73,7 @@ Kirigami.ScrollablePage {
         },
         Kirigami.Action {
             objectName: "checkUpdatesAction"
-            text: i18n("Check for Updates")
+            text: L10n.i18n("Check for Updates", [])
             icon.name: "view-refresh"
             enabled: !page.updating && !page.checking
             onTriggered: page.reload()
@@ -115,7 +114,7 @@ Kirigami.ScrollablePage {
                 Controls.Button {
                     objectName: "cancelUpdateButton"
                     visible: page.updating
-                    text: i18n("Cancel")
+                    text: L10n.i18n("Cancel", [])
                     icon.name: "dialog-cancel"
                     onClicked: page.installedModel.cancelUpdate()
                 }
@@ -128,11 +127,11 @@ Kirigami.ScrollablePage {
                 color: Kirigami.Theme.disabledTextColor
                 text: {
                     if (!page.updating)
-                        return i18n("Checking for updates…");
+                        return L10n.i18n("Checking for updates…", []);
                     if (page.installedModel.update_status_text !== "")
                         return page.installedModel.update_status_text;
                     return page.installedModel.update_progress < 0
-                        ? i18n("Initializing update…") : i18n("Updating…");
+                        ? L10n.i18n("Initializing update…", []) : L10n.i18n("Updating…", []);
                 }
             }
         }
@@ -149,7 +148,7 @@ Kirigami.ScrollablePage {
 
             Controls.CheckBox {
                 objectName: "selectAllUpdates"
-                text: i18np("%1 update available", "%1 updates available", page.availableCount)
+                text: L10n.i18np("%1 update available", "%1 updates available", page.availableCount, [])
                 tristate: true
                 checkState: page.selectedCount === 0 ? Qt.Unchecked
                           : page.selectedCount === page.availableCount ? Qt.Checked
@@ -162,7 +161,7 @@ Kirigami.ScrollablePage {
             Controls.Button {
                 objectName: "updateSelectedButton"
                 visible: page.selectedCount > 0 && page.selectedCount < page.availableCount
-                text: i18np("Update %1 Selected", "Update %1 Selected", page.selectedCount)
+                text: L10n.i18np("Update %1 Selected", "Update %1 Selected", page.selectedCount, [])
                 icon.name: "system-software-update"
                 enabled: !page.checking
                 onClicked: page.installedModel.updateSelectedApps()
@@ -185,15 +184,15 @@ Kirigami.ScrollablePage {
             width: parent.width - Kirigami.Units.gridUnit * 4
             visible: listView.count === 0 && !page.checking && !page.updating
             icon.name: page.checkError ? "dialog-error-symbolic" : page.hasChecked ? "checkmark" : "system-software-update"
-            text: page.checkError ? i18n("Could Not Check for Updates") : page.hasChecked ? i18n("Up to Date") : i18n("No Updates Found Yet")
+            text: page.checkError ? L10n.i18n("Could Not Check for Updates", []) : page.hasChecked ? L10n.i18n("Up to Date", []) : L10n.i18n("No Updates Found Yet", [])
             explanation: page.checkError ? page.checkError : page.hasChecked
-                ? i18n("All installed applications and runtimes are up to date.")
-                : i18n("Check now to see whether newer versions are available.")
+                ? L10n.i18n("All installed applications and runtimes are up to date.", [])
+                : L10n.i18n("Check now to see whether newer versions are available.", [])
             helpfulAction: page.hasChecked && !page.checkError ? null : checkNowAction
 
             Kirigami.Action {
                 id: checkNowAction
-                text: i18n("Check for Updates")
+                text: L10n.i18n("Check for Updates", [])
                 icon.name: "view-refresh"
                 onTriggered: page.reload()
             }
@@ -221,7 +220,7 @@ Kirigami.ScrollablePage {
                     Layout.alignment: Qt.AlignVCenter
                     checked: row.isChecked
                     enabled: !page.updating
-                    Accessible.name: i18n("Include %1 in the update", row.name)
+                    Accessible.name: L10n.i18n("Include %1 in the update", [row.name])
                     onToggled: page.installedModel.toggleUpdateChecked(row.index)
                 }
 

@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import QtQuick.Effects
 
 Kirigami.Card {
@@ -20,7 +20,7 @@ Kirigami.Card {
 
     header: Kirigami.Heading {
         level: 4
-        text: i18n("Welcome to Kiosque")
+        text: L10n.i18n("Welcome to Kiosque", [])
         color: Kirigami.Theme.textColor
         font.bold: true
         padding: Kirigami.Units.largeSpacing
@@ -150,7 +150,7 @@ Kirigami.Card {
             spacing: Kirigami.Units.largeSpacing
 
             Controls.Label {
-                text: i18n("Discover, install, and update your applications effortlessly. Kiosque provides a modern, fast experience for managing your Flatpaks, inspired by Flathub.")
+                text: L10n.i18n("Discover, install, and update your applications effortlessly. Kiosque provides a modern, fast experience for managing your Flatpaks, inspired by Flathub.", [])
                 color: Kirigami.Theme.textColor
                 opacity: 0.85
                 wrapMode: Text.WordWrap

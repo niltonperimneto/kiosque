@@ -7,8 +7,8 @@ TestCase {
     when: windowShown
     visible: true
     function cleanup() {
-        if (qtest_results.failed && testArtifactDir !== "")
-            grabImage(this).save(testArtifactDir + "/" + name + "-" + Date.now() + ".png")
+        if (qtest_results.failed && TestSupport.artifactDir !== "")
+            grabImage(this).save(TestSupport.artifactDir + "/" + name + "-" + Date.now() + ".png")
     }
     width: 640
     height: 480

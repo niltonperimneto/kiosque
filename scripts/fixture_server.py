@@ -45,13 +45,14 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(200, {'hits': [] if query == 'empty' else [{'app_id': f'org.kiosque.{query or "Fixture"}', 'name': query or 'Fixture'}]})
 
     def do_GET(self):
-        if self.path == '/fixture-image.png':
+        if self.path in ('/fixture-image.png', '/fixture-screenshot.png'):
             import struct
             import zlib
             def chunk(kind, data):
                 return struct.pack('!I', len(data)) + kind + data + struct.pack('!I', zlib.crc32(kind + data))
-            data = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('!2I5B', 8, 8, 8, 6, 0, 0, 0))
-            data += chunk(b'IDAT', zlib.compress((b'\0' + b'\xff\0\0\xff' * 8) * 8)) + chunk(b'IEND', b'')
+            width, height = (1600, 900) if self.path == '/fixture-screenshot.png' else (8, 8)
+            data = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('!2I5B', width, height, 8, 6, 0, 0, 0))
+            data += chunk(b'IDAT', zlib.compress((b'\0' + b'\xff\0\0\xff' * width) * height)) + chunk(b'IEND', b'')
             self.send_response(200)
             self.send_header('Content-Type', 'image/png')
             self.send_header('Content-Length', str(len(data)))
@@ -108,6 +109,7 @@ class Handler(BaseHTTPRequestHandler):
             if app_id in ('org.kiosque.Daily', 'org.kiosque.Screenshots'):
                 details['screenshots'] = [{'sizes': [{'src': f'http://127.0.0.1:{self.server.server_port}/fixture-image.png', 'width': 8, 'height': 8}]}]
             if app_id == 'org.kiosque.Screenshots':
+                details['screenshots'][0]['sizes'].append({'src': f'http://127.0.0.1:{self.server.server_port}/fixture-screenshot.png', 'width': 1600, 'height': 900})
                 details['releases'] = [
                     {'version': '2.0', 'timestamp': '1700000000', 'description': '<p>Faster <em>startup</em>.</p><ul><li>New gallery</li></ul>'},
                     {'version': '1.0', 'timestamp': 1600000000, 'description': '<p>First release</p>'},

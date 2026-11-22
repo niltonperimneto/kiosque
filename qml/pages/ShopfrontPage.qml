@@ -5,14 +5,13 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 import "../components" as Components
 
 Kirigami.ScrollablePage {
     id: page
 
-    title: i18n("Storefront")
+    title: L10n.i18n("Storefront", [])
     supportsRefreshing: true
     // Its title search field handles Ctrl+F (see Main.qml).
     readonly property bool hasOwnSearch: true
@@ -23,7 +22,7 @@ Kirigami.ScrollablePage {
         objectName: "storefrontSearchField"
         Layout.fillWidth: true
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-        placeholderText: i18n("Search applications…")
+        placeholderText: L10n.i18n("Search applications…", [])
         autoAccept: false
         onAccepted: {
             const query = text.trim();
@@ -93,9 +92,9 @@ Kirigami.ScrollablePage {
             Layout.rightMargin: Kirigami.Units.largeSpacing
             type: Kirigami.MessageType.Error
             visible: !page.popularModel.loading && page.popularModel.error_message !== ""
-            text: i18n("Flathub could not be reached: %1", page.popularModel.error_message)
+            text: L10n.i18n("Flathub could not be reached: %1", [page.popularModel.error_message])
             actions: Kirigami.Action {
-                text: i18n("Try Again")
+                text: L10n.i18n("Try Again", [])
                 icon.name: "view-refresh"
                 onTriggered: page.refreshing = true
             }
@@ -133,6 +132,7 @@ Kirigami.ScrollablePage {
                 developer: page.aotd.developer || ""
                 iconUrl: page.aotd.iconUrl || ""
                 screenshotUrl: page.aotd.screenshotUrl || ""
+                screenshots: page.aotd.screenshots || []
 
                 onClicked: applicationWindow().pushAppDetail(page.aotd.appId)
             }
@@ -147,7 +147,7 @@ Kirigami.ScrollablePage {
 
             Kirigami.Heading {
                 level: 2
-                text: i18n("Browse by Category")
+                text: L10n.i18n("Browse by Category", [])
                 Layout.fillWidth: true
                 Layout.leftMargin: Kirigami.Units.largeSpacing
                 Layout.rightMargin: Kirigami.Units.largeSpacing
@@ -200,7 +200,7 @@ Kirigami.ScrollablePage {
 
             Components.HorizontalAppList {
                 Layout.fillWidth: true
-                title: i18n("Popular Applications")
+                title: L10n.i18n("Popular Applications", [])
                 appModel: page.popularModel
             }
 
@@ -211,21 +211,21 @@ Kirigami.ScrollablePage {
 
             Components.HorizontalAppList {
                 Layout.fillWidth: true
-                title: i18n("On the Go")
-                subtitle: i18n("Apps that work great on phones and tablets")
+                title: L10n.i18n("On the Go", [])
+                subtitle: L10n.i18n("Apps that work great on phones and tablets", [])
                 iconName: "phone-symbolic"
                 appModel: page.mobileModel
             }
 
             Components.HorizontalAppList {
                 Layout.fillWidth: true
-                title: i18n("New & Noteworthy")
+                title: L10n.i18n("New & Noteworthy", [])
                 appModel: page.newModel
             }
 
             Components.HorizontalAppList {
                 Layout.fillWidth: true
-                title: i18n("Recently Updated")
+                title: L10n.i18n("Recently Updated", [])
                 appModel: page.updatedModel
             }
         }

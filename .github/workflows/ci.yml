@@ -29,6 +29,8 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - run: python3 scripts/test.py security
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
@@ -75,7 +77,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install desktop test dependencies
-        run: dnf install -y desktop-file-utils cargo rust meson ninja-build gcc-c++ cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
+        run: dnf install -y desktop-file-utils cargo rust clippy meson ninja-build gcc-c++ cmake mold qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
       - run: python3 scripts/test.py qt --backend ${{ matrix.backend }}
       - run: python3 scripts/test.py qml --backend ${{ matrix.backend }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -106,14 +108,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
 
-      - name: Install KDE Sdk & Platform
+      - name: Configure Flatpak dependency source
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub org.kde.Sdk//6.10 org.kde.Platform//6.10 org.freedesktop.Sdk.Extension.rust-stable//25.08
 
       - name: Build Flatpak
         run: |
-          flatpak-builder --user --force-clean --ccache --require-changes --repo=repo build org.kiosque.Kiosque.json
+          flatpak-builder --user --install-deps-from=flathub --assumeyes --force-clean --ccache --require-changes --repo=repo build org.kiosque.Kiosque.json
           flatpak build-bundle repo kiosque.flatpak org.kiosque.Kiosque
 
       - name: Upload Flatpak Artifact
@@ -137,7 +138,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          dnf install -y desktop-file-utils meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style flatpak-devel dbus-devel rpm-build tar
+          dnf install -y desktop-file-utils meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtdeclarative-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style flatpak-devel dbus-devel rpm-build tar
 
       - name: Build RPM Package
         run: |
@@ -169,7 +170,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          dnf install -y desktop-file-utils meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style kf6-sonnet plasma-breeze-qt6 qqc2-breeze-style flatpak-devel dbus-devel file wget curl file-devel
+          dnf install -y desktop-file-utils meson gcc-c++ cargo rust cmake mold qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtdeclarative-devel qt6-qtwayland kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style kf6-sonnet plasma-breeze-qt6 qqc2-breeze-style flatpak-devel dbus-devel file wget curl file-devel
 
       - name: Build and Install to AppDir
         run: |
@@ -178,6 +179,8 @@ jobs:
           DESTDIR=$PWD/AppDir meson install -C builddir
 
       - name: Download & Extract linuxdeploy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/download_build_tool.py linuxdeploy linuxdeploy
           chmod +x linuxdeploy
@@ -186,6 +189,8 @@ jobs:
           rm -f linuxdeploy
 
       - name: Download & Extract linuxdeploy-plugin-qt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/download_build_tool.py linuxdeploy-plugin-qt linuxdeploy-plugin-qt
           chmod +x linuxdeploy-plugin-qt
@@ -197,6 +202,7 @@ jobs:
         timeout-minutes: 15
         env:
           NO_STRIP: "1"
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           export QMAKE=/usr/lib64/qt6/bin/qmake
           export QML_SOURCES_PATHS=$PWD/qml

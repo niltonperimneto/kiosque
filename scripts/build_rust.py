@@ -1,37 +1,41 @@
 #!/usr/bin/env python3
-"""Build the explicit application package and export cxx-qt initializers for Meson."""
+"""Build Kiosque's binaries with Cargo and copy them where Meson expects them."""
 import argparse
-import fcntl
 import os
 from pathlib import Path
 import shutil
 import subprocess
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--manifest', type=Path, required=True)
 parser.add_argument('--target-dir', type=Path, required=True)
-parser.add_argument('--output', type=Path, required=True)
-parser.add_argument('--initializers', type=Path, required=True)
 parser.add_argument('--profile', choices=['debug', 'release'], required=True)
 parser.add_argument('--backend', choices=['native', 'broker'], required=True)
 parser.add_argument('--test-support', choices=['true', 'false'], required=True)
+parser.add_argument('--version', required=True)
+parser.add_argument('--localedir', required=True)
+parser.add_argument('--out-dir', type=Path, required=True)
+parser.add_argument('--bins', nargs='+', required=True)
 args = parser.parse_args()
-export = args.target_dir / 'cxxqt'
+
 env = os.environ.copy()
-env.update(CARGO_TARGET_DIR=str(args.target_dir), CXX_QT_EXPORT_DIR=str(export), CXX_QT_EXPORT_CRATE_libkiosque='1')
+env['CARGO_TARGET_DIR'] = str(args.target_dir)
 env.setdefault('CARGO_BUILD_JOBS', '2')
-command = ['cargo', 'build', '--locked', '--manifest-path', str(args.manifest), '-p', 'libkiosque']
+# Compiled in: the version shown by `kiosque --version` and Qt.application,
+# and the last directory searched for .mo catalogs.
+env['KIOSQUE_VERSION'] = args.version
+env['KIOSQUE_LOCALEDIR'] = args.localedir
+
+command = ['cargo', 'build', '--locked', '--manifest-path', str(args.manifest),
+           '-p', 'kiosque', '-p', 'kiosque-update']
+if env.get('CARGO_NET_OFFLINE', '').lower() in ('1', 'true'):
+    command.append('--offline')
 if args.profile == 'release':
     command.append('--release')
 if args.backend == 'broker':
     command.append('--no-default-features')
 if args.test_support == 'true':
-    command.extend(['--features', 'test-util'])
-# Cargo releases its own lock before Meson copies the exported CXX objects.
-# Keep competing backend builds out until both outputs have been collected.
-args.target_dir.mkdir(parents=True, exist_ok=True)
-with (args.target_dir / '.kiosque-build.lock').open('a') as lock:
-    fcntl.flock(lock, fcntl.LOCK_EX)
-    subprocess.run(command, env=env, check=True)
-    shutil.copy2(args.target_dir / args.profile / 'libkiosque.a', args.output)
-    shutil.copy2(export / 'crates/libkiosque/initializers.o', args.initializers)
+    command.extend(['--features', 'kiosque/test-util'])
+subprocess.run(command, env=env, check=True)
+for name in args.bins:
+    shutil.copy2(args.target_dir / args.profile / name, args.out_dir / name)

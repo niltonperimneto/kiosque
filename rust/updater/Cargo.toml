@@ -1,0 +1,23 @@
+[package]
+name = "kiosque-update"
+description = "Background update notifier for the Kiosque Flatpak storefront"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "kiosque-update"
+path = "src/main.rs"
+
+[features]
+default = ["libflatpak"]
+libflatpak = ["kiosque-core/libflatpak"]
+
+[dependencies]
+kiosque-core = { path = "../core", default-features = false }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+zbus = { version = "6.3.0", features = ["tokio"] }
+futures-util = "0.3.34"
+serde = { version = "1.0.229", features = ["derive"] }

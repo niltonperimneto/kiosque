@@ -10,9 +10,8 @@
 //! * `/runner`, interface `org.kde.krunner1` — a KRunner D-Bus runner that
 //!   searches the local AppStream catalog.
 //!
-//! The C++ shell (`src/update_main.cpp`) provides the tray icon and desktop
-//! notifications and drives this module through the C functions at the end
-//! of this file.
+//! The Rust shell (`rust/updater`) provides the tray icon and desktop
+//! notifications and consumes the typed daemon event stream.
 
 pub mod auth;
 pub mod client;
@@ -20,9 +19,8 @@ pub mod runner;
 pub mod schedule;
 pub mod service;
 
-use std::ffi::{CString, c_char, c_void};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use jiff::Zoned;
@@ -177,7 +175,7 @@ impl From<JobWire> for Job {
     }
 }
 
-// ── Events for the C++ shell ────────────────────────────────────────────────
+// ── Events for the Rust shell ────────────────────────────────────────────────
 
 /// `count` = number of available app updates.
 pub const EVENT_UPDATES: i32 = 1;
@@ -188,21 +186,31 @@ pub const EVENT_IDLE_EXIT: i32 = 3;
 /// `text` = summary of an automatic update run that started.
 pub const EVENT_AUTO_UPDATE: i32 = 4;
 
-pub type EventCallback =
-    extern "C" fn(event: i32, count: i32, text: *const c_char, ctx: *mut c_void);
-
-struct Callback {
-    f: EventCallback,
-    ctx: usize,
+/// Something the tray/notification shell should react to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DaemonEvent {
+    /// Number of available app (not runtime) updates.
+    Updates(usize),
+    /// A transaction ended; `title` includes the error on failure.
+    JobFinished { ok: bool, title: String },
+    /// A scheduled automatic update of this many apps started.
+    AutoUpdate(usize),
+    /// The daemon has been idle long enough and should quit.
+    IdleExit,
 }
 
-static CALLBACK: Mutex<Option<Callback>> = Mutex::new(None);
+fn events() -> &'static tokio::sync::broadcast::Sender<DaemonEvent> {
+    static EVENTS: OnceLock<tokio::sync::broadcast::Sender<DaemonEvent>> = OnceLock::new();
+    EVENTS.get_or_init(|| tokio::sync::broadcast::channel(64).0)
+}
 
-fn notify(event: i32, count: i32, text: &str) {
-    if let Some(cb) = CALLBACK.lock().unwrap().as_ref() {
-        let c = CString::new(text.replace('\0', "")).unwrap_or_default();
-        (cb.f)(event, count, c.as_ptr(), cb.ctx as *mut c_void);
-    }
+/// Receive [`DaemonEvent`]s. Subscribe before [`start`] to see every event.
+pub fn subscribe() -> tokio::sync::broadcast::Receiver<DaemonEvent> {
+    events().subscribe()
+}
+
+fn notify(event: DaemonEvent) {
+    let _ = events().send(event);
 }
 
 static LAST_ACTIVITY: AtomicU64 = AtomicU64::new(0);
@@ -232,7 +240,7 @@ pub async fn check_updates() -> crate::flatpak::Result<usize> {
     }
     let n = app_update_count();
     klog!("daemon: {} app updates available", n);
-    notify(EVENT_UPDATES, n as i32, "");
+    notify(DaemonEvent::Updates(n));
     Ok(n)
 }
 
@@ -303,7 +311,7 @@ async fn run_automatic_update() -> Result<(), String> {
         return Ok(());
     }
     klog!("daemon: running automatic update");
-    notify(EVENT_AUTO_UPDATE, app_update_count() as i32, "");
+    notify(DaemonEvent::AutoUpdate(app_update_count()));
     let registry = crate::registry::registry();
     let mut events = registry.subscribe();
     let id = crate::transactions::local_manager().enqueue(
@@ -385,7 +393,7 @@ async fn scheduler() {
             crate::disk_cache::now_secs().saturating_sub(LAST_ACTIVITY.load(Ordering::SeqCst));
         if !BACKGROUND.load(Ordering::SeqCst) && !busy && idle >= IDLE_TIMEOUT.as_secs() {
             klog!("daemon: idle for {}s, exiting", idle);
-            notify(EVENT_IDLE_EXIT, 0, "");
+            notify(DaemonEvent::IdleExit);
         }
 
         tokio::time::sleep(Duration::from_secs(60)).await;
@@ -398,13 +406,17 @@ async fn job_notifier() {
     loop {
         match rx.recv().await {
             Ok(Event::Job(job)) => match job.state {
-                JobState::Done => notify(EVENT_JOB_FINISHED, 1, &job.title),
-                JobState::Failed(ref e) => {
-                    notify(EVENT_JOB_FINISHED, 0, &format!("{}: {}", job.title, e))
-                }
+                JobState::Done => notify(DaemonEvent::JobFinished {
+                    ok: true,
+                    title: job.title,
+                }),
+                JobState::Failed(ref e) => notify(DaemonEvent::JobFinished {
+                    ok: false,
+                    title: format!("{}: {}", job.title, e),
+                }),
                 _ => {}
             },
-            Ok(Event::Updates) => notify(EVENT_UPDATES, app_update_count() as i32, ""),
+            Ok(Event::Updates) => notify(DaemonEvent::Updates(app_update_count())),
             Ok(_) => {}
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
             Err(_) => break,
@@ -413,8 +425,11 @@ async fn job_notifier() {
 }
 
 static CONNECTION: OnceLock<zbus::Connection> = OnceLock::new();
+pub fn connection() -> Option<zbus::Connection> {
+    CONNECTION.get().cloned()
+}
 
-async fn start(background: bool) -> Result<(), String> {
+pub async fn start(background: bool) -> Result<(), String> {
     if crate::flatpak::in_sandbox() {
         return Err(
             "Install the native Kiosque companion on the host to manage applications".into(),
@@ -423,12 +438,19 @@ async fn start(background: bool) -> Result<(), String> {
     BACKGROUND.store(background, Ordering::SeqCst);
     touch();
     let conn = zbus::connection::Builder::session()
-        .name(BUS_NAME)
         .serve_at(OBJECT_PATH, service::Service)
         .serve_at(RUNNER_PATH, runner::Runner)
         .build()
         .await
         .map_err(|e| e.to_string())?;
+    match conn
+        .request_name_with_flags(BUS_NAME, zbus::fdo::RequestNameFlags::DO_NOT_QUEUE)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        zbus::fdo::RequestNameReply::PrimaryOwner | zbus::fdo::RequestNameReply::AlreadyOwner => {}
+        _ => return Err(format!("{BUS_NAME} is already owned")),
+    }
     let _ = CONNECTION.set(conn.clone());
     klog!("daemon: serving {} (background={})", BUS_NAME, background);
 
@@ -443,41 +465,17 @@ async fn start(background: bool) -> Result<(), String> {
     Ok(())
 }
 
-// ── C FFI for the C++ shell ─────────────────────────────────────────────────
-
-/// Start the daemon services. `background` keeps it alive while idle (used
-/// when autostarted); otherwise it asks to quit after [`IDLE_TIMEOUT`].
-/// Returns false if the bus name is already owned or the bus is unreachable.
-///
-/// # Safety
-/// `cb` must stay callable for the lifetime of the process; it is invoked
-/// from worker threads and must marshal to the GUI thread itself.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn kiosque_daemon_start(
-    background: bool,
-    cb: EventCallback,
-    ctx: *mut c_void,
-) -> bool {
-    *CALLBACK.lock().unwrap() = Some(Callback {
-        f: cb,
-        ctx: ctx as usize,
-    });
-    match crate::runtime::runtime().block_on(start(background)) {
-        Ok(()) => true,
-        Err(e) => {
-            kerr!("daemon: cannot start: {}", e);
-            false
-        }
-    }
+/// True while the daemon stays alive when idle.
+pub fn is_background() -> bool {
+    BACKGROUND.load(Ordering::SeqCst)
 }
 
 /// Sandboxed autostart (`kiosque --update-companion`): hand this app's
 /// automatic-update settings to the host companion, which then keeps running
 /// and applies them. Returns a process exit code.
-#[unsafe(no_mangle)]
-pub extern "C" fn kiosque_start_update_companion() -> i32 {
+pub async fn start_update_companion() -> i32 {
     let settings = crate::settings::load_settings();
-    match crate::runtime::runtime().block_on(client::configure_automatic_updates(&settings)) {
+    match client::configure_automatic_updates(&settings).await {
         Ok(()) => 0,
         Err(e) => {
             kerr!("automatic updates: {}", e);
@@ -486,56 +484,25 @@ pub extern "C" fn kiosque_start_update_companion() -> i32 {
     }
 }
 
-/// Open the storefront from the tray or a notification.
-#[unsafe(no_mangle)]
-pub extern "C" fn kiosque_open_store() -> bool {
-    match open_store(&[]) {
-        Ok(()) => true,
-        Err(e) => {
-            kerr!("daemon: {}", e);
-            false
-        }
-    }
-}
-
-/// True while the daemon stays alive when idle.
-#[unsafe(no_mangle)]
-pub extern "C" fn kiosque_daemon_background() -> bool {
-    BACKGROUND.load(Ordering::SeqCst)
-}
-
-/// Trigger an update check (result arrives as an `EVENT_UPDATES`).
-#[unsafe(no_mangle)]
-pub extern "C" fn kiosque_daemon_check_updates() {
+pub fn check_updates_now() {
     touch();
     crate::runtime::runtime().spawn(async {
         let _ = check_updates().await;
     });
 }
-
-/// Queue an update of everything.
-#[unsafe(no_mangle)]
-pub extern "C" fn kiosque_daemon_update_all() {
+pub fn update_all() {
     touch();
     crate::transactions::local_manager().enqueue(
         crate::flatpak::Operation::Update { ids: vec![] },
         "Update all",
     );
 }
-
-/// True while transactions are queued or running.
-#[unsafe(no_mangle)]
-pub extern "C" fn kiosque_daemon_busy() -> bool {
+pub fn is_busy() -> bool {
     crate::transactions::local_manager().is_busy()
 }
-
-/// One-shot mode (`kiosque-update --check`): check and apply all updates in
-/// process, returning a process exit code.
-#[unsafe(no_mangle)]
-pub extern "C" fn kiosque_run_update_once() -> i32 {
-    crate::runtime::runtime().block_on(run_update_once(&*crate::flatpak::backend()))
+pub async fn run_once() -> i32 {
+    run_update_once(&*crate::flatpak::backend()).await
 }
-
 /// Check and apply updates using the selected backend. Does not start Qt or D-Bus.
 pub async fn run_update_once(backend: &dyn crate::flatpak::FlatpakBackend) -> i32 {
     let updates = match backend.list_updates().await {

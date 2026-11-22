@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import org.kde.ki18n
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 
 // The only way to add a Flatpak repository. Both a manually entered URL and an
@@ -15,6 +15,13 @@ import com.kiosque
 // phase: "enter" (manual URL) → "loading" → "confirm" → "done" | "failed".
 Kirigami.Dialog {
     id: dialog
+
+    // KDE Addons resolve these functions in their creation context.
+    KI18nContext { id: kdeTranslations; translationDomain: "kiosque" }
+    function i18nd() { return kdeTranslations.i18nd.apply(kdeTranslations, arguments); }
+    function i18ndc() { return kdeTranslations.i18ndc.apply(kdeTranslations, arguments); }
+    function i18ndp() { return kdeTranslations.i18ndp.apply(kdeTranslations, arguments); }
+    function i18ndcp() { return kdeTranslations.i18ndcp.apply(kdeTranslations, arguments); }
     objectName: "repoFileDialog"
 
     property string phase: "enter"
@@ -51,9 +58,9 @@ Kirigami.Dialog {
         repoFileNameField.text = "";
     }
 
-    title: phase === "failed" ? i18n("Cannot Add Repository")
-         : phase === "enter" ? i18n("Add Repository")
-         : i18n("Add Repository?")
+    title: phase === "failed" ? L10n.i18n("Cannot Add Repository", [])
+         : phase === "enter" ? L10n.i18n("Add Repository", [])
+         : L10n.i18n("Add Repository?", [])
     preferredWidth: Kirigami.Units.gridUnit * 24
     padding: Kirigami.Units.largeSpacing
 
@@ -71,7 +78,7 @@ Kirigami.Dialog {
                 repoFileNameField.text = dialog.requestedName !== "" ? dialog.requestedName : suggestedName;
                 dialog.phase = "confirm";
             } else {
-                dialog.errorText = i18n("Could not open the file: %1", error);
+                dialog.errorText = L10n.i18n("Could not open the file: %1", [error]);
                 dialog.phase = "failed";
             }
         }
@@ -85,7 +92,7 @@ Kirigami.Dialog {
         Controls.Label {
             Layout.fillWidth: true
             visible: dialog.phase === "enter"
-            text: i18n("Enter the address of a .flatpakrepo file. Its details are shown for confirmation before the repository is added for your user.")
+            text: L10n.i18n("Enter the address of a .flatpakrepo file. Its details are shown for confirmation before the repository is added for your user.", [])
             wrapMode: Text.WordWrap
         }
 
@@ -96,7 +103,7 @@ Kirigami.Dialog {
             Controls.TextField {
                 id: sourceField
                 objectName: "repoSourceField"
-                Kirigami.FormData.label: i18n("Address:")
+                Kirigami.FormData.label: L10n.i18n("Address:", [])
                 placeholderText: "https://dl.flathub.org/beta-repo/flathub-beta.flatpakrepo"
                 inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase
                 Layout.fillWidth: true
@@ -105,7 +112,7 @@ Kirigami.Dialog {
             Controls.TextField {
                 id: manualNameField
                 objectName: "repoManualNameField"
-                Kirigami.FormData.label: i18n("Name (optional):")
+                Kirigami.FormData.label: L10n.i18n("Name (optional):", [])
                 placeholderText: "flathub-beta"
                 Layout.fillWidth: true
             }
@@ -122,7 +129,7 @@ Kirigami.Dialog {
             visible: dialog.phase === "confirm"
 
             Controls.Label {
-                Kirigami.FormData.label: i18n("Title:")
+                Kirigami.FormData.label: L10n.i18n("Title:", [])
                 visible: dialog.repoTitle !== ""
                 text: dialog.repoTitle
                 textFormat: Text.PlainText
@@ -130,7 +137,7 @@ Kirigami.Dialog {
                 Layout.fillWidth: true
             }
             Controls.Label {
-                Kirigami.FormData.label: i18n("URL:")
+                Kirigami.FormData.label: L10n.i18n("URL:", [])
                 text: dialog.repoUrl
                 textFormat: Text.PlainText
                 wrapMode: Text.WrapAnywhere
@@ -139,7 +146,7 @@ Kirigami.Dialog {
             Controls.TextField {
                 id: repoFileNameField
                 objectName: "repoFileNameField"
-                Kirigami.FormData.label: i18n("Name:")
+                Kirigami.FormData.label: L10n.i18n("Name:", [])
                 placeholderText: "flathub-beta"
                 Layout.fillWidth: true
             }
@@ -148,7 +155,7 @@ Kirigami.Dialog {
         Controls.Label {
             Layout.fillWidth: true
             visible: dialog.phase === "confirm"
-            text: i18n("Repository signing key SHA-256: %1", RepoModel.repo_key_sha256)
+            text: L10n.i18n("Repository signing key SHA-256: %1", [RepoModel.repo_key_sha256])
             textFormat: Text.PlainText
             wrapMode: Text.WrapAnywhere
         }
@@ -157,7 +164,7 @@ Kirigami.Dialog {
             Layout.fillWidth: true
             visible: dialog.phase === "confirm"
             type: Kirigami.MessageType.Warning
-            text: i18n("Applications from this repository will be offered in Kiosque. Only add repositories you trust.")
+            text: L10n.i18n("Applications from this repository will be offered in Kiosque. Only add repositories you trust.", [])
         }
 
         Kirigami.InlineMessage {
@@ -176,7 +183,7 @@ Kirigami.Dialog {
                 objectName: "repoContinueButton"
                 visible: dialog.phase === "enter"
                 enabled: sourceField.text.trim().length > 0
-                text: i18n("Continue")
+                text: L10n.i18n("Continue", [])
                 icon.name: "go-next"
                 onClicked: {
                     if (enabled) {
@@ -188,7 +195,7 @@ Kirigami.Dialog {
                 objectName: "repoAddButton"
                 visible: dialog.phase === "confirm"
                 enabled: /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(repoFileNameField.text)
-                text: i18n("Add")
+                text: L10n.i18n("Add", [])
                 icon.name: "list-add"
                 onClicked: {
                     RepoModel.addInspectedRemote(repoFileNameField.text);
@@ -198,7 +205,7 @@ Kirigami.Dialog {
             }
             Controls.Button {
                 objectName: "repoCancelButton"
-                text: dialog.phase === "failed" ? i18n("Close") : i18n("Cancel")
+                text: dialog.phase === "failed" ? L10n.i18n("Close", []) : L10n.i18n("Cancel", [])
                 icon.name: dialog.phase === "failed" ? "dialog-close" : "dialog-cancel"
                 onClicked: {
                     RepoModel.discardRepoFile();

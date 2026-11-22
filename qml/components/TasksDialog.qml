@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 
 // Every queued, running and recently finished installation, removal and
@@ -16,33 +15,33 @@ Kirigami.Dialog {
 
     required property JobsModel jobs
 
-    title: i18n("Tasks")
+    title: L10n.i18n("Tasks", [])
     preferredWidth: Kirigami.Units.gridUnit * 26
     padding: 0
     standardButtons: Kirigami.Dialog.NoButton
 
     function stateText(state, error, status) {
         switch (state) {
-        case "queued": return i18n("Waiting…");
-        case "running": return status !== "" ? status : i18n("In progress…");
-        case "done": return i18n("Completed");
-        case "cancelled": return i18n("Cancelled");
-        default: return error !== "" ? i18n("Failed: %1", error) : i18n("Failed");
+        case "queued": return L10n.i18n("Waiting…", []);
+        case "running": return status !== "" ? status : L10n.i18n("In progress…", []);
+        case "done": return L10n.i18n("Completed", []);
+        case "cancelled": return L10n.i18n("Cancelled", []);
+        default: return error !== "" ? L10n.i18n("Failed: %1", [error]) : L10n.i18n("Failed", []);
         }
     }
 
     function kindText(kind, title) {
         switch (kind) {
-        case "uninstall": return i18n("Removing %1", title);
-        case "update": return i18n("Updating %1", title);
-        default: return i18n("Installing %1", title);
+        case "uninstall": return L10n.i18n("Removing %1", [title]);
+        case "update": return L10n.i18n("Updating %1", [title]);
+        default: return L10n.i18n("Installing %1", [title]);
         }
     }
 
     customFooterActions: [
         Kirigami.Action {
             objectName: "clearFinishedTasks"
-            text: i18n("Clear Finished")
+            text: L10n.i18n("Clear Finished", [])
             icon.name: "edit-clear-history"
             enabled: dialog.jobs.finished_count > 0
             onTriggered: dialog.jobs.clearFinished()
@@ -62,8 +61,8 @@ Kirigami.Dialog {
             width: parent.width - Kirigami.Units.gridUnit * 2
             visible: list.count === 0
             icon.name: "checkmark"
-            text: i18n("No Tasks")
-            explanation: i18n("Installations, removals and updates appear here.")
+            text: L10n.i18n("No Tasks", [])
+            explanation: L10n.i18n("Installations, removals and updates appear here.", [])
         }
 
         delegate: Controls.ItemDelegate {
@@ -135,9 +134,9 @@ Kirigami.Dialog {
                     objectName: "cancelTask_" + row.jobId
                     visible: row.active
                     icon.name: "dialog-cancel"
-                    text: i18n("Cancel")
+                    text: L10n.i18n("Cancel", [])
                     display: Controls.AbstractButton.IconOnly
-                    Accessible.name: i18n("Cancel %1", dialog.kindText(row.kind, row.title))
+                    Accessible.name: L10n.i18n("Cancel %1", [dialog.kindText(row.kind, row.title)])
                     Controls.ToolTip.text: text
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay

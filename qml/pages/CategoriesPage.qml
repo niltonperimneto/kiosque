@@ -2,14 +2,14 @@
 // SPDX-FileCopyrightText: 2026 Kiosque Contributors
 
 import QtQuick
+import com.kiosque
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 
 Kirigami.Page {
     id: page
-    title: i18n("Categories")
+    title: L10n.i18n("Categories", [])
 
     padding: 0
 

@@ -63,6 +63,8 @@ jiff = "0.2.46"
 
 
 
+gettext-catalog = "0.1.0"
+
 [dev-dependencies]
 tokio = { version = "1.54.1", features = ["process"] }
 tempfile = "3.27.0"

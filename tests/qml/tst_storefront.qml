@@ -48,8 +48,8 @@ TestCase {
         tryCompare(games.trendingModel, "loading", false, 10000)
         tryCompare(games.popularModel, "loading", false, 10000)
         verify(waitForRendering(root.contentItem))
-        if (testArtifactDir !== "")
-            grabImage(root.contentItem).save(testArtifactDir + "/storefront.png")
+        if (TestSupport.artifactDir !== "")
+            grabImage(root.contentItem).save(TestSupport.artifactDir + "/storefront.png")
         root.switchToPage("qrc:/qml/pages/SettingsPage.qml")
         let settings = root.pageStack.currentItem
         // Every settings topic is a FormCard on the same page.
@@ -59,25 +59,33 @@ TestCase {
             verify(card.visible, name)
         }
         verify(waitForRendering(root.contentItem))
-        if (testArtifactDir !== "")
-            grabImage(root.contentItem).save(testArtifactDir + "/settings.png")
+        if (TestSupport.artifactDir !== "")
+            grabImage(root.contentItem).save(TestSupport.artifactDir + "/settings.png")
     }
 
     function test_daily_image_and_spotlight() {
-        let card = component("AppOfTheDayCard", {width: 800, appName: "Daily", screenshotUrl: "qrc:/qml/images/logo.svg"})
+        let card = component("AppOfTheDayCard", {width: 800, appName: "Daily", screenshots: ["qrc:/qml/images/logo.svg", "qrc:/qml/images/logo.svg", "qrc:/qml/images/logo.svg"]})
         let picture = findChild(card, "dailyScreenshot")
         let light = findChild(card, "dailySpotlight")
         tryCompare(picture, "status", Image.Ready)
         compare(picture.fillMode, Image.PreserveAspectFit)
         verify(picture.width <= picture.implicitWidth)
+        let second = findChild(card, "dailyScreenshot1")
+        let third = findChild(card, "dailyScreenshot2")
+        verify(second !== null && third !== null)
+        tryCompare(second, "status", Image.Ready)
+        tryCompare(third, "status", Image.Ready)
+        let previousX = second.parent.x
         mouseMove(light, 100, 80)
         // Hovering lifts the whole card like the other feature surfaces...
         tryCompare(card, "hovered", true)
         tryVerify(function() { return card.scale > 1.0 })
-        // ...and the spotlight follows the pointer (allowing for that lift).
+        // ...the spotlight follows the pointer (allowing for that lift)...
         tryVerify(function() { return Math.abs(light.lightX - 100) < light.width * 0.03 })
-        if (testArtifactDir !== "")
-            grabImage(card).save(testArtifactDir + "/daily-spotlight.png")
+        // ...and the collage drifts with it.
+        tryVerify(function() { return Math.abs(second.parent.x - previousX) > 1 })
+        if (TestSupport.artifactDir !== "")
+            grabImage(card).save(TestSupport.artifactDir + "/daily-spotlight.png")
     }
 
     function test_branding_and_screenshot_fallbacks() {

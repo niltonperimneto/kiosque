@@ -5,7 +5,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ki18n
 import com.kiosque
 import "../components" as Components
 
@@ -35,7 +34,7 @@ Kirigami.ScrollablePage {
         id: searchField
         Layout.fillWidth: true
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-        placeholderText: i18n("Search in %1…").arg(page.title)
+        placeholderText: L10n.i18n("Search in %1…", []).arg(page.title)
         onTextChanged: page.searchQuery = text
     }
     
@@ -132,11 +131,11 @@ Kirigami.ScrollablePage {
                      && page.categoryModel.error_message !== ""
             type: Kirigami.PlaceholderMessage.Type.Actionable
             icon.name: "network-disconnect"
-            text: i18n("Could Not Load Applications")
+            text: L10n.i18n("Could Not Load Applications", [])
             explanation: page.categoryModel.error_message
             helpfulAction: Kirigami.Action {
                 icon.name: "view-refresh"
-                text: i18n("Try Again")
+                text: L10n.i18n("Try Again", [])
                 onTriggered: page.loadData()
             }
         }
@@ -147,8 +146,8 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.preferredHeight: Kirigami.Units.gridUnit * 8
             icon.name: "edit-find"
-            text: i18n("No Applications Found")
-            explanation: page.searchQuery.length > 0 ? i18n("No application in this category matches “%1”.", page.searchQuery) : ""
+            text: L10n.i18n("No Applications Found", [])
+            explanation: page.searchQuery.length > 0 ? L10n.i18n("No application in this category matches “%1”.", [page.searchQuery]) : ""
             visible: !page.categoryModel.loading && page.categoryModel.error_message === ""
                      && (appGridRepeater.count === 0 || !page.hasVisibleApps)
         }

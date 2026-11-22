@@ -11,7 +11,7 @@ Run suites from the repository root with `python3 scripts/test.py <suite>`. Comm
 | `lint` | Stable Rust with rustfmt and Clippy | Workspace formatting; core Clippy with warnings denied |
 | `core` | Stable Rust, C/C++ build tools | Domain, registry, queue, parsers, scheduling, images, cache codecs; no Qt/KDE/libflatpak headers |
 | `services` | Core tools, Python, loopback sockets | Local HTTP responses, cache behavior, temporary persistence, private D-Bus authorization |
-| `qt` | Desktop dependencies | Real QObject/model types, roles, loading signals and model reset invariants |
+| `qt` | Desktop dependencies | Real qtbridge QObject/model types, roles, loading signals and model reset invariants |
 | `qml` | Desktop dependencies | Real bridge search/details/settings, shared transaction state, navigation and destruction during pending requests |
 | `system` | QEMU, qemu-img, cloud-localds, SSH tools, network for provisioning | Signed local Flatpak fixture lifecycle and user/system identity inside a disposable VM |
 | `packages --artifact PATH` | Disposable VM with desktop dependencies | Actual artifact startup, imports, image resources, translations and helper loading |
@@ -24,7 +24,7 @@ The QML suite imports `org.kde.ki18n` at runtime. Use KI18n 6.21 or newer and in
 The desktop CI base is pinned by OCI digest. `tests/Containerfile` provides the corresponding developer environment. Install desktop dependencies in a disposable Fedora environment:
 
 ```sh
-dnf install -y desktop-file-utils cargo rust gcc-c++ meson ninja-build cmake mold qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
+dnf install -y desktop-file-utils cargo rust clippy gcc-c++ meson ninja-build cmake mold qt6-qtbase-private-devel qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
 python3 scripts/test.py qt --backend native
 python3 scripts/test.py qml --backend native
 python3 scripts/test.py qt --backend broker
@@ -36,6 +36,8 @@ python3 scripts/test.py qml --backend broker
 Unit/service tests construct independent instances. HTTP tests bind only loopback and never proxy live services. Fixtures under `tests/fixtures/http/` are synthetic, contain no credentials and tolerate extra API fields. Request timeouts use short configured limits; expiry tests use zero TTL instead of waiting for production expiry.
 
 The desktop runner starts a local fixture API, supplies private XDG paths and a private D-Bus session, and uses Xvfb/software rendering. A dedicated test build installs a mock backend before QML type creation. Its fake Background portal records autostart requests and can deny them, so the production settings integration is exercised without changing desktop permissions or real autostart entries. Test bootstrap functions are feature-gated and absent from ordinary release builds. Delayed fixture responses exercise request ordering and QObject destruction.
+
+`tests/qml/tst_models.qml` replaces the old C++ model harness and verifies roles and change notifications. The test-only Rust harness supplies mock backend controls and a private zbus Background portal.
 
 `tests/qml/tst_regressions.qml` opens the real Settings and detail pages. It checks that page initialization preserves saved preferences, schedules use canonical identifiers despite translated labels, background permission failures are visible and restore the saved preference, failed details can be retried, and review mutations refresh both reviews and ratings. The synthetic HTTP server keeps review state per fixture-server instance; it never forwards requests to live services.
 
@@ -67,6 +69,6 @@ No coverage percentage or screenshot-equality gate is imposed. Sanitizers, perfo
 
 The service suite runs a private D-Bus daemon and confirms that unrelated clients cannot invoke even valid-looking mutation requests. Streaming HTTP fixtures exercise length headers and chunked bodies; core tests cover private settings migration, invalid origins, PKCE/callback handling, queue bounds and image dimension budgets. Dedicated desktop fixtures supply an explicit local transport; release constructors retain public HTTPS restrictions.
 
-Use `KIOSQUE_TEST_BUILD_DIR` to select a separate Meson directory when another session is building the checkout. The security audit emits an SPDX lockfile inventory under its results directory; this covers Rust source dependencies, including optional/test/build crates, and is not a complete inventory of bundled system libraries. Trusted package pushes produce GitHub provenance attestations. Scheduled/trusted CodeQL scans cover Rust, C++, Python and Actions; no successful scan is claimed before those workflows execute.
+Use `KIOSQUE_TEST_BUILD_DIR` to select a separate Meson directory when another session is building the checkout. The security audit emits an SPDX lockfile inventory under its results directory; this covers Rust source dependencies, including optional/test/build crates, and is not a complete inventory of bundled system libraries. Trusted package pushes produce GitHub provenance attestations. Scheduled/trusted CodeQL scans cover Rust, Python and Actions; no successful scan is claimed before those workflows execute.
 
 Live OAuth provider registration, signed native lifecycle, Flatpak-to-native companion identity/activation and exact package smoke checks require separate release qualification. See [the hardening record](security-hardening.md) for the current execution evidence.
