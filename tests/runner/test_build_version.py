@@ -1,10 +1,12 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[2] / 'scripts/build_version.py'
 spec = importlib.util.spec_from_file_location('build_version', SCRIPT)
@@ -66,3 +68,21 @@ class BuildVersionTests(unittest.TestCase):
         self.git('tag', 'v2.0.0')
         with self.assertRaisesRegex(ValueError, 'conflicting release tags'):
             versioning.resolve(self.root)
+
+    def test_container_checkout_owner_can_differ(self):
+        expected = versioning.resolve(self.root)
+        with patch.dict(os.environ, {'GIT_TEST_ASSUME_DIFFERENT_OWNER': '1'}):
+            self.assertEqual(versioning.resolve(self.root), expected)
+
+    def test_exact_release_tag_takes_precedence_over_older_tags(self):
+        self.git('tag', 'v2.0.0')
+        (self.root / 'source').write_text('backport release')
+        self.commit()
+        self.git('tag', 'v1.5.0')
+        self.assertEqual(versioning.resolve(self.root), '1.5.0')
+
+    def test_checkout_ignores_stale_source_archive_version(self):
+        expected = versioning.resolve(self.root)
+        (self.root / '.git/info/exclude').write_text('build-version.json\n')
+        (self.root / 'build-version.json').write_text(json.dumps({'schema': 1, 'version': '0.1.0'}))
+        self.assertEqual(versioning.resolve(self.root), expected)

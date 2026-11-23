@@ -14,7 +14,13 @@ VERSION = re.compile(r'\d+\.\d+\.\d+(?:-dev\.\d+)?(?:\+(?:g[0-9a-f]+|unknown)(?:
 
 
 def git(root, *args):
-    return subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, check=True).stdout.strip()
+    # Container builds can run as a different UID from the checkout owner.
+    # Trust only the explicit source root for this metadata query.
+    result = subprocess.run(['git', '-c', f'safe.directory={Path(root).resolve()}', '-C', str(root), *args],
+                            capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError('Git version metadata unavailable: ' + result.stderr.strip())
+    return result.stdout.strip()
 
 
 def resolve(root=ROOT):
@@ -43,7 +49,7 @@ def resolve(root=ROOT):
     if len({versions[tag] for tag in releases if tag in exact}) > 1:
         raise ValueError('conflicting release tags at HEAD')
     if releases:
-        tag = max(releases, key=lambda candidate: versions[candidate])
+        tag = max([tag for tag in releases if tag in exact] or releases, key=lambda candidate: versions[candidate])
         base = versions[tag]
         distance = int(git(root, 'rev-list', '--count', tag + '..HEAD'))
         if tag in exact and not dirty:
