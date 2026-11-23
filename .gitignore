@@ -13,3 +13,6 @@ repo/
 *.flatpak
 *.AppImage
 .qmlls.ini
+
+/build-version.json
+/build-version.txt

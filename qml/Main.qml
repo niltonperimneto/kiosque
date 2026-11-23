@@ -222,6 +222,27 @@ Kirigami.ApplicationWindow {
         }
     ]
 
+    // Handle typing after the focused control has had a chance to use the key.
+    pageStack.Keys.priority: Keys.AfterItem
+    pageStack.Keys.onPressed: (event) => {
+        const modifiers = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier;
+        if ((event.modifiers & modifiers) || event.text.trim() === ""
+                || event.text.charCodeAt(0) < 32 || event.text === "\u007f") {
+            return;
+        }
+        const page = root.pageStack.currentItem;
+        if (page && page.objectName === "searchPage" && page.searchField) {
+            const field = page.searchField;
+            field.forceActiveFocus();
+            field.deselect();
+            field.insert(field.text.length, event.text);
+            field.cursorPosition = field.text.length;
+        } else {
+            root.openSearch(event.text);
+        }
+        event.accepted = true;
+    }
+
     // Ctrl+F: pages with their own search field handle it (Kirigami.SearchField
     // binds StandardKey.Find); everywhere else it opens the Search page.
     Shortcut {
@@ -258,11 +279,22 @@ Kirigami.ApplicationWindow {
         id: mainDrawer
         objectName: "mainDrawer"
         isMenu: false
-        // Compact windows navigate with the tab bar; the drawer stays hidden.
-        modal: root.compact
-        // The sidebar collapses with its own button; compact windows use tabs.
+        modal: false
+        drawerOpen: !root.compact
+        interactive: false
         handleVisible: false
-        collapsible: !root.compact
+        collapsible: !Kirigami.Settings.isMobile
+
+        // Swap navigation at the breakpoint without sliding the page sideways.
+        enter: Transition {}
+        exit: Transition {}
+
+        Connections {
+            target: root
+            function onCompactChanged() {
+                mainDrawer.drawerOpen = !root.compact;
+            }
+        }
 
         // Expanded on roomy desktop windows, an icon rail otherwise; the user
         // can toggle it with the handle at the bottom.
@@ -273,12 +305,12 @@ Kirigami.ApplicationWindow {
         Qt.application.domain = "kiosque.app";
         Qt.application.version = AppShell.version;
         if (AppShell.checkUi) return;
-            if (!root.compact) {
+            if (collapsible) {
                 collapsed = root.width < Kirigami.Units.gridUnit * 44;
             }
         }
 
-        width: !collapsed ? Kirigami.Units.gridUnit * 14 : collapsedSize
+        width: root.compact ? 0 : (collapsed ? collapsedSize : Kirigami.Units.gridUnit * 14)
 
         header: Controls.ItemDelegate {
             id: headerDelegate
@@ -345,25 +377,29 @@ Kirigami.ApplicationWindow {
                 objectName: "signInMenu"
                 Controls.MenuItem {
                     text: L10n.i18n("Sign in with GitHub", [])
-                    icon.name: "user-identity"
+                    icon.source: "qrc:/qml/images/github-symbolic.svg"
+                    icon.color: pressed ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
                     enabled: !SettingsController.login_in_progress
                     onTriggered: root.signIn("github")
                 }
                 Controls.MenuItem {
                     text: L10n.i18n("Sign in with GitLab", [])
-                    icon.name: "user-identity"
+                    icon.source: "qrc:/qml/images/gitlab-symbolic.svg"
+                    icon.color: pressed ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
                     enabled: !SettingsController.login_in_progress
                     onTriggered: root.signIn("gitlab")
                 }
                 Controls.MenuItem {
                     text: L10n.i18n("Sign in with KDE GitLab", [])
-                    icon.name: "kde"
+                    icon.source: "qrc:/qml/images/kde_gitlab-symbolic.svg"
+                    icon.color: pressed ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
                     enabled: !SettingsController.login_in_progress
                     onTriggered: root.signIn("kde_gitlab")
                 }
                 Controls.MenuItem {
                     text: L10n.i18n("Sign in with GNOME GitLab", [])
-                    icon.name: "user-identity"
+                    icon.source: "qrc:/qml/images/gnome_gitlab-symbolic.svg"
+                    icon.color: pressed ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
                     enabled: !SettingsController.login_in_progress
                     onTriggered: root.signIn("gnome_gitlab")
                 }

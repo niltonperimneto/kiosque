@@ -48,6 +48,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install stable Rust with lint tools
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
       - run: python3 scripts/test.py guidance
@@ -73,9 +74,12 @@ jobs:
     env:
       CARGO_BUILD_JOBS: '2'
     steps:
+      - name: Install Git for source versioning
+        run: dnf install -y git
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install desktop test dependencies
         run: dnf install -y desktop-file-utils cargo rust clippy meson ninja-build gcc-c++ cmake mold qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
       - run: python3 scripts/test.py qt --backend ${{ matrix.backend }}
@@ -99,6 +103,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
@@ -114,14 +119,15 @@ jobs:
 
       - name: Build Flatpak
         run: |
+          VERSION=$(python3 scripts/build_version.py --write build-version.json)
           flatpak-builder --user --install-deps-from=flathub --assumeyes --force-clean --ccache --require-changes --repo=repo build org.kiosque.Kiosque.json
-          flatpak build-bundle repo kiosque.flatpak org.kiosque.Kiosque
+          flatpak build-bundle repo "kiosque-${VERSION}.flatpak" org.kiosque.Kiosque
 
       - name: Upload Flatpak Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: Kiosque-Flatpak
-          path: kiosque.flatpak
+          path: "kiosque-*.flatpak"
 
   rpm:
     needs: [core, desktop, security]
@@ -131,10 +137,13 @@ jobs:
     container:
       image: registry.fedoraproject.org/fedora@sha256:f8593ba07b355b0af185181d590bce9b32c4f390bb125a15829059755c8a5052
     steps:
+      - name: Install Git for source versioning
+        run: dnf install -y git
       - name: Checkout Source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Install Build Dependencies
         run: |
@@ -144,9 +153,9 @@ jobs:
         run: |
           mkdir -p ~/rpmbuild/SOURCES ~/rpmbuild/SPECS
           cp kiosque.spec ~/rpmbuild/SPECS/
-          VERSION=$(grep -E '^Version:\s+' kiosque.spec | awk '{print $2}')
+          VERSION=$(python3 scripts/build_version.py --write build-version.json --format rpm)
           tar --transform "s,^\.,kiosque-${VERSION}," --exclude=./builddir --exclude=./rust/target --exclude=./.git -czf ~/rpmbuild/SOURCES/kiosque-${VERSION}.tar.gz .
-          rpmbuild -ba ~/rpmbuild/SPECS/kiosque.spec
+          rpmbuild -ba --define "kiosque_version ${VERSION}" ~/rpmbuild/SPECS/kiosque.spec
           cp ~/rpmbuild/RPMS/x86_64/*.rpm ./
 
       - name: Upload RPM Artifact
@@ -163,10 +172,13 @@ jobs:
     container:
       image: registry.fedoraproject.org/fedora@sha256:f8593ba07b355b0af185181d590bce9b32c4f390bb125a15829059755c8a5052
     steps:
+      - name: Install Git for source versioning
+        run: dnf install -y git
       - name: Checkout Source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Install Build Dependencies
         run: |
@@ -174,6 +186,7 @@ jobs:
 
       - name: Build and Install to AppDir
         run: |
+          python3 scripts/build_version.py > build-version.txt
           meson setup builddir --prefix=/usr
           meson compile -C builddir
           DESTDIR=$PWD/AppDir meson install -C builddir
@@ -267,13 +280,14 @@ jobs:
           python3 scripts/download_build_tool.py appimagetool appimagetool
           chmod +x appimagetool
           ./appimagetool --appimage-extract
-          ./squashfs-root/AppRun AppDir Kiosque-x86_64.AppImage
+          VERSION=$(cat build-version.txt)
+          ./squashfs-root/AppRun AppDir "Kiosque-${VERSION}-x86_64.AppImage"
 
       - name: Upload AppImage Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: Kiosque-AppImage
-          path: "*.AppImage"
+          path: "Kiosque-*.AppImage"
 
   provenance:
     name: Attest trusted packages

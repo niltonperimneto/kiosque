@@ -24,7 +24,7 @@ pub fn ui_ready() -> bool {
 }
 
 pub fn version() -> &'static str {
-    option_env!("KIOSQUE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+    env!("KIOSQUE_VERSION")
 }
 
 #[qobject(NoQmlElement)]

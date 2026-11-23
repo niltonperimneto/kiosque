@@ -1,5 +1,5 @@
 Name:           kiosque
-Version:        0.8
+Version:        %{kiosque_version}
 Release:        1%{?dist}
 Summary:        A modern, lightweight Flatpak software center for KDE Plasma
 
