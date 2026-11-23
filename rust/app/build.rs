@@ -1,6 +1,8 @@
 //! Embeds `qml/` as Qt resources and, for test builds, generates the cxx
 //! shim for Qt Quick Test's `quick_test_main`. No hand-written C++.
 
+include!("../build_version.rs");
+
 use std::path::{Path, PathBuf};
 
 /// QML-loadable files; guidance documents and editor files stay out of qrc.
@@ -29,6 +31,7 @@ fn copy_tree(src: &Path, dst: &Path) {
 }
 
 fn main() {
+    configure_build_version();
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let qml = manifest.join("../../qml");
@@ -44,7 +47,6 @@ fn main() {
     )
     .unwrap();
     println!("cargo:rerun-if-changed={}", qml.display());
-    println!("cargo:rerun-if-env-changed=KIOSQUE_VERSION");
 
     if std::env::var_os("CARGO_FEATURE_TEST_UTIL").is_some() {
         let qmake = std::env::var("QMAKE").unwrap_or_else(|_| "qmake6".into());

@@ -96,6 +96,35 @@ async fn collections_cache_and_invalidate_without_live_network() {
 }
 
 #[tokio::test]
+async fn search_reuses_exact_queries_and_does_not_cache_failures() {
+    let server = Server::new(200, COLLECTION.into(), Duration::ZERO).await;
+    let cache = AppCache::new();
+    let client = server.client(cache.clone());
+
+    assert!(client.cached_search("edit").await.is_none());
+    client.search("edit").await.unwrap();
+    client.search("editor").await.unwrap();
+    assert_eq!(
+        client.cached_search("edit").await.unwrap()[0].app_id,
+        "org.kiosque.Fixture"
+    );
+    client.search("edit").await.unwrap();
+    assert_eq!(server.hits.load(Ordering::SeqCst), 2);
+
+    cache.clear().await;
+    assert!(client.cached_search("edit").await.is_none());
+    let unavailable = Server::new(503, "{}".into(), Duration::ZERO).await;
+    let client = unavailable.client(cache);
+    for _ in 0..2 {
+        assert!(matches!(
+            client.search("edit").await,
+            Err(FlathubError::Http { status: 503, .. })
+        ));
+    }
+    assert_eq!(unavailable.hits.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
 async fn zero_ttl_expires_and_instances_do_not_share_state() {
     let server = Server::new(200, COLLECTION.into(), Duration::ZERO).await;
     let client = server.client(AppCache::with_ttl(Some(Duration::ZERO)));
