@@ -61,7 +61,7 @@ fn slot_on(
     }
     let ambiguous = now
         .time_zone()
-        .to_ambiguous_zoned(day.to_datetime(scheduled_time(settings)));
+        .to_ambiguous_zoned_datetime(day.to_datetime(scheduled_time(settings)));
     if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
         return None;
     }
