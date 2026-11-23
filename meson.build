@@ -47,7 +47,13 @@ subdir('po')
 install_data('org.kiosque.Kiosque.desktop',
   install_dir: get_option('datadir') / 'applications'
 )
-install_data('org.kiosque.Kiosque.metainfo.xml',
+custom_target('build-metainfo',
+  input: 'org.kiosque.Kiosque.metainfo.xml',
+  output: 'org.kiosque.Kiosque.metainfo.xml',
+  command: [python, files('scripts/build_version.py'), '--metainfo', '@INPUT@', '--output', '@OUTPUT@'],
+  build_by_default: true,
+  build_always_stale: true,
+  install: true,
   install_dir: get_option('datadir') / 'metainfo'
 )
 # D-Bus activation of the daemon. Started without arguments it serves

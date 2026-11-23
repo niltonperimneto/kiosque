@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Resolve a reproducible source version for Cargo, Meson and binary packages."""
 import argparse
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
 import subprocess
 import tomllib
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = 'build-version.json'
@@ -62,6 +64,40 @@ def resolve(root=ROOT):
     return '.'.join(map(str, base)) + f'-dev.{distance}+g{commit}' + ('.dirty' if dirty else '')
 
 
+def source_epoch(root=ROOT):
+    root = Path(root)
+    if (root / '.git').exists():
+        return int(git(root, 'show', '-s', '--format=%ct', 'HEAD'))
+    snapshot = root / SNAPSHOT
+    value = json.loads(snapshot.read_text()).get('source_date_epoch', 0) if snapshot.exists() else 0
+    if not isinstance(value, int) or value < 0:
+        raise ValueError('invalid source date in version snapshot')
+    return value
+
+
+def write_metainfo(source, output, version, epoch):
+    parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
+    tree = ET.parse(source, parser=parser)
+    root = tree.getroot()
+    releases = root.find('releases')
+    if releases is None:
+        releases = ET.SubElement(root, 'releases')
+    existing = next((entry for entry in releases if entry.get('version') == version), None)
+    if existing is None:
+        attributes = {'version': version, 'type': 'development' if '-dev.' in version else 'stable'}
+        if epoch:
+            attributes['date'] = datetime.fromtimestamp(epoch, timezone.utc).date().isoformat()
+        releases.insert(0, ET.Element('release', attributes))
+    else:
+        releases.remove(existing)
+        releases.insert(0, existing)
+    ET.indent(tree, space='  ')
+    # Preserve the source declaration and license comments before the root.
+    source_text = Path(source).read_text()
+    prefix = source_text[:source_text.index('<component')]
+    Path(output).write_text(prefix + ET.tostring(root, encoding='unicode') + '\n')
+
+
 def rpm_version(version):
     return version.replace('-dev.', '~dev.').replace('+', '.')
 
@@ -70,6 +106,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--format', choices=['version', 'rpm'], default='version')
     parser.add_argument('--write', type=Path, help='freeze version into an exported source tree')
+    parser.add_argument('--metainfo', type=Path, help='generate package AppStream metadata')
+    parser.add_argument('--output', type=Path, help='destination for generated metadata')
     parser.add_argument('--watch-files', action='store_true', help='Cargo rebuild dependencies')
     args = parser.parse_args()
     if args.watch_files:
@@ -81,7 +119,11 @@ def main():
         return
     version = resolve()
     if args.write:
-        args.write.write_text(json.dumps({'schema': 1, 'version': version}, indent=2) + '\n')
+        args.write.write_text(json.dumps({'schema': 1, 'version': version, 'source_date_epoch': source_epoch()}, indent=2) + '\n')
+    if args.metainfo:
+        if args.output is None:
+            parser.error('--metainfo requires --output')
+        write_metainfo(args.metainfo, args.output, version, source_epoch())
     print(rpm_version(version) if args.format == 'rpm' else version)
 
 

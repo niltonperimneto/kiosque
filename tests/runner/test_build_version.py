@@ -86,3 +86,24 @@ class BuildVersionTests(unittest.TestCase):
         (self.root / '.git/info/exclude').write_text('build-version.json\n')
         (self.root / 'build-version.json').write_text(json.dumps({'schema': 1, 'version': '0.1.0'}))
         self.assertEqual(versioning.resolve(self.root), expected)
+
+    def test_package_metadata_uses_version_and_preserves_history(self):
+        source = self.root / 'app.metainfo.xml'
+        output = self.root / 'built.metainfo.xml'
+        source.write_text('<component><releases><release version="0.9.0" date="2026-01-01"><description><p>Authored notes</p></description></release></releases></component>')
+        versioning.write_metainfo(source, output, '1.0.0-dev.2+g123456789abc', 1767225600)
+        releases = versioning.ET.parse(output).getroot().find('releases')
+        self.assertEqual(releases[0].attrib, {'version': '1.0.0-dev.2+g123456789abc', 'type': 'development', 'date': '2026-01-01'})
+        self.assertEqual(releases[1].find('description/p').text, 'Authored notes')
+        self.assertEqual(releases[1].get('date'), '2026-01-01')
+        self.assertNotIn('1.0.0-dev', source.read_text())
+
+    def test_tagged_release_keeps_authored_notes_and_date(self):
+        source = self.root / 'app.metainfo.xml'
+        output = self.root / 'built.metainfo.xml'
+        source.write_text('<component><releases><release version="1.0.0" date="2026-01-01"><description><p>Release notes</p></description></release></releases></component>')
+        versioning.write_metainfo(source, output, '1.0.0', 1795400000)
+        releases = versioning.ET.parse(output).getroot().find('releases')
+        self.assertEqual(len(releases), 1)
+        self.assertEqual(releases[0].get('date'), '2026-01-01')
+        self.assertEqual(releases[0].find('description/p').text, 'Release notes')
