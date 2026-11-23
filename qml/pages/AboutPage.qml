@@ -19,6 +19,7 @@ FormCard.AboutPage {
     function i18ndp() { return kdeTranslations.i18ndp.apply(kdeTranslations, arguments); }
     function i18ndcp() { return kdeTranslations.i18ndcp.apply(kdeTranslations, arguments); }
     objectName: "aboutPage"
+    getInvolvedUrl: "https://github.com/niltonperimneto/kiosque"
 
     aboutData: ({
         displayName: "Kiosque",
