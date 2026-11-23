@@ -87,3 +87,25 @@ flatpak-builder --user --install-deps-from=flathub build org.kiosque.Kiosque.jso
 ```
 
 For RPM source packaging, use `python3 scripts/build_version.py --write build-version.json --format rpm` as the RPM version, preserve `build-version.json` in the source tarball, and pass `--define "kiosque_version VERSION"` to rpmbuild. CI performs these steps automatically. An archive lacking a snapshot reports the workspace baseline with `-dev.0+unknown` so its provenance remains visible. Generated package AppStream metadata carries the same version and source commit date, preserving authored release history. The frozen snapshot carries that date into Git-free package builds.
+
+## Publishing a release
+
+On GitHub, select **Actions → Release → Run workflow**, keep **main** selected,
+and enter a stable version such as **1.0.0** without a v prefix. The workflow
+tags the current main commit as v1.0.0 and explicitly dispatches CI for that tag.
+It uses the repository token, so no personal access token is needed.
+
+Tagged CI runs the existing security, core, service and desktop checks, builds
+RPM, Flatpak and AppImage packages, and attests them. The packaged artifact smoke
+workflow verifies the source commit and tag, checks attestations, and tests the
+packages inside disposable VMs. Once every package passes, it uploads the exact
+qualified artifacts to a GitHub Release and publishes generated release notes.
+Both storefront and companion RPMs are included.
+
+A failed package build or smoke test prevents publication. A failed asset upload
+leaves a draft release that a rerun can complete. Published releases are preserved.
+To retry after main has advanced, rerun CI with the existing tag selected, then
+rerun its package smoke workflow if needed. An existing tag is never moved.
+A normal successful main build continues to run package smoke tests without
+publishing a release. Pushing a stable vMAJOR.MINOR.PATCH tag also uses this
+release path.

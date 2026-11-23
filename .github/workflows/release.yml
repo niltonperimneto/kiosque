@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Stable version to release (for example, 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag main and start release CI
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate version and create tag
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          version = os.environ['RELEASE_VERSION']
+          if not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', version):
+              raise SystemExit('Version must be major.minor.patch, without a v prefix.')
+          PY
+          tag="v${RELEASE_VERSION}"
+          sha=$(git rev-parse HEAD)
+          if git show-ref --verify --quiet "refs/tags/${tag}"; then
+            test "$(git rev-parse "refs/tags/${tag}^{commit}")" = "$sha" || {
+              echo "Tag ${tag} already points to another commit."
+              exit 1
+            }
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${tag}" -f sha="$sha"
+          fi
+          # Tag creation with GITHUB_TOKEN does not emit another push workflow.
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
+          echo "Started release CI for ${tag} at ${sha}." >> "$GITHUB_STEP_SUMMARY"
