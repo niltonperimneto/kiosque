@@ -797,7 +797,7 @@ fn parse_date(d: &str) -> Option<u64> {
     let date = jiff::civil::Date::strptime("%Y-%m-%d", d.get(..10)?).ok()?;
     Some(
         date.at(0, 0, 0, 0)
-            .to_zoned(jiff::tz::TimeZone::UTC)
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
             .ok()?
             .timestamp()
             .as_second() as u64,

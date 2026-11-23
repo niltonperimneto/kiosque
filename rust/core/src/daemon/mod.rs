@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
-use jiff::Zoned;
+use jiff::ZonedDateTime;
 use serde::{Deserialize, Serialize};
 use zbus::Type;
 
@@ -245,7 +245,7 @@ pub async fn check_updates() -> crate::flatpak::Result<usize> {
 }
 
 /// The next time automatic updates should run according to the settings.
-pub fn next_auto_update(settings: &crate::settings::AppSettings, now: &Zoned) -> Option<Zoned> {
+pub fn next_auto_update(settings: &crate::settings::AppSettings, now: &ZonedDateTime) -> Option<ZonedDateTime> {
     schedule::next_slot(settings, now)
 }
 
@@ -358,7 +358,7 @@ async fn scheduler() {
         if settings.auto_update {
             set_background(true);
         }
-        let due = schedule::is_due(&settings, &state, &Zoned::now());
+        let due = schedule::is_due(&settings, &state, &ZonedDateTime::now());
         if due
             && now.duration_since(started) >= STARTUP_DELAY
             && retry_after.is_none_or(|t| now >= t)
@@ -373,7 +373,7 @@ async fn scheduler() {
                     if let Err(e) = schedule::save(&path, &state) {
                         kerr!("daemon: cannot save the automatic-update state: {}", e);
                     }
-                    if let Some(next) = schedule::next_slot(&settings, &Zoned::now()) {
+                    if let Some(next) = schedule::next_slot(&settings, &ZonedDateTime::now()) {
                         klog!("daemon: next automatic update at {}", next);
                     }
                 }
@@ -555,42 +555,42 @@ mod tests {
     #[test]
     fn auto_update_schedule() {
         // Wednesday 2026-11-11 10:00 local
-        let now = "2026-11-11T10:00:00[UTC]".parse::<Zoned>().unwrap();
+        let now = "2026-11-11T10:00:00[UTC]".parse::<ZonedDateTime>().unwrap();
         assert_eq!(
             next_auto_update(&settings(false, "Daily", "02:00"), &now),
             None
         );
         let daily = next_auto_update(&settings(true, "Daily", "02:00"), &now).unwrap();
-        assert_eq!(daily, "2026-11-12T02:00:00[UTC]".parse::<Zoned>().unwrap());
+        assert_eq!(daily, "2026-11-12T02:00:00[UTC]".parse::<ZonedDateTime>().unwrap());
         let later_today = next_auto_update(&settings(true, "Daily", "23:30"), &now).unwrap();
         assert_eq!(
             later_today,
-            "2026-11-11T23:30:00[UTC]".parse::<Zoned>().unwrap()
+            "2026-11-11T23:30:00[UTC]".parse::<ZonedDateTime>().unwrap()
         );
         let weekly = next_auto_update(&settings(true, "Weekly", "02:00"), &now).unwrap();
-        assert_eq!(weekly, "2026-11-16T02:00:00[UTC]".parse::<Zoned>().unwrap());
+        assert_eq!(weekly, "2026-11-16T02:00:00[UTC]".parse::<ZonedDateTime>().unwrap());
     }
 
     #[test]
     fn schedule_preserves_dst_gap_and_fold_behavior() {
         let gap = "2026-03-08T00:00:00-05:00[America/New_York]"
-            .parse::<Zoned>()
+            .parse::<ZonedDateTime>()
             .unwrap();
         let next = next_auto_update(&settings(true, "Daily", "02:30"), &gap).unwrap();
         assert_eq!(
             next,
             "2026-03-09T02:30:00-04:00[America/New_York]"
-                .parse::<Zoned>()
+                .parse::<ZonedDateTime>()
                 .unwrap()
         );
         let fold = "2026-11-01T00:00:00-04:00[America/New_York]"
-            .parse::<Zoned>()
+            .parse::<ZonedDateTime>()
             .unwrap();
         let next = next_auto_update(&settings(true, "Daily", "01:30"), &fold).unwrap();
         assert_eq!(
             next,
             "2026-11-01T01:30:00-04:00[America/New_York]"
-                .parse::<Zoned>()
+                .parse::<ZonedDateTime>()
                 .unwrap()
         );
     }

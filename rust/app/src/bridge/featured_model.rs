@@ -108,7 +108,7 @@ mod object {
                     }
                 }
                 let distro = kiosque_core::config::distro_id();
-                let day = jiff::Zoned::now().strftime("%Y-%m-%d").to_string();
+                let day = jiff::ZonedDateTime::now().strftime("%Y-%m-%d").to_string();
                 let items = crate::view::featured::fetch(
                     &crate::services::services().flathub,
                     &distro,
