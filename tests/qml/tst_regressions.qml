@@ -217,6 +217,8 @@ TestCase {
         root.requestActivate()
         tryCompare(root, "active", true)
         const home = root.pageStack.currentItem
+        const popularModel = home.popularModel
+        const homeScroll = home.flickable.contentY
         home.forceActiveFocus()
         keyClick(Qt.Key_E)
         tryCompare(root, "currentSection", "search")
@@ -232,9 +234,34 @@ TestCase {
 
         keyClick(Qt.Key_A, Qt.ControlModifier)
         keyClick(Qt.Key_Backspace)
-        tryVerify(() => findChild(page, "searchPromptMessage").visible)
-        compare(rows(page.resultsModel), 0)
+        tryCompare(root.pageStack, "currentItem", home)
+        compare(root.currentSection, "shopfront")
+        compare(home.popularModel, popularModel)
+        compare(home.flickable.contentY, homeScroll)
     }
+    function test_clearing_search_returns_to_category() {
+        const root = window()
+        root.currentSection = "categories"
+        root.currentCategory = "Game"
+        const category = root.pageStack.push("qrc:/qml/pages/CategoryAppListPage.qml",
+                                            {categoryId: "Game", categoryName: "Games"})
+        const categoryModel = category.categoryModel
+        const scrollPosition = category.flickable.contentY
+        const scrollDuration = root.pageStack.columnView.scrollDuration
+        root.openSearch("slow")
+        const search = root.pageStack.currentItem
+        compare(root.pageStack.get(root.pageStack.depth - 2), category)
+        tryVerify(() => search.searchField !== null)
+        search.searchField.text = ""
+        tryCompare(root.pageStack, "currentItem", category)
+        compare(root.currentSection, "categories")
+        compare(root.currentCategory, "Game")
+        compare(category.categoryId, "Game")
+        compare(category.categoryModel, categoryModel)
+        compare(category.flickable.contentY, scrollPosition)
+        compare(root.pageStack.columnView.scrollDuration, scrollDuration)
+    }
+
     function test_search_page_states() {
         let root = window()
         // The storefront field hands its query to the Search page.
@@ -265,6 +292,7 @@ TestCase {
         verify(page.resultsModel.error_message.indexOf("503") !== -1)
 
         // Without a query the page invites a search instead.
+        root.navigate("shopfront")
         root.navigate("search")
         page = root.pageStack.currentItem
         verify(findChild(page, "searchPromptMessage").visible)
