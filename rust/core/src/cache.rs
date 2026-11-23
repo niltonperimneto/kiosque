@@ -10,6 +10,9 @@ use crate::flathub::types::{AppDetails, AppStats, FlathubApp, GlobalStats, Linte
 /// How long collection responses (popular, trending, category, etc.) remain valid.
 const COLLECTION_TTL: Duration = Duration::from_secs(5 * 60); // 5 minutes
 
+/// Keep recent queries available for edits and backspacing.
+const SEARCH_TTL: Duration = Duration::from_secs(60);
+
 /// How long individual app detail responses remain valid.
 const DETAILS_TTL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
@@ -53,6 +56,7 @@ macro_rules! string_keyed_accessors {
 #[derive(Clone)]
 pub struct AppCache {
     collections: Cache<String, Vec<FlathubApp>>,
+    pub(crate) searches: Cache<String, Vec<FlathubApp>>,
     details: Cache<String, AppDetails>,
     odrs_ratings: Cache<String, OdrsRatings>,
     odrs_reviews: Cache<String, Vec<OdrsReview>>,
@@ -73,6 +77,10 @@ impl AppCache {
             collections: Cache::builder()
                 .time_to_live(ttl.unwrap_or(COLLECTION_TTL))
                 .max_capacity(100)
+                .build(),
+            searches: Cache::builder()
+                .time_to_live(ttl.unwrap_or(SEARCH_TTL))
+                .max_capacity(32)
                 .build(),
             details: Cache::builder()
                 .time_to_live(ttl.unwrap_or(DETAILS_TTL))
@@ -217,6 +225,7 @@ impl AppCache {
     pub async fn clear(&self) {
         klog!("CACHE CLEAR: Invalidate all moka cache entries");
         self.collections.invalidate_all();
+        self.searches.invalidate_all();
         self.details.invalidate_all();
         self.odrs_ratings.invalidate_all();
         self.odrs_reviews.invalidate_all();

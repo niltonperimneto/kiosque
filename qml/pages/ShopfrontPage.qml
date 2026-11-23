@@ -24,9 +24,12 @@ Kirigami.ScrollablePage {
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
         placeholderText: L10n.i18n("Search applications…", [])
         autoAccept: false
-        onAccepted: {
-            const query = text.trim();
-            if (query.length > 0) {
+        onTextEdited: handOffSearch()
+        onAccepted: handOffSearch()
+
+        function handOffSearch() {
+            const query = text;
+            if (query.trim().length > 0) {
                 text = "";
                 applicationWindow().openSearch(query);
             }

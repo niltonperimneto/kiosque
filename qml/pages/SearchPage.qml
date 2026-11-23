@@ -20,6 +20,7 @@ Kirigami.ScrollablePage {
     // Initial query; the title field updates `queryText` as the user types.
     property string query: ""
     property string queryText: query
+    property bool searchReady: false
     readonly property string activeQuery: queryText.trim()
 
     // The title field lives in a delegate, outside this page's id scope.
@@ -31,13 +32,21 @@ Kirigami.ScrollablePage {
     function focusSearch() {
         if (page.searchField) {
             page.searchField.forceActiveFocus();
-            page.searchField.selectAll();
+            page.searchField.cursorPosition = page.searchField.text.length;
         }
     }
 
     function runSearch() {
         if (page.activeQuery.length > 0) {
             resultsModel.search(page.activeQuery);
+        } else {
+            resultsModel.clear();
+        }
+    }
+
+    onActiveQueryChanged: {
+        if (searchReady) {
+            runSearch();
         }
     }
 
@@ -48,17 +57,16 @@ Kirigami.ScrollablePage {
         Layout.maximumWidth: Kirigami.Units.gridUnit * 30
         placeholderText: L10n.i18n("Search applications…", [])
         text: page.query
-        // Accept automatically, shortly after typing stops.
-        delaySearch: true
+        // AppListModel debounces requests and drops superseded responses.
+        autoAccept: false
         onTextChanged: page.queryText = text
         onAccepted: page.runSearch()
         Component.onCompleted: page.searchField = this
     }
 
     Component.onCompleted: {
-        if (page.activeQuery.length > 0) {
-            page.runSearch();
-        }
+        page.searchReady = true;
+        page.runSearch();
         Qt.callLater(page.focusSearch);
     }
 
@@ -80,7 +88,7 @@ Kirigami.ScrollablePage {
             level: 2
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.largeSpacing
-            visible: page.activeQuery.length > 0 && resultsRepeater.count > 0
+            visible: page.activeQuery.length > 0 && !page.resultsModel.loading && resultsRepeater.count > 0
             wrapMode: Text.WordWrap
             text: L10n.i18np("%1 result for “%2”", "%1 results for “%2”", resultsRepeater.count, [page.activeQuery])
         }
@@ -88,7 +96,7 @@ Kirigami.ScrollablePage {
         Controls.BusyIndicator {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: Kirigami.Units.gridUnit * 4
-            running: page.resultsModel.loading && resultsRepeater.count === 0
+            running: page.activeQuery.length > 0 && page.resultsModel.loading
             visible: running
         }
 
@@ -130,7 +138,7 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.largeSpacing
             Layout.rightMargin: Kirigami.Units.largeSpacing
-            visible: page.activeQuery.length > 0 && resultsRepeater.count > 0
+            visible: page.activeQuery.length > 0 && !page.resultsModel.loading && resultsRepeater.count > 0
 
             readonly property int minCellWidth: Kirigami.Units.gridUnit * 12
             columns: Math.max(1, Math.floor(width / minCellWidth))
