@@ -50,7 +50,11 @@ fn scheduled_time(settings: &AppSettings) -> Time {
 
 /// The scheduled time on `day`, if `day` has one (weekly runs are on
 /// Mondays; a time skipped by a daylight-saving change does not exist).
-fn slot_on(settings: &AppSettings, day: jiff::civil::Date, now: &ZonedDateTime) -> Option<ZonedDateTime> {
+fn slot_on(
+    settings: &AppSettings,
+    day: jiff::civil::Date,
+    now: &ZonedDateTime,
+) -> Option<ZonedDateTime> {
     let weekly = settings.update_frequency.eq_ignore_ascii_case("weekly");
     if weekly && day.weekday() != Weekday::Monday {
         return None;

@@ -245,7 +245,10 @@ pub async fn check_updates() -> crate::flatpak::Result<usize> {
 }
 
 /// The next time automatic updates should run according to the settings.
-pub fn next_auto_update(settings: &crate::settings::AppSettings, now: &ZonedDateTime) -> Option<ZonedDateTime> {
+pub fn next_auto_update(
+    settings: &crate::settings::AppSettings,
+    now: &ZonedDateTime,
+) -> Option<ZonedDateTime> {
     schedule::next_slot(settings, now)
 }
 
@@ -561,14 +564,20 @@ mod tests {
             None
         );
         let daily = next_auto_update(&settings(true, "Daily", "02:00"), &now).unwrap();
-        assert_eq!(daily, "2026-11-12T02:00:00[UTC]".parse::<ZonedDateTime>().unwrap());
+        assert_eq!(
+            daily,
+            "2026-11-12T02:00:00[UTC]".parse::<ZonedDateTime>().unwrap()
+        );
         let later_today = next_auto_update(&settings(true, "Daily", "23:30"), &now).unwrap();
         assert_eq!(
             later_today,
             "2026-11-11T23:30:00[UTC]".parse::<ZonedDateTime>().unwrap()
         );
         let weekly = next_auto_update(&settings(true, "Weekly", "02:00"), &now).unwrap();
-        assert_eq!(weekly, "2026-11-16T02:00:00[UTC]".parse::<ZonedDateTime>().unwrap());
+        assert_eq!(
+            weekly,
+            "2026-11-16T02:00:00[UTC]".parse::<ZonedDateTime>().unwrap()
+        );
     }
 
     #[test]
