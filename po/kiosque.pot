@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: kiosque\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-22 03:33+0000\n"
+"POT-Creation-Date: 2026-11-22 17:34-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -183,13 +183,13 @@ msgstr ""
 msgid "%1 was installed."
 msgstr ""
 
-#: qml/Main.qml:573 qml/pages/AppDetailPage.qml:551
+#: qml/Main.qml:573 qml/pages/AppDetailPage.qml:558
 msgid "Install"
 msgstr ""
 
 #: qml/Main.qml:583 qml/components/AddRepositoryDialog.qml:208
-#: qml/components/TasksDialog.qml:137 qml/pages/AppDetailPage.qml:594
-#: qml/pages/AppDetailPage.qml:1412 qml/pages/InstalledPage.qml:236
+#: qml/components/TasksDialog.qml:137 qml/pages/AppDetailPage.qml:601
+#: qml/pages/AppDetailPage.qml:1443 qml/pages/InstalledPage.qml:236
 #: qml/pages/SettingsPage.qml:349 qml/pages/UpdatesPage.qml:117
 msgid "Cancel"
 msgstr ""
@@ -203,7 +203,7 @@ msgid "Cancel Installation"
 msgstr ""
 
 #: qml/Main.qml:607 qml/components/AddRepositoryDialog.qml:208
-#: qml/pages/AppDetailPage.qml:1328
+#: qml/pages/AppDetailPage.qml:1359
 msgid "Close"
 msgstr ""
 
@@ -269,7 +269,7 @@ msgstr ""
 msgid "Name (optional):"
 msgstr ""
 
-#: qml/components/AddRepositoryDialog.qml:132 qml/pages/AppDetailPage.qml:1068
+#: qml/components/AddRepositoryDialog.qml:132 qml/pages/AppDetailPage.qml:1097
 msgid "Title:"
 msgstr ""
 
@@ -291,9 +291,18 @@ msgstr ""
 msgid "Add"
 msgstr ""
 
-#: qml/components/AppOfTheDayCard.qml:129
-msgctxt "@info:label badge on the daily pick card"
+#: qml/components/AppOfTheDayCard.qml:41
+msgctxt "@info:accessible daily pick card"
+msgid "App of the Day: %1"
+msgstr ""
+
+#: qml/components/AppOfTheDayCard.qml:176
+msgctxt "@info:label eyebrow on the daily pick card"
 msgid "App of the Day"
+msgstr ""
+
+#: qml/components/AppOfTheDayCard.qml:205
+msgid "View Details"
 msgstr ""
 
 #: qml/components/Categories.qml:17
@@ -778,166 +787,190 @@ msgstr ""
 msgid "The application permissions could not be verified."
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:363
+#: qml/pages/AppDetailPage.qml:365
+msgid ""
+"This application's permissions could not be read from %1, so it cannot be "
+"installed from here. If the repository publishes them, try again later."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:366
 msgid ""
 "Permissions could not be verified. Reload the details before installing."
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:365 qml/pages/AppDetailPage.qml:383
+#: qml/pages/AppDetailPage.qml:368 qml/pages/AppDetailPage.qml:386
 msgid "Retry"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:379
+#: qml/pages/AppDetailPage.qml:382
 msgid "Could not load application details: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:401
+#: qml/pages/AppDetailPage.qml:404
 msgid "Loading application details"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:496
+#: qml/pages/AppDetailPage.qml:503
 msgid "Unknown Developer"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:551 qml/pages/InstalledPage.qml:244
+#: qml/pages/AppDetailPage.qml:558 qml/pages/InstalledPage.qml:244
 msgid "Open"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:563 qml/pages/AppDetailPage.qml:1404
+#: qml/pages/AppDetailPage.qml:570 qml/pages/AppDetailPage.qml:1435
 msgid "Remove"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:585
+#: qml/pages/AppDetailPage.qml:592
 msgid "Working…"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:612
+#: qml/pages/AppDetailPage.qml:619
 msgid "Sandboxed"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:613
+#: qml/pages/AppDetailPage.qml:620
 msgid "Some system access"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:614
+#: qml/pages/AppDetailPage.qml:621
 msgid "Full system access"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:615
+#: qml/pages/AppDetailPage.qml:622
 msgid "Permissions unknown"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:620
+#: qml/pages/AppDetailPage.qml:627
 msgid "%1. Show permissions"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:621
+#: qml/pages/AppDetailPage.qml:628
 msgid "Show sandbox permissions"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:705
+#: qml/pages/AppDetailPage.qml:646
+msgctxt "@info source repository, per-user installation"
+msgid "From %1 (user)"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:647
+msgctxt "@info source repository"
+msgid "From %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:649
+msgid "Repository “%1” at %2"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:650
+msgid "Repository “%1”"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:734
 msgid "Screenshot %1 of %2, open larger"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:719
+#: qml/pages/AppDetailPage.qml:748
 msgid "Previous screenshots"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:755
+#: qml/pages/AppDetailPage.qml:784
 msgid "Next screenshots"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:802
+#: qml/pages/AppDetailPage.qml:831
 msgid "What's New"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:815
+#: qml/pages/AppDetailPage.qml:844
 msgid "Version %1, released %2"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:817 qml/pages/SettingsPage.qml:323
+#: qml/pages/AppDetailPage.qml:846 qml/pages/SettingsPage.qml:323
 msgid "Version %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:841
+#: qml/pages/AppDetailPage.qml:870
 msgid "Description"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:862
+#: qml/pages/AppDetailPage.qml:891
 msgid "Links"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:888
+#: qml/pages/AppDetailPage.qml:917
 msgid "Opens %1 in the web browser"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:898
+#: qml/pages/AppDetailPage.qml:927
 msgid "Developer"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:898
+#: qml/pages/AppDetailPage.qml:927
 msgid "More by %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:907
+#: qml/pages/AppDetailPage.qml:936
 msgid "Similar Applications"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:935
+#: qml/pages/AppDetailPage.qml:964
 msgid "Ratings & Reviews"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:940 qml/pages/AppDetailPage.qml:1015
+#: qml/pages/AppDetailPage.qml:969 qml/pages/AppDetailPage.qml:1044
 msgid "Write a Review"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:961
+#: qml/pages/AppDetailPage.qml:990
 msgid "No Reviews Yet"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:962
+#: qml/pages/AppDetailPage.qml:991
 msgid "Be the first to write a review for this application!"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1004
+#: qml/pages/AppDetailPage.qml:1033
 msgid "Show More Reviews"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1043
+#: qml/pages/AppDetailPage.qml:1072
 msgid "Rating:"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1069
+#: qml/pages/AppDetailPage.qml:1098
 msgid "One-line title of your review"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1076
+#: qml/pages/AppDetailPage.qml:1105
 msgid "Review:"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1083
+#: qml/pages/AppDetailPage.qml:1112
 msgid "Detailed review description"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1092
+#: qml/pages/AppDetailPage.qml:1121
 msgid "Anonymous:"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1398
+#: qml/pages/AppDetailPage.qml:1429
 msgid "Remove %1?"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1399
+#: qml/pages/AppDetailPage.qml:1430
 msgid ""
 "The application is uninstalled. Its settings and data in your home folder "
 "are kept."
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1421
+#: qml/pages/AppDetailPage.qml:1452
 msgid "Application Permissions"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1430
+#: qml/pages/AppDetailPage.qml:1461
 msgid "This application has permissions to access the following:"
 msgstr ""
 
@@ -1319,11 +1352,11 @@ msgstr ""
 msgid "Include %1 in the update"
 msgstr ""
 
-#: rust/app/src/bridge/repo_model.rs:210
+#: rust/app/src/bridge/repo_model.rs:220
 msgid "Repository added successfully"
 msgstr ""
 
-#: rust/app/src/bridge/repo_model.rs:211
+#: rust/app/src/bridge/repo_model.rs:221
 msgid "Repository removed successfully"
 msgstr ""
 
@@ -1359,73 +1392,77 @@ msgid_plural "%1 files"
 msgstr[0] ""
 msgstr[1] ""
 
-#: rust/updater/src/shell.rs:25
-msgid "Usage: kiosque-update [--check | --background | --help]"
-msgstr ""
-
-#: rust/updater/src/shell.rs:28
-msgid "Check for and install all updates once, then exit"
-msgstr ""
-
-#: rust/updater/src/shell.rs:29
-msgid "Run as the autostarted background notifier"
+#: rust/updater/src/shell.rs:27
+msgid "Usage: kiosque-update [--check | --background | --version | --help]"
 msgstr ""
 
 #: rust/updater/src/shell.rs:30
+msgid "Check for and install all updates once, then exit"
+msgstr ""
+
+#: rust/updater/src/shell.rs:31
+msgid "Run as the autostarted background notifier"
+msgstr ""
+
+#: rust/updater/src/shell.rs:32
 msgid "Show this help and exit"
 msgstr ""
 
-#: rust/updater/src/shell.rs:112
+#: rust/updater/src/shell.rs:33
+msgid "Print the version and exit"
+msgstr ""
+
+#: rust/updater/src/shell.rs:116
 msgid "Kiosque: installing updates…"
 msgstr ""
 
-#: rust/updater/src/shell.rs:115
+#: rust/updater/src/shell.rs:119
 msgid "Kiosque: %1 update available"
 msgid_plural "Kiosque: %1 updates available"
 msgstr[0] ""
 msgstr[1] ""
 
-#: rust/updater/src/shell.rs:121
+#: rust/updater/src/shell.rs:125
 msgid "Kiosque: applications are up to date"
 msgstr ""
 
-#: rust/updater/src/shell.rs:145
+#: rust/updater/src/shell.rs:149
 msgid "Software Updates Available"
 msgstr ""
 
-#: rust/updater/src/shell.rs:147
+#: rust/updater/src/shell.rs:151
 msgid "%1 application update is available."
 msgid_plural "%1 application updates are available."
 msgstr[0] ""
 msgstr[1] ""
 
-#: rust/updater/src/shell.rs:154 rust/updater/src/shell.rs:188
+#: rust/updater/src/shell.rs:158 rust/updater/src/shell.rs:192
 msgid "Open Kiosque"
 msgstr ""
 
-#: rust/updater/src/shell.rs:163 rust/updater/src/shell.rs:222
+#: rust/updater/src/shell.rs:167 rust/updater/src/shell.rs:226
 msgid "Updating Applications"
 msgstr ""
 
-#: rust/updater/src/shell.rs:165
+#: rust/updater/src/shell.rs:169
 msgid "Installing %1 update in the background."
 msgid_plural "Installing %1 updates in the background."
 msgstr[0] ""
 msgstr[1] ""
 
-#: rust/updater/src/shell.rs:180
+#: rust/updater/src/shell.rs:184
 msgid "Updates Completed"
 msgstr ""
 
-#: rust/updater/src/shell.rs:181
+#: rust/updater/src/shell.rs:185
 msgid "All applications have been updated."
 msgstr ""
 
-#: rust/updater/src/shell.rs:186
+#: rust/updater/src/shell.rs:190
 msgid "Updates Failed"
 msgstr ""
 
-#: rust/updater/src/shell.rs:224
+#: rust/updater/src/shell.rs:228
 msgid "Kiosque is installing Flatpak updates in the background."
 msgstr ""
 

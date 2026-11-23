@@ -10,6 +10,8 @@ use kiosque_core::l10n::{i18n, i18np};
 pub enum Mode {
     /// Print usage and exit without touching D-Bus.
     Help,
+    /// Print the source version without touching D-Bus.
+    Version,
     /// Check and apply updates once, then exit with a status code.
     Check,
     /// Autostart: tray and scheduler, stays alive while idle.
@@ -20,14 +22,15 @@ pub enum Mode {
 
 pub fn usage() -> String {
     format!(
-        "{}\n\n  --check       {}\n  --background  {}\n  --help        {}\n",
+        "{}\n\n  --check       {}\n  --background  {}\n  --help        {}\n  --version     {}\n",
         i18n(
-            "Usage: kiosque-update [--check | --background | --help]",
+            "Usage: kiosque-update [--check | --background | --version | --help]",
             &[]
         ),
         i18n("Check for and install all updates once, then exit", &[]),
         i18n("Run as the autostarted background notifier", &[]),
         i18n("Show this help and exit", &[]),
+        i18n("Print the version and exit", &[]),
     )
 }
 
@@ -37,6 +40,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Mode, Strin
     for arg in args {
         let next = match arg.as_str() {
             "-h" | "--help" => return Ok(Mode::Help),
+            "-v" | "--version" => return Ok(Mode::Version),
             "-c" | "--check" => Mode::Check,
             "--background" | "--daemon" => Mode::Background,
             other => return Err(format!("unknown argument {other:?}")),
@@ -267,6 +271,8 @@ mod tests {
     fn command_line() {
         assert_eq!(args(&[]), Ok(Mode::Tray));
         assert_eq!(args(&["--help"]), Ok(Mode::Help));
+        assert_eq!(args(&["--version"]), Ok(Mode::Version));
+        assert_eq!(args(&["-v"]), Ok(Mode::Version));
         assert_eq!(args(&["--check", "--help"]), Ok(Mode::Help));
         assert_eq!(args(&["-c"]), Ok(Mode::Check));
         assert_eq!(args(&["--background"]), Ok(Mode::Background));

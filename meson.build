@@ -2,15 +2,7 @@
 # translations and runs the Qt Quick tests. No compiled language is used.
 project('kiosque',
   meson_version: '>=1.4.0',
-  version: run_command('python3', '-c', '''
-import subprocess
-try:
-    s = subprocess.run(["git", "describe", "--tags"], capture_output=True, text=True)
-    version = s.stdout.strip().lstrip("v") if (s.returncode == 0 and s.stdout.strip()) else "1.0.0"
-except Exception:
-    version = "1.0.0"
-print(version)
-''', check: true).stdout().strip(),
+  version: run_command('python3', files('scripts/build_version.py'), check: true).stdout().strip(),
 )
 
 python = find_program('python3')
@@ -45,7 +37,6 @@ rust = custom_target(
     '--profile', is_release ? 'release' : 'debug',
     '--backend', get_option('flatpak_backend'),
     '--test-support', get_option('test_support') ? 'true' : 'false',
-    '--version', meson.project_version(),
     '--localedir', localedir_path,
     '--out-dir', '@OUTDIR@',
     '--bins', binaries],

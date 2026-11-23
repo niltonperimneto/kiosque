@@ -32,6 +32,10 @@ fn main() {
             print!("{}", shell::usage());
             0
         }
+        Mode::Version => {
+            println!("kiosque-update {}", env!("KIOSQUE_VERSION"));
+            0
+        }
         Mode::Check => kiosque_core::runtime::runtime().block_on(daemon::run_once()),
         Mode::Background => kiosque_core::runtime::runtime().block_on(run(true)),
         Mode::Tray => kiosque_core::runtime::runtime().block_on(run(false)),
