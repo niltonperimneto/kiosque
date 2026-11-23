@@ -229,22 +229,22 @@ FormCard.FormCardPage {
             description: L10n.i18n("Sign in to rate applications and write reviews.", [])
         }
 
-        // Breeze has no brand icons for these providers except KDE.
         Repeater {
-            model: SettingsController.is_authenticated ? [] : [
-                { provider: "github", icon: "user-identity" },
-                { provider: "gitlab", icon: "user-identity" },
-                { provider: "kde_gitlab", icon: "kde" },
-                { provider: "gnome_gitlab", icon: "user-identity" }
-            ]
+            model: SettingsController.is_authenticated ? [] : ["github", "gitlab", "kde_gitlab", "gnome_gitlab"]
 
             delegate: FormCard.FormButtonDelegate {
-                required property var modelData
-                objectName: "signIn_" + modelData.provider
-                icon.name: modelData.icon
-                text: L10n.i18n("Sign in with %1", [page.providerName(modelData.provider)])
+                required property string modelData
+                objectName: "signIn_" + modelData
+                text: L10n.i18n("Sign in with %1", [page.providerName(modelData)])
                 enabled: !SettingsController.login_in_progress
-                onClicked: SettingsController.login(modelData.provider)
+                onClicked: SettingsController.login(modelData)
+                leading: Kirigami.Icon {
+                    source: Qt.resolvedUrl("../images/" + modelData + "-symbolic.svg")
+                    isMask: true
+                    color: Kirigami.Theme.textColor
+                    implicitWidth: Kirigami.Units.iconSizes.small
+                    implicitHeight: implicitWidth
+                }
             }
         }
     }
