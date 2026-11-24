@@ -94,9 +94,13 @@ FeatureCard {
                     let radius = Math.max(width, height) * 0.7
                     let gradient = ctx.createRadialGradient(spotlight.lightX, spotlight.lightY, 0,
                                                            spotlight.lightX, spotlight.lightY, radius)
-                    gradient.addColorStop(0, Qt.alpha(accent, strength))
-                    gradient.addColorStop(0.5, Qt.alpha(accent, strength * 0.35))
-                    gradient.addColorStop(1, Qt.alpha(accent, 0))
+                    // Canvas stops take CSS colour strings.
+                    const rgba = (a) => "rgba(" + Math.round(accent.r * 255) + ","
+                        + Math.round(accent.g * 255) + "," + Math.round(accent.b * 255) + ","
+                        + Math.max(0, Math.min(1, a)) + ")"
+                    gradient.addColorStop(0, rgba(strength))
+                    gradient.addColorStop(0.5, rgba(strength * 0.35))
+                    gradient.addColorStop(1, rgba(0))
                     ctx.fillStyle = gradient
                     ctx.fillRect(0, 0, width, height)
                 }

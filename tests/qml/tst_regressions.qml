@@ -212,71 +212,118 @@ TestCase {
         verify(!findChild(page, "whatsNewSection").visible)
         compare(page.linkEntries.length, 0)
     }
+    function storefront(root) {
+        root.navigate("shopfront")
+        return root.pageStack.currentItem
+    }
     function test_type_to_search() {
         const root = window()
         root.requestActivate()
         tryCompare(root, "active", true)
-        const home = root.pageStack.currentItem
-        home.forceActiveFocus()
-        keyClick(Qt.Key_E)
-        tryCompare(root, "currentSection", "search")
+        const page = storefront(root)
+        const shelves = findChild(page, "storefrontShelves")
+        verify(!page.searchActive)
+        verify(shelves.visible)
 
-        const page = root.pageStack.currentItem
-        tryVerify(() => page.searchField && page.searchField.activeFocus)
-        compare(page.searchField.text.toLowerCase(), "e")
+        // Typing on the storefront pulls the bar down and searches in place.
+        page.forceActiveFocus()
+        keyClick(Qt.Key_E)
+        tryVerify(() => page.searchActive && page.searchBar.height > 0)
+        compare(root.pageStack.currentItem, page)
+        compare(root.currentSection, "shopfront")
+        const field = findChild(page, "storefrontSearchField")
+        tryVerify(() => field.activeFocus)
+        compare(field.text.toLowerCase(), "e")
         for (const key of [Qt.Key_D, Qt.Key_I, Qt.Key_T, Qt.Key_O, Qt.Key_R]) {
             keyClick(key)
         }
-        tryCompare(page, "activeQuery", "editor")
-        tryVerify(() => !page.resultsModel.loading && rows(page.resultsModel) === 1, 10000)
+        // Results follow the typing, with no Enter, and replace the shelves.
+        tryCompare(page, "searchQuery", "editor")
+        tryVerify(() => !page.searchModel.loading && rows(page.searchModel) === 1, 10000)
+        verify(!shelves.visible)
+        verify(findChild(page, "storefrontSearchResults").visible)
+        // The bar spans the page instead of a corner of the title bar.
+        verify(page.searchBar.width >= page.width - 1)
 
-        keyClick(Qt.Key_A, Qt.ControlModifier)
-        keyClick(Qt.Key_Backspace)
-        tryVerify(() => findChild(page, "searchPromptMessage").visible)
-        compare(rows(page.resultsModel), 0)
+        // Escape clears the query, slides the bar away and restores the shelves.
+        keyClick(Qt.Key_Escape)
+        tryVerify(() => !page.searchActive && page.searchBar.height === 0)
+        tryVerify(() => shelves.visible)
+        compare(rows(page.searchModel), 0)
     }
-    function test_search_page_states() {
+    function test_storefront_search_states() {
         let root = window()
-        // The storefront field hands its query to the Search page.
-        let field = findChild(root.pageStack.currentItem, "storefrontSearchField")
-        verify(field !== null)
-        field.text = "Editor"
-        field.accepted()
-        tryVerify(() => root.pageStack.currentItem.objectName === "searchPage", 5000)
+        // Search in the sidebar or tabs opens the storefront with the bar down.
+        root.navigate("installed")
+        root.navigate("search")
         let page = root.pageStack.currentItem
-        compare(root.currentSection, "search")
-        compare(field.text, "")
-        tryCompare(page.resultsModel, "loading", false, 10000)
-        tryVerify(() => rows(page.resultsModel) === 1, 10000)
-        compare(page.resultsModel.error_message, "")
+        tryVerify(() => page.searchActive === true)
+        compare(root.currentSection, "shopfront")
+        verify(root.navigationActions[1].checked)
+        verify(!root.navigationActions[0].checked)
 
         root.openSearch("empty")
-        page = root.pageStack.currentItem
-        tryCompare(page.resultsModel, "loading", false, 10000)
-        tryVerify(() => findChild(page, "searchEmptyMessage").visible, 10000)
+        tryCompare(page, "searchQuery", "empty")
+        tryVerify(() => !page.searchModel.loading && findChild(page, "searchEmptyMessage").visible, 10000)
         verify(!findChild(page, "searchErrorMessage").visible)
 
         // A failed search is reported as such, not as "no results".
-        root.openSearch("error")
-        page = root.pageStack.currentItem
-        tryCompare(page.resultsModel, "loading", false, 10000)
-        tryVerify(() => findChild(page, "searchErrorMessage").visible, 10000)
+        page.searchBar.text = "error"
+        tryVerify(() => !page.searchModel.loading && findChild(page, "searchErrorMessage").visible, 10000)
         verify(!findChild(page, "searchEmptyMessage").visible)
-        verify(page.resultsModel.error_message.indexOf("503") !== -1)
+        verify(page.searchModel.error_message.indexOf("503") !== -1)
 
-        // Without a query the page invites a search instead.
-        root.navigate("search")
+        // Home brings the shelves back.
+        root.navigate("shopfront")
+        tryVerify(() => !page.searchActive)
+        verify(root.navigationActions[0].checked)
+        verify(findChild(page, "storefrontShelves").visible)
+    }
+    function test_category_and_installed_search_in_place() {
+        let root = window()
+        root.requestActivate()
+        tryCompare(root, "active", true)
+        root.pageStack.push("qrc:/qml/pages/CategoryAppListPage.qml", { categoryId: "Education", categoryName: "Education" })
+        let page = root.pageStack.currentItem
+        tryCompare(page.categoryModel, "loading", false, 10000)
+        verify(!page.searchActive)
+        // Typing filters this category in place.
+        page.forceActiveFocus()
+        keyClick(Qt.Key_A)
+        tryVerify(() => page.searchActive)
+        compare(root.pageStack.currentItem, page)
+        compare(page.searchQuery.toLowerCase(), "a")
+        verify(page.hasVisibleApps)
+        page.searchBar.text = "zzzz-no-such-app"
+        tryVerify(() => !page.hasVisibleApps)
+        keyClick(Qt.Key_Escape)
+        tryVerify(() => !page.searchActive && page.hasVisibleApps)
+
+        // Installed filters your applications the same way.
+        root.navigate("installed")
         page = root.pageStack.currentItem
-        verify(findChild(page, "searchPromptMessage").visible)
+        const installed = root.installedModel
+        installed.refresh()
+        tryCompare(installed, "loading", false, 10000)
+        tryVerify(() => rows(installed) > 0, 10000)
+        page.forceActiveFocus()
+        keyClick(Qt.Key_Z)
+        tryVerify(() => page.searchActive)
+        const field = findChild(page, "installedFilterField")
+        tryVerify(() => field.activeFocus)
+        page.searchBar.text = "zzzz-no-such-app"
+        tryVerify(() => rows(installed) === 0, 5000)
+        keyClick(Qt.Key_Escape)
+        tryVerify(() => rows(installed) > 0, 5000)
     }
     function test_catalog_apps_come_from_their_repository() {
         let root = window()
         // The local catalog answers first; Flathub results only supplement it.
         root.openSearch("Atlas")
         let page = root.pageStack.currentItem
-        tryCompare(page.resultsModel, "loading", false, 10000)
-        tryVerify(() => rows(page.resultsModel) === 2, 10000)
-        compare(page.resultsModel.data(page.resultsModel.index(0, 0), 259), "org.example.Atlas")
+        tryCompare(page, "searchQuery", "Atlas")
+        tryVerify(() => !page.searchModel.loading && rows(page.searchModel) === 2, 10000)
+        compare(page.searchModel.data(page.searchModel.index(0, 0), 259), "org.example.Atlas")
 
         // Details, permissions and related apps come from the origin repository.
         root.pushAppDetail("org.example.Atlas")

@@ -16,9 +16,16 @@ Kirigami.ScrollablePage {
     
     title: categoryName !== "" ? categoryName : applicationWindow().categories.displayName(categoryId)
 
-    property string searchQuery: ""
-    // Its title search field handles Ctrl+F (see Main.qml).
+    // Typing (see Main.qml), Ctrl+F or the Search action pulls the bar down;
+    // the cards below are filtered in place as the query changes.
+    readonly property string searchQuery: searchBar.text.trim()
     readonly property bool hasOwnSearch: true
+    readonly property bool searchActive: searchBar.shown
+    readonly property alias searchBar: searchBar
+
+    function openSearch(typed) {
+        searchBar.start(typed || "");
+    }
     property bool hasVisibleApps: {
         if (searchQuery.length === 0) return true;
         for (let i = 0; i < appGrid.children.length; i++) {
@@ -30,13 +37,21 @@ Kirigami.ScrollablePage {
         return false;
     }
 
-    titleDelegate: Kirigami.SearchField {
-        id: searchField
-        Layout.fillWidth: true
-        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-        placeholderText: L10n.i18n("Search in %1…", []).arg(page.title)
-        onTextChanged: page.searchQuery = text
+    header: Components.DropDownSearchBar {
+        id: searchBar
+        fieldObjectName: "categorySearchField"
+        placeholderText: L10n.i18n("Search in %1…", [page.title])
     }
+
+    actions: [
+        Kirigami.Action {
+            text: L10n.i18n("Search", [])
+            icon.name: "search"
+            displayHint: Kirigami.DisplayHint.IconOnly
+            visible: !searchBar.shown
+            onTriggered: page.openSearch("")
+        }
+    ]
     
     
     // Independent model for this page to not conflict with global state

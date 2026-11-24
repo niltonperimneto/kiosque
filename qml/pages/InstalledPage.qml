@@ -6,6 +6,7 @@ import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import com.kiosque
+import "../components" as Components
 
 // Installed applications manager: a dense list of rows with contextual
 // actions (KDE HIG). Pending updates are handled on the Updates page; this
@@ -13,8 +14,15 @@ import com.kiosque
 Kirigami.ScrollablePage {
     id: page
     title: L10n.i18n("Installed", [])
-    // Its title search field handles Ctrl+F (see Main.qml).
+    // Typing (see Main.qml), Ctrl+F or the Search action pulls the filter bar
+    // down; the list is filtered in place as the query changes.
     readonly property bool hasOwnSearch: true
+    readonly property bool searchActive: searchBar.shown
+    readonly property alias searchBar: searchBar
+
+    function openSearch(typed) {
+        searchBar.start(typed || "");
+    }
     supportsRefreshing: true
 
     property var installedModel: applicationWindow().installedModel
@@ -23,11 +31,9 @@ Kirigami.ScrollablePage {
     property string sortCriterion: "name"
     property bool sortAscending: true
 
-    titleDelegate: Kirigami.SearchField {
-        id: searchField
-        Layout.fillWidth: true
-        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-        objectName: "installedFilterField"
+    header: Components.DropDownSearchBar {
+        id: searchBar
+        fieldObjectName: "installedFilterField"
         placeholderText: L10n.i18n("Filter installed…", [])
         onTextChanged: page.installedModel.applySearchFilter(text)
     }
@@ -56,6 +62,13 @@ Kirigami.ScrollablePage {
 
     // ── Toolbar: refresh + sort + filter ───────────────────────────────────────
     actions: [
+        Kirigami.Action {
+            text: L10n.i18n("Search", [])
+            icon.name: "search"
+            displayHint: Kirigami.DisplayHint.IconOnly
+            visible: !searchBar.shown
+            onTriggered: page.openSearch("")
+        },
         Kirigami.Action {
             text: L10n.i18n("Refresh", [])
             icon.name: "view-refresh"

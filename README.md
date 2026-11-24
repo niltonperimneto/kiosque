@@ -41,9 +41,9 @@ Once it’s open, try **Games → New Releases**, then open a title and look at 
 
 ## From browsing to installing
 
-- **Start with the storefront.** The featured carousel pairs app screenshots with colors from AppStream branding when available. Flathub’s App of the Day gets its own spotlight card, which lifts and glows under the pointer. Categories, game charts, and recently added or updated apps give you a way in even when you have no app name to search for. Search, categories and app details come from the AppStream data of every repository you have configured, so they also work offline and include apps from repositories other than Flathub.
+- **Start with the storefront.** The featured carousel pairs app screenshots with colors from AppStream branding when available. Flathub’s App of the Day gets its own spotlight card, which lifts and glows under the pointer. Categories, game charts, and recently added or updated apps give you a way in even when you have no app name to search for. When you do, just start typing: a search bar drops down across the page and results replace the shelves as you type. Search, categories and app details come from the AppStream data of every repository you have configured, so they also work offline and include apps from repositories other than Flathub.
 - **Decide with the facts in front of you.** Screenshots, release notes, descriptions, ratings, and reviews help you judge the app itself. A chip shows which repository the app comes from, and Install uses that repository. The Sandbox Permissions panel lists the access the app requests, read from that repository’s own metadata. If the permissions cannot be verified, Kiosque does not offer to install the app.
-- **Come back to a usable library.** Search and sort installed Flatpaks and filter to pending updates. Installs, removals and updates run in the background and are listed in a Tasks dialog, where you can cancel them. For ongoing maintenance, the companion installs updates on a daily or weekly schedule, and catches up after the computer was off.
+- **Come back to a usable library.** Type to filter installed Flatpaks, sort them, and filter to pending updates. Installs, removals and updates run in the background and are listed in a Tasks dialog, where you can cancel them. For ongoing maintenance, the companion installs updates on a daily or weekly schedule, and catches up after the computer was off.
 
 | | |
 | --- | --- |
@@ -274,8 +274,8 @@ CI also includes dependency audits, redacted source and history secret scanning,
 
 ### What happens when you search
 
-1. Typing in the search field calls the QML-visible `AppListModel.search(query)`.
-2. The Qt Bridge slot hands the query to the view layer, which starts a new request generation and waits 250 ms. Another keystroke in that time supersedes the request, so only the last query is ever sent.
+1. Start typing anywhere on the storefront: the search bar slides down across the full width of the page, and every keystroke calls the storefront’s own `AppListModel.search(query)`. Its results replace the shelves until the bar is cleared or closed with Escape. On a category page the same bar filters that category’s apps, and on Installed it filters your applications.
+2. The Qt Bridge slot hands the query to the view layer, which starts a new request generation and waits 120 ms. Another keystroke in that time supersedes the request, so only the last query is ever sent.
 3. On a Tokio worker, the app metadata policy ranks matches from the local AppStream catalog by name, keywords, ID and summary. This step never waits on the network. While Flathub’s own AppStream data is not on disk, results from `https://flathub.org/api/v2/search` are appended. A search fails only when neither source returned anything. Blocked apps are removed.
 4. The result returns to the Qt thread through `QThreadHandle::invoke_mut`. A generation check drops stale replies, the model replaces its rows through a model reset and clears `loading`, and QML redraws the cards through the model roles. When the catalog is reindexed, for example after adding a repository, the model repeats its last search. [Search policy](rust/core/src/apps.rs) · [List queries](rust/app/src/view/app_list.rs) · [Search model](rust/app/src/bridge/app_list_model.rs)
 
