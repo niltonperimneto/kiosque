@@ -57,11 +57,8 @@ pub async fn submit_review(
             .to_string();
     }
     if version.is_empty()
-        && let Ok(installed_apps) = crate::flatpak::ui::list_installed_cached().await
-        && let Some(v) = installed_apps
-            .iter()
-            .find(|a| a.application_id == app_id)
-            .and_then(|a| a.version.clone())
+        && crate::view::ops::reload_installed().await.is_ok()
+        && let Some(v) = crate::view::ops::installed_version(&app_id)
     {
         version = v;
     }

@@ -26,10 +26,6 @@ pub struct Services {
 }
 
 impl Services {
-    pub fn install_target(&self, id: &str) -> (String, kiosque_core::flatpak::Scope) {
-        self.install_target_from(id, "")
-    }
-
     /// The remote and scope to install `id` from, preferring `remote_hint`
     /// (the origin the detail page showed).
     pub fn install_target_from(
