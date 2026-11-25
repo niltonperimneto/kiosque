@@ -3,19 +3,8 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
-
 use crate::flatpak::Operation;
 pub use crate::flatpak::ui::JobOutcome;
-
-/// Serialize `value` to a JSON `QString`, falling back to `fallback` (e.g. `"[]"`
-/// or `"{}"`) if serialization fails. Replaces the repeated
-/// `QString::from(&serde_json::to_string(..).unwrap_or_else(|_| "..".into()))`
-/// boilerplate throughout the bridge models.
-pub fn json_qstring<T: Serialize>(value: &T, fallback: &str) -> String {
-    let json = serde_json::to_string(value).unwrap_or_else(|_| fallback.to_string());
-    String::from(&json)
-}
 
 /// Ask the transaction client (daemon or in-process) to cancel job `id`.
 pub fn cancel_job(id: u64) {

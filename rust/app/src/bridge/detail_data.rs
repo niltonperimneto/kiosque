@@ -1,8 +1,6 @@
-//! Qt-free loading of an app's detail-page data, shared by `AppDetails` and
-//! the `StoreController` compatibility facade.
+//! Detail data and review actions for AppDetails.
 
 use crate::flathub::odrs::{OdrsRatings, OdrsReview};
-use crate::flathub::types::FlathubApp;
 
 pub use kiosque_core::apps::DetailData;
 
@@ -104,19 +102,4 @@ pub async fn review_action(action: ReviewAction, review_id: i64) -> Result<(), S
         ReviewAction::Remove => odrs.remove_review(review_id).await,
     };
     result.map_err(|e| e.to_string())
-}
-
-/// Convert a list of apps into the compact `{app_id, name, summary, icon}` JSON
-/// shape consumed by the legacy developer-apps and similar-apps JSON properties.
-pub fn apps_to_json(apps: &[FlathubApp]) -> Vec<serde_json::Value> {
-    apps.iter()
-        .map(|app| {
-            serde_json::json!({
-                "app_id": app.app_id,
-                "name": app.name,
-                "summary": app.summary.clone().unwrap_or_default(),
-                "icon": app.icon.clone().unwrap_or_default()
-            })
-        })
-        .collect()
 }
