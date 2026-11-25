@@ -66,6 +66,33 @@ TestCase {
         compare(BackgroundPortalFixture.lastAutostart, false)
         compare(SettingsController.auto_update, false)
     }
+    function test_update_status_notices() {
+        let root = window()
+        root.navigate("settings")
+        let page = root.pageStack.currentItem
+        compare(page.objectName, "settingsPage")
+        // Which notice applies, by situation.
+        compare(page.updatesNotice(true, "missing", "", false), "missing")
+        compare(page.updatesNotice(true, "outdated", "", false), "outdated")
+        compare(page.updatesNotice(true, "unreachable", "", false), "unreachable")
+        compare(page.updatesNotice(true, "ready", "", false), "")
+        // A host timer that already updates Flatpaks makes the companion moot...
+        compare(page.updatesNotice(true, "missing", "uupd.timer", false), "system")
+        compare(page.updatesNotice(false, "", "flatpak-system-update.timer", false), "system")
+        // ...unless Kiosque's own automatic updates are already on.
+        compare(page.updatesNotice(false, "ready", "uupd.timer", true), "")
+        // Native builds never warn about the companion.
+        compare(page.updatesNotice(false, "missing", "", false), "")
+
+        // This harness is native: the check settles without a notice, the
+        // switch stays usable and there is no self-update note.
+        tryVerify(() => SettingsController.companion_state !== "", 10000)
+        compare(SettingsController.sandboxed, false)
+        verify(["ready", "outdated", "missing", "unreachable"].indexOf(SettingsController.companion_state) !== -1)
+        verify(page.canEnableAutoUpdates)
+        verify(!findChild(page, "updatesNoticeMessage").visible)
+        verify(!findChild(page, "selfUpdateNote").visible)
+    }
     function test_settings_page_does_not_write_during_initialization() {
         let root = window()
         saveSettings(true, "Weekly", "03:15")
