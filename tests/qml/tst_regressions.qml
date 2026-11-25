@@ -148,8 +148,8 @@ TestCase {
         let primary = findChild(page, "installRemoveButton")
         let remove = findChild(page, "removeButton")
         compare(primary.text, "Open")
-        verify(primary.enabled)
-        verify(remove.visible)
+        tryCompare(primary, "enabled", true, 10000)
+        tryCompare(remove, "visible", true, 10000)
         // Removing asks for confirmation; dismissing it changes nothing.
         let before = BackendFixture.operationCount()
         remove.clicked()

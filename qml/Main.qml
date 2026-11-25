@@ -127,6 +127,10 @@ Kirigami.ApplicationWindow {
 
     // Top-level destinations shared by the sidebar and the tab bar.
     function navigate(section) {
+        if (section === "search") {
+            root.openSearch("");
+            return;
+        }
         root.currentCategory = "";
         root.currentSection = section;
         switch (section) {

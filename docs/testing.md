@@ -24,7 +24,7 @@ The QML suite imports `org.kde.ki18n` at runtime. Use KI18n 6.21 or newer and in
 The desktop CI base is pinned by OCI digest. `tests/Containerfile` provides the corresponding developer environment. Install desktop dependencies in a disposable Fedora environment:
 
 ```sh
-dnf install -y desktop-file-utils cargo rust clippy gcc-c++ meson ninja-build cmake mold qt6-qtbase-private-devel qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
+dnf install -y desktop-file-utils git cargo rust clippy gcc-c++ meson ninja-build cmake mold qt6-qtbase-private-devel qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg flatpak-devel kf6-kirigami-devel kf6-ki18n-devel kf6-kirigami-addons kf6-qqc2-desktop-style dbus-daemon dbus-devel xorg-x11-server-Xvfb xauth gettext python3
 python3 scripts/test.py qt --backend native
 python3 scripts/test.py qml --backend native
 python3 scripts/test.py qt --backend broker
@@ -72,3 +72,40 @@ The service suite runs a private D-Bus daemon and confirms that unrelated client
 Use `KIOSQUE_TEST_BUILD_DIR` to select a separate Meson directory when another session is building the checkout. The security audit emits an SPDX lockfile inventory under its results directory; this covers Rust source dependencies, including optional/test/build crates, and is not a complete inventory of bundled system libraries. Trusted package pushes produce GitHub provenance attestations. Scheduled/trusted CodeQL scans cover Rust, Python and Actions; no successful scan is claimed before those workflows execute.
 
 Live OAuth provider registration, signed native lifecycle, Flatpak-to-native companion identity/activation and exact package smoke checks require separate release qualification. See [the hardening record](security-hardening.md) for the current execution evidence.
+
+## Automatic build versions
+
+`scripts/build_version.py` supplies the version for Cargo, Meson and CI packages. Python 3.11 or newer and full Git history are build prerequisites. CI checks out history and tags explicitly. A clean `vMAJOR.MINOR.PATCH` tag produces that release version. Other builds include a development counter and the Git revision, for example `1.0.1-dev.4+g123456789abc`. Local changes append `.dirty`. With no release tag, the development baseline comes from `rust/Cargo.toml` under `[workspace.package]`.
+
+Cargo build scripts recompute the version when tracked inputs, the index, HEAD or tags change. Both `kiosque --version` and `kiosque-update --version` report it. Building again after a commit updates the version without requiring Meson reconfiguration. RPM uses the equivalent `1.0.1~dev.4.g123456789abc`, which sorts before the corresponding stable release. Flatpak and AppImage filenames contain the source version.
+
+Before exporting a source archive or invoking Flatpak Builder with a directory source, freeze the version into the source tree. The generated file is ignored by Git and included in the source export. A live checkout always derives its version from Git, even if an old snapshot exists.
+
+```sh
+python3 scripts/build_version.py --write build-version.json
+flatpak-builder --user --install-deps-from=flathub build org.kiosque.Kiosque.json
+```
+
+For RPM source packaging, use `python3 scripts/build_version.py --write build-version.json --format rpm` as the RPM version, preserve `build-version.json` in the source tarball, and pass `--define "kiosque_version VERSION"` to rpmbuild. CI performs these steps automatically. An archive lacking a snapshot reports the workspace baseline with `-dev.0+unknown` so its provenance remains visible. Generated package AppStream metadata carries the same version and source commit date, preserving authored release history. The frozen snapshot carries that date into Git-free package builds.
+
+## Publishing a release
+
+On GitHub, select **Actions → Release → Run workflow**, keep **main** selected,
+and enter a stable version such as **1.0.0** without a v prefix. The workflow
+tags the current main commit as v1.0.0 and explicitly dispatches CI for that tag.
+It uses the repository token, so no personal access token is needed.
+
+Tagged CI runs the existing security, core, service and desktop checks, builds
+RPM, Flatpak and AppImage packages, and attests them. The packaged artifact smoke
+workflow verifies the source commit and tag, checks attestations, and tests the
+packages inside disposable VMs. Once every package passes, it uploads the exact
+qualified artifacts to a GitHub Release and publishes generated release notes.
+Both storefront and companion RPMs are included.
+
+A failed package build or smoke test prevents publication. A failed asset upload
+leaves a draft release that a rerun can complete. Published releases are preserved.
+To retry after main has advanced, rerun CI with the existing tag selected, then
+rerun its package smoke workflow if needed. An existing tag is never moved.
+A normal successful main build continues to run package smoke tests without
+publishing a release. Pushing a stable vMAJOR.MINOR.PATCH tag also uses this
+release path.

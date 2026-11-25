@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use jiff::{
-    ToSpan, Zoned,
+    ToSpan, ZonedDateTime,
     civil::{Time, Weekday},
     tz::AmbiguousOffset,
 };
@@ -50,14 +50,18 @@ fn scheduled_time(settings: &AppSettings) -> Time {
 
 /// The scheduled time on `day`, if `day` has one (weekly runs are on
 /// Mondays; a time skipped by a daylight-saving change does not exist).
-fn slot_on(settings: &AppSettings, day: jiff::civil::Date, now: &Zoned) -> Option<Zoned> {
+fn slot_on(
+    settings: &AppSettings,
+    day: jiff::civil::Date,
+    now: &ZonedDateTime,
+) -> Option<ZonedDateTime> {
     let weekly = settings.update_frequency.eq_ignore_ascii_case("weekly");
     if weekly && day.weekday() != Weekday::Monday {
         return None;
     }
     let ambiguous = now
         .time_zone()
-        .to_ambiguous_zoned(day.to_datetime(scheduled_time(settings)));
+        .to_ambiguous_zoned_datetime(day.to_datetime(scheduled_time(settings)));
     if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
         return None;
     }
@@ -66,7 +70,7 @@ fn slot_on(settings: &AppSettings, day: jiff::civil::Date, now: &Zoned) -> Optio
 }
 
 /// The next scheduled time strictly after `now`.
-pub fn next_slot(settings: &AppSettings, now: &Zoned) -> Option<Zoned> {
+pub fn next_slot(settings: &AppSettings, now: &ZonedDateTime) -> Option<ZonedDateTime> {
     if !settings.auto_update {
         return None;
     }
@@ -77,7 +81,7 @@ pub fn next_slot(settings: &AppSettings, now: &Zoned) -> Option<Zoned> {
 }
 
 /// The most recent scheduled time at or before `now`.
-pub fn previous_slot(settings: &AppSettings, now: &Zoned) -> Option<Zoned> {
+pub fn previous_slot(settings: &AppSettings, now: &ZonedDateTime) -> Option<ZonedDateTime> {
     (0..=8).find_map(|d| {
         let day = now.date().checked_sub(d.days()).ok()?;
         slot_on(settings, day, now).filter(|at| at <= now)
@@ -86,7 +90,7 @@ pub fn previous_slot(settings: &AppSettings, now: &Zoned) -> Option<Zoned> {
 
 /// True when a scheduled time has passed since the last run (or since
 /// automatic updates were enabled).
-pub fn is_due(settings: &AppSettings, state: &State, now: &Zoned) -> bool {
+pub fn is_due(settings: &AppSettings, state: &State, now: &ZonedDateTime) -> bool {
     if !settings.auto_update || !state.enabled {
         return false;
     }
@@ -157,7 +161,7 @@ mod tests {
             ..Default::default()
         }
     }
-    fn at(text: &str) -> Zoned {
+    fn at(text: &str) -> ZonedDateTime {
         text.parse().unwrap()
     }
     fn ts(text: &str) -> i64 {

@@ -1,6 +1,6 @@
 [package]
 name = "kiosque-core"
-version = "1.0.0"
+version.workspace = true
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -59,7 +59,7 @@ regex = "1.13.1"
 libflatpak = { version = "0.7.0", features = ["v1_1"], optional = true }
 # Use the gio version required by libflatpak; its GLib re-export keeps types aligned.
 gio = { version = "0.21.5", optional = true }
-jiff = "0.2.46"
+jiff = "1.0.1"
 
 
 

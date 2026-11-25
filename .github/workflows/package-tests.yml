@@ -6,9 +6,41 @@ on:
 permissions:
   contents: read
   actions: read
+  attestations: read
 jobs:
+  source:
+    name: Validate package source
+    if: github.event.workflow_run.conclusion == 'success' && (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.source.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source belongs to main and matches the release tag
+        id: source
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_REF: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$SOURCE_SHA" HEAD
+          if [[ "$SOURCE_REF" == main ]]; then
+            exit 0
+          fi
+          if [[ ! "$SOURCE_REF" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Package source must be main or a stable release tag."
+            exit 1
+          fi
+          test "$(git rev-parse "refs/tags/${SOURCE_REF}^{commit}")" = "$SOURCE_SHA"
+          echo "tag=${SOURCE_REF}" >> "$GITHUB_OUTPUT"
+
   smoke:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository
+    needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -48,3 +80,60 @@ jobs:
           name: package-results-${{ matrix.artifact }}
           include-hidden-files: true
           path: .test-results/
+
+  publish:
+    name: Publish qualified release
+    needs: [source, smoke]
+    if: needs.source.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
+    concurrency:
+      group: publish-${{ needs.source.outputs.tag }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: Kiosque-*
+          path: artifacts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Verify release assets and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KIOSQUE_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          test "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" = "$KIOSQUE_SOURCE_SHA"
+          python3 scripts/verify_attestations.py artifacts
+      - name: Upload packages and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' packages < <(find artifacts -type f \
+            \( -name '*.rpm' -o -name '*.flatpak' -o -name '*.AppImage' \) -print0)
+          test "${#packages[@]}" -gt 0
+          # A failed upload leaves a draft that can be completed by rerunning.
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --draft --title "Kiosque ${RELEASE_TAG#v}" --generate-notes
+          fi
+          draft=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [[ "$draft" != true ]]; then
+            echo "Release ${RELEASE_TAG} is already published."
+            exit 0
+          fi
+          gh release upload "$RELEASE_TAG" "${packages[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          echo "Published ${RELEASE_TAG} with qualified RPM, Flatpak and AppImage packages." >> "$GITHUB_STEP_SUMMARY"
