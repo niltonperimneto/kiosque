@@ -26,7 +26,9 @@ def run(command, *, expected=0, **kwargs):
 def main(artifact, companion):
     if not Path('/run/kiosque-test-vm').exists():
         raise RuntimeError('package startup checks require tests/system/vm.py --artifact')
-    with tempfile.TemporaryDirectory(prefix='kiosque-package-') as temporary, desktop_environment() as env:
+    # /var/tmp is on the guest's disk; /tmp is a small tmpfs that an extracted
+    # AppImage does not fit in.
+    with tempfile.TemporaryDirectory(prefix='kiosque-package-', dir='/var/tmp') as temporary, desktop_environment() as env:
         root = Path(temporary)
         helper = None
         as_user = []
