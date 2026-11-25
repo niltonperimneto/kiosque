@@ -38,9 +38,11 @@ pub const RUNNER_PATH: &str = "/runner";
 /// `ApiVersion` property. Companions that predate the property are version 1.
 ///
 /// * 2 — `ConfigureAutomaticUpdates`
-pub const API_VERSION: u32 = 2;
+/// * 3 — `PlanInstall`, `PlanUninstall`, `ReadRuntimes`,
+///   `RemoveRuntimes`
+pub const API_VERSION: u32 = 3;
 /// The oldest companion this application works with.
-pub const REQUIRED_API_VERSION: u32 = 2;
+pub const REQUIRED_API_VERSION: u32 = 3;
 
 /// The application ID of the Kiosque Flatpak.
 pub const FLATPAK_APP_ID: &str = "org.kiosque.Kiosque";

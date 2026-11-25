@@ -235,6 +235,18 @@ pub fn operation(op: &crate::flatpak::Operation, title: &str) -> Result<(), Stri
             ref_file(data)?;
         }
         Operation::Uninstall { id, .. } => app_ref(id)?,
+        Operation::RemoveRuntimes { refs } => {
+            if refs.is_empty() || refs.len() > MAX_UPDATE_IDS {
+                return Err("Invalid number of runtimes to remove".into());
+            }
+            for reference in refs {
+                app_ref(reference)?;
+                match crate::flatpak::parse_ref(reference) {
+                    Some((crate::flatpak::RefKind::Runtime, ..)) => {}
+                    _ => return Err("Only runtimes can be removed this way".into()),
+                }
+            }
+        }
         Operation::Update { ids } => {
             if ids.len() > MAX_UPDATE_IDS {
                 return Err("Too many applications in one update".into());
@@ -369,6 +381,22 @@ mod tests {
     use super::*;
     const VALID: &[u8] =
         b"[Flatpak Ref]\nName=org.example.App\nUrl=https://example.org/repo\nGPGKey=dGVzdC1rZXk=\n";
+    #[test]
+    fn only_runtimes_are_removed_as_runtimes() {
+        use crate::flatpak::Operation;
+        let ok = Operation::RemoveRuntimes {
+            refs: vec!["runtime/org.gnome.Platform/x86_64/48".into()],
+        };
+        assert!(operation(&ok, "Unused runtimes").is_ok());
+        for refs in [
+            vec![],
+            vec!["app/org.example.App/x86_64/stable".to_string()],
+            vec!["runtime/../x86_64/48".to_string()],
+            vec!["org.gnome.Platform".to_string()],
+        ] {
+            assert!(operation(&Operation::RemoveRuntimes { refs }, "x").is_err());
+        }
+    }
     #[test]
     fn urls_reject_local_destinations_and_credentials() {
         for url in [

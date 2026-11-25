@@ -162,7 +162,7 @@ pub unsafe extern "C" fn kiosque_test_setup(
     });
     backend.metadata.lock().unwrap().insert(
         "org.example.Atlas".into(),
-        "[Application]\nname=org.example.Atlas\n\n[Context]\nshared=network;\nsockets=wayland;\n"
+        "[Application]\nname=org.example.Atlas\nruntime=org.gnome.Platform/x86_64/48\n\n[Context]\nshared=network;\nsockets=wayland;\n"
             .into(),
     );
     kiosque_core::runtime::runtime().block_on(kiosque_core::catalog::reload_with(
@@ -216,6 +216,12 @@ const FIXTURE_APPSTREAM: &str = include_str!("../../../tests/fixtures/appstream/
 
 #[cfg(feature = "test-util")]
 static TEST_BACKEND: OnceLock<Arc<kiosque_core::flatpak::mock::MockBackend>> = OnceLock::new();
+
+/// Test harness only: the mock backend behind the isolated services.
+#[cfg(feature = "test-util")]
+pub(crate) fn test_backend() -> Option<&'static Arc<kiosque_core::flatpak::mock::MockBackend>> {
+    TEST_BACKEND.get()
+}
 
 /// Test harness only: replace the mock backend's pending updates with the
 /// newline-separated application ids in `ids`.

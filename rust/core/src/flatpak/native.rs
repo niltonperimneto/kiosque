@@ -23,8 +23,9 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    FlatpakBackend, FlatpakError, InstalledApp, Operation, Progress, ProgressSink, RefKind,
-    RemoteInfo, RemoteSource, Result, Scope, UpdateInfo,
+    FlatpakBackend, FlatpakError, InstalledApp, InstalledRuntime, Operation, OperationPlan,
+    PlannedStep, Progress, ProgressSink, RefKind, RemoteInfo, RemoteSource, Result, Scope,
+    StepAction, UpdateInfo,
 };
 
 pub struct LibflatpakBackend;
@@ -219,11 +220,21 @@ fn run_transaction(
         let tracker = tracker.clone();
         txn.connect_new_operation(move |_, op, progress| {
             let op_ref = s(op.get_ref());
-            tracker.report(0.0, String::new(), op_ref.clone());
+            let action = step_action(op.operation_type());
+            let (index, total) = (
+                tracker.index.load(Ordering::SeqCst),
+                tracker.total.load(Ordering::SeqCst),
+            );
+            tracker.report(
+                0.0,
+                super::step_status(index, total, action, &op_ref, None),
+                op_ref.clone(),
+            );
             let tracker = tracker.clone();
             progress.connect_changed(move |p| {
-                let status = s(p.status());
-                tracker.report(p.progress() as f64 / 100.0, status, op_ref.clone());
+                let percent = p.progress().clamp(0, 100) as u32;
+                let status = super::step_status(index, total, action, &op_ref, Some(percent));
+                tracker.report(percent as f64 / 100.0, status, op_ref.clone());
             });
         });
     }
@@ -288,6 +299,202 @@ fn new_transaction(inst: &Installation, cancellable: &gio::Cancellable) -> Resul
     Ok(txn)
 }
 
+fn step_action(kind: libflatpak::TransactionOperationType) -> StepAction {
+    match kind {
+        libflatpak::TransactionOperationType::Update => StepAction::Update,
+        libflatpak::TransactionOperationType::Uninstall => StepAction::Uninstall,
+        _ => StepAction::Install,
+    }
+}
+
+/// The installations holding each of `refs`, with the refs to remove there.
+fn group_installed(refs: &[String]) -> Result<Vec<(Installation, Vec<String>)>> {
+    let mut groups: Vec<(Scope, Installation, Vec<String>)> = vec![];
+    for reference in refs {
+        let (inst, full_ref) = find_installed(reference, None)?;
+        let scope = if inst.is_user() {
+            Scope::User
+        } else {
+            Scope::System
+        };
+        match groups.iter_mut().find(|g| g.0 == scope) {
+            Some(group) => group.2.push(full_ref),
+            None => groups.push((scope, inst, vec![full_ref])),
+        }
+    }
+    Ok(groups
+        .into_iter()
+        .map(|(_, inst, refs)| (inst, refs))
+        .collect())
+}
+
+/// A transaction for `op` (single installation operations only), plus the
+/// repository origin it may add (for `.flatpakref` files).
+fn transaction_for(
+    op: &Operation,
+    cancellable: &gio::Cancellable,
+    plan_unused: bool,
+) -> Result<Vec<(Transaction, Option<String>)>> {
+    match op {
+        Operation::Install { remote, id, scope } => {
+            let inst = installation(*scope)?;
+            let full_ref = resolve_remote_ref(&inst, remote, id, cancellable)?;
+            let txn = new_transaction(&inst, cancellable)?;
+            txn.add_install(remote, &full_ref, &[]).map_err(gerr)?;
+            Ok(vec![(txn, None)])
+        }
+        Operation::InstallRefFile { data, scope } => {
+            let summary = crate::security::ref_file(data).map_err(FlatpakError::Failed)?;
+            let inst = installation(*scope)?;
+            let txn = new_transaction(&inst, cancellable)?;
+            // Runtimes and related refs come from repositories that are
+            // already configured; only the confirmed origin may be added.
+            txn.add_install_flatpakref(&glib::Bytes::from_owned(data.clone()))
+                .map_err(gerr)?;
+            Ok(vec![(txn, Some(summary.origin))])
+        }
+        Operation::Uninstall { id, scope } => {
+            let (inst, full_ref) = find_installed(id, *scope)?;
+            let txn = new_transaction(&inst, cancellable)?;
+            if plan_unused {
+                // Lists the runtimes this removal would leave unused.
+                txn.set_include_unused_uninstall_ops(true);
+            }
+            txn.add_uninstall(&full_ref).map_err(gerr)?;
+            Ok(vec![(txn, None)])
+        }
+        Operation::RemoveRuntimes { refs } => group_installed(refs)?
+            .into_iter()
+            .map(|(inst, refs)| {
+                let txn = new_transaction(&inst, cancellable)?;
+                for r in &refs {
+                    txn.add_uninstall(r).map_err(gerr)?;
+                }
+                Ok((txn, None))
+            })
+            .collect(),
+        Operation::Update { .. } => Err(FlatpakError::Failed(
+            "updates are planned per installation".into(),
+        )),
+    }
+}
+
+/// Resolve `op` without downloading or changing anything.
+fn plan_blocking(op: Operation) -> Result<OperationPlan> {
+    crate::security::operation(&op, "").map_err(FlatpakError::Failed)?;
+    if matches!(op, Operation::InstallRefFile { .. }) {
+        // Resolving a reference file adds its origin repository before the
+        // transaction is ready, so it cannot be planned without consent.
+        return Err(FlatpakError::Failed(
+            "reference files cannot be planned before they are confirmed".into(),
+        ));
+    }
+    let cancellable = gio::Cancellable::new();
+    let mut steps = vec![];
+    for (txn, _origin) in transaction_for(&op, &cancellable, true)? {
+        let collected: Arc<Mutex<Option<Vec<PlannedStep>>>> = Arc::new(Mutex::new(None));
+        let eol: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(vec![]));
+        {
+            let eol = eol.clone();
+            txn.connect_end_of_lifed(move |_, reference, reason, rebase| {
+                let note = if rebase.is_empty() {
+                    reason.to_string()
+                } else {
+                    format!("{reason} (replaced by {rebase})")
+                };
+                eol.lock().unwrap().push((reference.to_string(), note));
+            });
+        }
+        {
+            let collected = collected.clone();
+            txn.connect_ready(move |t| {
+                let steps = t
+                    .operations()
+                    .iter()
+                    .filter(|op| !op.is_skipped())
+                    .map(|op| {
+                        let reference = s(op.get_ref());
+                        PlannedStep {
+                            kind: if reference.starts_with("runtime/") {
+                                RefKind::Runtime
+                            } else {
+                                RefKind::App
+                            },
+                            action: step_action(op.operation_type()),
+                            remote: s(op.remote()),
+                            download_size: op.download_size(),
+                            installed_size: op.installed_size(),
+                            reference,
+                            eol: String::new(),
+                        }
+                    })
+                    .collect();
+                *collected.lock().unwrap() = Some(steps);
+                // Stop before anything is downloaded or changed.
+                false
+            });
+        }
+        // Planning never adds repositories.
+        txn.connect_add_new_remote(|_, _, _, _, _| false);
+        let result = txn.run(Some(&cancellable));
+        let Some(mut planned) = collected.lock().unwrap().take() else {
+            return Err(result.err().map(gerr).unwrap_or_else(|| {
+                FlatpakError::Failed("the transaction could not be planned".into())
+            }));
+        };
+        for (reference, note) in eol.lock().unwrap().iter() {
+            if let Some(step) = planned.iter_mut().find(|st| &st.reference == reference) {
+                step.eol = note.clone();
+            }
+        }
+        steps.extend(planned);
+    }
+    Ok(OperationPlan { steps })
+}
+
+fn runtimes_blocking() -> Result<Vec<InstalledRuntime>> {
+    let installs = installations()?;
+    let mut uses: Vec<(String, String)> = vec![];
+    let mut runtimes = vec![];
+    for (scope, inst) in &installs {
+        let unused: Vec<String> = inst
+            .list_unused_refs(None, none())
+            .map(|refs| refs.iter().map(|r| s(r.format_ref())).collect())
+            .unwrap_or_default();
+        for r in inst.list_installed_refs(none()).map_err(gerr)? {
+            let reference = s(r.format_ref());
+            match kind_of(r.kind()) {
+                RefKind::App => {
+                    if let Ok(bytes) = r.load_metadata(none())
+                        && let Some(runtime) =
+                            super::metadata_runtime(&String::from_utf8_lossy(&bytes))
+                    {
+                        uses.push((runtime, s(r.name())));
+                    }
+                }
+                RefKind::Runtime => runtimes.push(InstalledRuntime {
+                    info: installed_from(&r, *scope),
+                    unused: unused.contains(&reference),
+                    eol: s(r.eol()),
+                    used_by: vec![],
+                }),
+            }
+        }
+    }
+    // Apps may use a runtime from either installation.
+    for runtime in &mut runtimes {
+        let reference = runtime.info.ref_string();
+        runtime.used_by = uses
+            .iter()
+            .filter(|(r, _)| *r == reference)
+            .map(|(_, app)| app.clone())
+            .collect();
+        runtime.used_by.sort();
+        runtime.used_by.dedup();
+    }
+    Ok(runtimes)
+}
+
 fn run_blocking(op: Operation, sink: ProgressSink, cancellable: gio::Cancellable) -> Result<()> {
     crate::security::operation(&op, "").map_err(FlatpakError::Failed)?;
     let tracker = Arc::new(Tracker {
@@ -299,29 +506,29 @@ fn run_blocking(op: Operation, sink: ProgressSink, cancellable: gio::Cancellable
     tracker.report(0.0, String::new(), String::new());
 
     match op {
-        Operation::Install { remote, id, scope } => {
-            let inst = installation(scope)?;
-            let full_ref = resolve_remote_ref(&inst, &remote, &id, &cancellable)?;
-            let txn = new_transaction(&inst, &cancellable)?;
-            txn.add_install(&remote, &full_ref, &[]).map_err(gerr)?;
+        Operation::Install { .. } | Operation::Uninstall { .. } => {
+            let (txn, _) = transaction_for(&op, &cancellable, false)?
+                .into_iter()
+                .next()
+                .expect("one transaction");
             run_transaction(&txn, tracker, &cancellable, false, None)
         }
-        Operation::InstallRefFile { data, scope } => {
-            let summary = crate::security::ref_file(&data).map_err(FlatpakError::Failed)?;
-            let inst = installation(scope)?;
-            let txn = new_transaction(&inst, &cancellable)?;
-            txn.set_disable_dependencies(true);
-            txn.set_disable_related(true);
-            // Only the origin shown in the confirmation may be added.
-            txn.add_install_flatpakref(&glib::Bytes::from_owned(data))
-                .map_err(gerr)?;
-            run_transaction(&txn, tracker, &cancellable, false, Some(summary.origin))
+        Operation::InstallRefFile { .. } => {
+            let (txn, origin) = transaction_for(&op, &cancellable, false)?
+                .into_iter()
+                .next()
+                .expect("one transaction");
+            run_transaction(&txn, tracker, &cancellable, false, origin)
         }
-        Operation::Uninstall { id, scope } => {
-            let (inst, full_ref) = find_installed(&id, scope)?;
-            let txn = new_transaction(&inst, &cancellable)?;
-            txn.add_uninstall(&full_ref).map_err(gerr)?;
-            run_transaction(&txn, tracker, &cancellable, false, None)
+        Operation::RemoveRuntimes { .. } => {
+            let groups = transaction_for(&op, &cancellable, false)?;
+            let n = groups.len().max(1) as f64;
+            for (i, (txn, _)) in groups.into_iter().enumerate() {
+                *tracker.base.lock().unwrap() = (i as f64 / n, 1.0 / n);
+                tracker.index.store(0, Ordering::SeqCst);
+                run_transaction(&txn, tracker.clone(), &cancellable, false, None)?;
+            }
+            Ok(())
         }
         Operation::Update { ids } => {
             // One transaction per installation that has something to update.
@@ -520,6 +727,15 @@ impl FlatpakBackend for LibflatpakBackend {
                 .map_err(gerr)
         })
         .await
+    }
+
+    async fn plan(&self, op: &Operation) -> Result<OperationPlan> {
+        let op = op.clone();
+        blocking(move || plan_blocking(op)).await
+    }
+
+    async fn runtimes(&self) -> Result<Vec<InstalledRuntime>> {
+        blocking(runtimes_blocking).await
     }
 
     async fn refresh_appstream(&self, remote: &RemoteInfo) -> Result<()> {

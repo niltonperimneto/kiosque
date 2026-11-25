@@ -50,6 +50,8 @@ mod object {
         /// `{name, title, scope, url}` of the source repository; empty when
         /// the app is only known from the Flathub web API.
         pub(super) origin: QVariantMap,
+        /// Full ref of the runtime the app runs on ("" when unknown).
+        pub(super) runtime: String,
         /// The app's catalog entry when it was loaded, to reload on changes.
         pub(super) catalog_entry: Option<kiosque_core::catalog::CatalogApp>,
         /// Load request generation: completions of superseded loads are dropped.
@@ -87,6 +89,7 @@ mod object {
                 reviews_loading: false,
                 latest_release: serde_json::json!({}),
                 origin: serde_json::json!({}),
+                runtime: Default::default(),
                 catalog_entry: None,
                 generation: 0,
                 job: None,
@@ -243,6 +246,7 @@ mod object {
                 serde_json::json!({})
             );
             replace!(self, origin, origin_changed, serde_json::json!({}));
+            update!(self, runtime, runtime_changed, empty());
             update!(self, permissions_known, permissions_known_changed, false);
             replace!(
                 self,
@@ -386,6 +390,7 @@ mod object {
                 origin_changed,
                 util::json_to_qvariant_map(&details.origin)
             );
+            update!(self, runtime, runtime_changed, q(&details.runtime));
             replace!(
                 self,
                 developer_apps,
@@ -797,6 +802,24 @@ mod object {
         }
         #[qsignal(qml_name = "originChanged")]
         pub fn origin_changed(&mut self);
+        qproperty!("runtime", Read = get_runtime, Notify = runtime_changed);
+        fn get_runtime(&self) -> String {
+            self.runtime.clone()
+        }
+        qproperty!(
+            "runtimeName",
+            Read = get_runtime_name,
+            Notify = runtime_changed
+        );
+        fn get_runtime_name(&self) -> String {
+            if self.runtime.is_empty() {
+                String::new()
+            } else {
+                kiosque_core::flatpak::runtime_display_name(&self.runtime)
+            }
+        }
+        #[qsignal(qml_name = "runtimeChanged")]
+        pub fn runtime_changed(&mut self);
         #[qsignal(qml_name = "loaded")]
         pub fn loaded(&mut self);
         #[qsignal(qml_name = "reviewsLoaded")]
