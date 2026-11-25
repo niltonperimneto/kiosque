@@ -24,6 +24,8 @@ mod object {
         /// Real registry progress of the most recent install/uninstall: `0` idle,
         /// negative while indeterminate, `0..=1` while running, `1` when done.
         pub(super) install_progress: f64,
+        /// Status line of the current job, e.g. "Step 1 of 2: Installing …".
+        pub(super) install_status: String,
         pub(super) detail_screenshots_json: String,
         pub(super) detail_permissions_json: String,
         pub(super) detail_urls_json: String,
@@ -179,6 +181,7 @@ mod object {
             on_success: impl FnOnce(&mut Self) + Send + 'static,
         ) {
             self.set_install_progress(-1.0);
+            self.set_install_status(String::new());
             self.set_error_message(String::new());
             let control = JobControl::new();
             self.job = Some(control.clone());
@@ -188,7 +191,10 @@ mod object {
                 op,
                 title,
                 control.clone(),
-                |q, p, _| q.set_install_progress(p),
+                |q, p, status| {
+                    q.set_install_progress(p);
+                    q.set_install_status(status);
+                },
                 move |q, outcome| {
                     let current = q.job.as_ref().is_some_and(|job| Arc::ptr_eq(job, &control));
                     if current {
@@ -632,6 +638,16 @@ mod object {
         #[qsignal(qml_name = "install_progressChanged")]
         pub fn install_progress_changed(&mut self);
         qproperty!(
+            "install_status",
+            Read = get_install_status,
+            Notify = install_status_changed
+        );
+        fn get_install_status(&self) -> String {
+            self.install_status.clone()
+        }
+        #[qsignal(qml_name = "install_statusChanged")]
+        pub fn install_status_changed(&mut self);
+        qproperty!(
             "detail_screenshots_json",
             Read = get_detail_screenshots_json,
             Notify = detail_screenshots_json_changed
@@ -735,6 +751,7 @@ set_detail_developer: detail_developer: String => detail_developer_changed,
 set_detail_license: detail_license: String => detail_license_changed,
 set_detail_is_installed: detail_is_installed: bool => detail_is_installed_changed,
 set_install_progress: install_progress: f64 => install_progress_changed,
+set_install_status: install_status: String => install_status_changed,
 set_detail_screenshots_json: detail_screenshots_json: String => detail_screenshots_json_changed,
 set_detail_permissions_json: detail_permissions_json: String => detail_permissions_json_changed,
 set_detail_urls_json: detail_urls_json: String => detail_urls_json_changed,

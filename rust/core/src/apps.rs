@@ -143,6 +143,9 @@ pub struct DetailData {
     /// `{name, title, scope, url}` of the repository the app comes from, or
     /// `null` when it is only known from the Flathub web API.
     pub origin: serde_json::Value,
+    /// Full ref of the runtime the app runs on (e.g.
+    /// `runtime/org.gnome.Platform/x86_64/48`), empty when unknown.
+    pub runtime: String,
 }
 
 /// Details of `app_id`: from its origin repository's AppStream data when the
@@ -172,12 +175,15 @@ async fn catalog_details(src: Sources<'_>, entry: CatalogApp) -> DetailData {
     } else {
         entry.bundle.clone()
     };
-    let permissions = match src
+    let (permissions, runtime) = match src
         .backend
         .remote_metadata(&entry.remote, entry.scope, &reference)
         .await
     {
-        Ok(keyfile) => crate::flatpak::permissions_from_metadata(&keyfile),
+        Ok(keyfile) => (
+            crate::flatpak::permissions_from_metadata(&keyfile),
+            crate::flatpak::metadata_runtime(&keyfile).unwrap_or_default(),
+        ),
         Err(e) => {
             kerr!(
                 "apps::details: metadata of {} from {}: {}",
@@ -187,9 +193,9 @@ async fn catalog_details(src: Sources<'_>, entry: CatalogApp) -> DetailData {
             );
             // Flathub's summary describes only what Flathub publishes.
             if entry.remote == FLATHUB {
-                summary_permissions(src.flathub, &entry.id).await
+                summary_facts(src.flathub, &entry.id).await
             } else {
-                serde_json::Value::Null
+                (serde_json::Value::Null, String::new())
             }
         }
     };
@@ -251,20 +257,31 @@ async fn catalog_details(src: Sources<'_>, entry: CatalogApp) -> DetailData {
         similar_apps,
         latest_release,
         origin,
+        runtime,
     }
 }
 
-async fn summary_permissions(client: &FlathubClient, app_id: &str) -> serde_json::Value {
+/// Permissions and runtime (full ref) from Flathub's summary of `app_id`.
+async fn summary_facts(client: &FlathubClient, app_id: &str) -> (serde_json::Value, String) {
     match client.fetch_summary(app_id).await {
-        Ok(summary) => summary
-            .get("metadata")
-            .and_then(|m| m.get("permissions"))
-            .filter(|value| value.is_object())
-            .cloned()
-            .unwrap_or(serde_json::Value::Null),
+        Ok(summary) => {
+            let metadata = summary.get("metadata");
+            let permissions = metadata
+                .and_then(|m| m.get("permissions"))
+                .filter(|value| value.is_object())
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            let runtime = metadata
+                .and_then(|m| m.get("runtime"))
+                .and_then(|r| r.as_str())
+                .filter(|r| !r.is_empty())
+                .map(|r| format!("runtime/{r}"))
+                .unwrap_or_default();
+            (permissions, runtime)
+        }
         Err(e) => {
             kerr!("apps::details: fetch_summary failed: {}", e);
-            serde_json::Value::Null
+            (serde_json::Value::Null, String::new())
         }
     }
 }
@@ -275,7 +292,7 @@ pub async fn flathub_details(client: &FlathubClient, app_id: &str) -> Result<Det
         .fetch_details(app_id)
         .await
         .map_err(|e| e.to_string())?;
-    let (permissions, developer_apps, similar_apps) =
+    let ((permissions, runtime), developer_apps, similar_apps) =
         fetch_supplementary(client, &details, app_id).await;
     let latest_release = details
         .latest_release()
@@ -305,6 +322,7 @@ pub async fn flathub_details(client: &FlathubClient, app_id: &str) -> Result<Det
         developer_apps,
         similar_apps,
         origin: serde_json::Value::Null,
+        runtime,
     })
 }
 
@@ -316,7 +334,11 @@ async fn fetch_supplementary(
     client: &FlathubClient,
     details: &AppDetails,
     app_id: &str,
-) -> (serde_json::Value, Vec<FlathubApp>, Vec<FlathubApp>) {
+) -> (
+    (serde_json::Value, String),
+    Vec<FlathubApp>,
+    Vec<FlathubApp>,
+) {
     let dev_name = details.developer_name.clone();
     let category = details.categories.first().cloned();
 
@@ -339,8 +361,8 @@ async fn fetch_supplementary(
         }
     };
 
-    let (permissions, mut developer_apps, mut similar_apps) =
-        tokio::join!(summary_permissions(client, app_id), dev_fut, cat_fut);
+    let (facts, mut developer_apps, mut similar_apps) =
+        tokio::join!(summary_facts(client, app_id), dev_fut, cat_fut);
 
     similar_apps.retain(|app| app.app_id != app_id);
     developer_apps.retain(|app| app.app_id != app_id);
@@ -348,7 +370,7 @@ async fn fetch_supplementary(
     distinct_from(&mut similar_apps, &developer_apps);
     similar_apps.truncate(RELATED_LIMIT);
 
-    (permissions, developer_apps, similar_apps)
+    (facts, developer_apps, similar_apps)
 }
 
 /// The highest-resolution URL of each screenshot.

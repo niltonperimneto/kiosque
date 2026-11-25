@@ -746,4 +746,121 @@ TestCase {
         tryCompare(installSpy, "count", 1, 10000)
         tryVerify(() => rows(model) === 1, 10000)
     }
+    function test_detail_page_shows_what_an_install_downloads() {
+        verify(BackendFixture.seedRuntimes())
+        let root = window()
+        root.pushAppDetail("org.example.Atlas")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        compare(page.details.installed, false)
+        compare(page.details.runtime, "runtime/org.gnome.Platform/x86_64/48")
+        let chip = findChild(page, "runtimeChip")
+        verify(chip !== null && chip.visible)
+        compare(chip.text, "Runtime: GNOME Platform 48")
+        let label = findChild(page, "installPlanLabel")
+        tryVerify(() => label.text.indexOf("Downloads 412.0 MB, uses 1.2 GB on disk.") !== -1, 10000, label.text)
+        verify(label.text.indexOf("Also installs GNOME Platform 48 (400.0 MB)") !== -1, label.text)
+        verify(findChild(page, "installPlanRow").visible)
+        verify(!findChild(page, "runtimeEolMessage").visible)
+    }
+    function test_remove_dialog_offers_runtimes_left_unused() {
+        verify(BackendFixture.seedRuntimes())
+        let root = window()
+        root.pushAppDetail("org.kiosque.Fixture")
+        let page = root.pageStack.currentItem
+        tryCompare(page.details, "loading", false, 10000)
+        tryCompare(page.details, "installed", true, 10000)
+        let remove = findChild(page, "removeButton")
+        tryCompare(remove, "visible", true, 10000)
+        remove.clicked()
+        let dialog = findChild(page, "removeConfirmDialog")
+        tryCompare(dialog, "opened", true, 5000)
+        tryCompare(dialog.planner, "loading", false, 10000)
+        compare(dialog.leftovers.length, 1)
+        let kde = "runtime/org.kde.Platform/x86_64/6.9"
+        let box = findItem(dialog.contentItem, "leftoverRuntime_" + kde)
+        verify(box !== null && box.visible)
+        // Offered pre-selected, with the space it frees.
+        verify(box.checked)
+        compare(box.text, "KDE Platform 6.9 (900.0 MB)")
+        verify(findItem(dialog.contentItem, "unusedRuntimesLabel").visible)
+
+        // The runtime goes only after the application is removed.
+        let before = BackendFixture.operationCount()
+        dialog.customFooterActions[0].trigger()
+        tryCompare(page.details, "installed", false, 10000)
+        tryVerify(() => BackendFixture.operationCount() === before + 2, 10000)
+        compare(BackendFixture.lastRemovedRuntimes(), kde)
+
+        installSpy.clear()
+        StoreController.installApp("org.kiosque.Fixture")
+        tryCompare(installSpy, "count", 1, 10000)
+        tryCompare(page.details, "installed", true, 10000)
+
+        // Unticking keeps the runtime.
+        verify(BackendFixture.seedRuntimes())
+        remove = findChild(page, "removeButton")
+        tryCompare(remove, "visible", true, 10000)
+        remove.clicked()
+        tryCompare(dialog, "opened", true, 5000)
+        tryCompare(dialog.planner, "loading", false, 10000)
+        tryVerify(() => findItem(dialog.contentItem, "leftoverRuntime_" + kde) !== null, 5000)
+        findItem(dialog.contentItem, "leftoverRuntime_" + kde).checked = false
+        before = BackendFixture.operationCount()
+        dialog.customFooterActions[0].trigger()
+        tryCompare(page.details, "installed", false, 10000)
+        wait(300)
+        compare(BackendFixture.operationCount(), before + 1)
+
+        installSpy.clear()
+        StoreController.installApp("org.kiosque.Fixture")
+        tryCompare(installSpy, "count", 1, 10000)
+    }
+    function test_installed_page_lists_runtimes_and_removes_unused() {
+        verify(BackendFixture.seedRuntimes())
+        let root = window()
+        root.navigate("installed")
+        let page = root.pageStack.currentItem
+        tryCompare(page.runtimes, "loading", false, 10000)
+        tryCompare(page.runtimes, "count", 2, 10000)
+        tryVerify(() => {
+            let section = findChild(page, "runtimesSection")
+            return section !== null && section.visible
+        }, 10000)
+        let kde = findChild(page, "runtimeRow_runtime/org.kde.Platform/x86_64/6.9")
+        verify(kde !== null)
+        let usage = findChild(kde, "runtimeUsage").text
+        verify(usage.indexOf("Used by ") === 0 && usage.indexOf("900.0 MB") !== -1, usage)
+        let unused = findChild(page, "runtimeRow_runtime/org.freedesktop.Platform/x86_64/24.08")
+        verify(unused !== null)
+        compare(findChild(unused, "runtimeUsage").text, "Not used by any application  ·  900.0 MB")
+        tryCompare(findChild(page, "unusedRuntimesMessage"), "visible", true)
+
+        // Removing unused runtimes asks first and names them.
+        let action = page.actions.find(a => a.objectName === "removeUnusedRuntimesAction")
+        verify(action.enabled)
+        action.trigger()
+        let dialog = findChild(page, "removeUnusedRuntimesDialog")
+        tryCompare(dialog, "opened", true, 5000)
+        verify(dialog.subtitle.indexOf("Freedesktop Platform 24.08 (900.0 MB)") !== -1, dialog.subtitle)
+        dialog.customFooterActions[0].trigger()
+        tryVerify(() => BackendFixture.lastRemovedRuntimes() === "runtime/org.freedesktop.Platform/x86_64/24.08", 10000)
+        tryCompare(page.runtimes, "count", 1, 10000)
+        tryVerify(() => page.runtimes.unused.length === 0, 10000)
+        verify(!action.enabled)
+
+        // Uninstalling from this page confirms too and offers the leftovers.
+        let remove = findChild(page, "removeConfirmDialog")
+        remove.openFor("org.kiosque.Fixture", "Fixture")
+        tryCompare(remove, "opened", true, 5000)
+        tryCompare(remove.planner, "loading", false, 10000)
+        compare(remove.leftovers.length, 1)
+        remove.customFooterActions[0].trigger()
+        tryVerify(() => BackendFixture.lastRemovedRuntimes() === "runtime/org.kde.Platform/x86_64/6.9", 10000)
+        tryCompare(page.runtimes, "count", 0, 10000)
+
+        installSpy.clear()
+        StoreController.installApp("org.kiosque.Fixture")
+        tryCompare(installSpy, "count", 1, 10000)
+    }
 }

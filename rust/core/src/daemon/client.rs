@@ -31,6 +31,10 @@ pub trait Daemon {
     fn cancel(&self, job_id: u64) -> zbus::Result<bool>;
     fn get_jobs(&self) -> zbus::Result<Vec<JobWire>>;
     fn check_updates(&self) -> zbus::Result<u32>;
+    fn remove_runtimes(&self, refs: &[String], title: &str) -> zbus::Result<u64>;
+    fn plan_install(&self, app_id: &str, remote: &str, scope: &str) -> zbus::Result<String>;
+    fn plan_uninstall(&self, app_id: &str, scope: &str) -> zbus::Result<String>;
+    fn read_runtimes(&self) -> zbus::Result<String>;
     fn configure_automatic_updates(
         &self,
         enabled: bool,
@@ -121,6 +125,7 @@ impl DaemonClient {
                     .await
             }
             Operation::Update { ids } => self.proxy.update(ids, title).await,
+            Operation::RemoveRuntimes { refs } => self.proxy.remove_runtimes(refs, title).await,
         };
         res.map_err(|e| e.to_string())
     }

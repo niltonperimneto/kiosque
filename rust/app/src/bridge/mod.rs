@@ -56,6 +56,8 @@ pub mod jobs_model;
 pub mod l10n;
 pub mod remote_image;
 pub mod repo_model;
+pub mod runtime_planner;
+pub mod runtimes_model;
 pub mod settings_controller;
 pub mod store_controller;
 pub mod util;
@@ -70,6 +72,8 @@ pub fn register_types() {
     featured_model::FeaturedModel::register();
     installed_model::InstalledModel::register();
     repo_model::RepoModel::register();
+    runtime_planner::RuntimePlanner::register();
+    runtimes_model::RuntimesModel::register();
     settings_controller::SettingsController::register();
     app_details::AppDetails::register();
     store_controller::StoreController::register();

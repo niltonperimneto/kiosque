@@ -60,6 +60,26 @@ impl FlatpakBackend for BrokerBackend {
             .await
             .map_err(failure)
     }
+    async fn plan(&self, op: &Operation) -> Result<OperationPlan> {
+        crate::security::operation(op, "").map_err(failure)?;
+        let proxy = proxy().await?;
+        let data = match op {
+            Operation::Install { remote, id, scope } => {
+                proxy.plan_install(id, remote, scope.as_str()).await
+            }
+            Operation::Uninstall { id, scope } => {
+                proxy
+                    .plan_uninstall(id, scope.map(Scope::as_str).unwrap_or(""))
+                    .await
+            }
+            _ => return Err(failure("this operation cannot be planned")),
+        }
+        .map_err(failure)?;
+        decode(data)
+    }
+    async fn runtimes(&self) -> Result<Vec<InstalledRuntime>> {
+        decode(proxy().await?.read_runtimes().await.map_err(failure)?)
+    }
     async fn run(
         &self,
         op: Operation,

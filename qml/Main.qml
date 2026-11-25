@@ -600,6 +600,23 @@ Kirigami.ApplicationWindow {
                 text: L10n.i18n("This file was opened from outside Kiosque. Only install software from sources you trust. It will be installed for your user only, and its repository may be added.", [])
             }
 
+            Controls.Label {
+                objectName: "refRuntimeNote"
+                Layout.fillWidth: true
+                visible: refFileDialog.phase === "confirm" && !refFileDialog.isRuntime
+                wrapMode: Text.WordWrap
+                color: Kirigami.Theme.disabledTextColor
+                text: L10n.i18n("Any runtime the application needs is installed from your configured repositories, such as Flathub. Each one is shown as a step while installing.", [])
+            }
+
+            Controls.Label {
+                objectName: "refInstallStatus"
+                Layout.fillWidth: true
+                visible: refFileDialog.phase === "installing" && StoreController.install_status !== ""
+                wrapMode: Text.WordWrap
+                text: StoreController.install_status
+            }
+
             Controls.ProgressBar {
                 objectName: "refInstallProgress"
                 Layout.fillWidth: true
