@@ -49,7 +49,7 @@ python3 tests/system/vm.py --artifact /absolute/path/kiosque.flatpak --companion
 python3 tests/system/vm.py --artifact /absolute/path/kiosque.rpm --companion /absolute/path/kiosque-companion.rpm
 ```
 
-Lifecycle guest provisioning uses the pinned Fedora release repositories with weak dependencies disabled; it may download packages. Artifact guests use the updates repository too, matching the libraries used by packaging jobs. Fixture export itself can also be validated in a temporary container without installing applications. The actual lifecycle test uses only a local, signed repository containing a tiny synthetic runtime/application and two app revisions. User and system installations are explicitly redirected below the fixture root and checked before operations. No test runs a real install/uninstall against developer host installations. Package qualification may download the declared KDE runtime inside the guest. All artifact launches run in a private network namespace after dependency setup, so production API requests cannot reach live services.
+Guest provisioning installs packages from the pinned Fedora release and updates repositories with weak dependencies disabled; it may download packages. The updates repository is required: the workspace needs Rust 1.98 (`rust/Cargo.toml`), newer than the release's Rust 1.94. Artifact guests match the libraries used by packaging jobs. Package checks extract artifacts under `/var/tmp`, because an extracted AppImage does not fit the guest's tmpfs `/tmp`. Fixture export itself can also be validated in a temporary container without installing applications. The actual lifecycle test uses only a local, signed repository containing a tiny synthetic runtime/application and two app revisions. User and system installations are explicitly redirected below the fixture root and checked before operations. No test runs a real install/uninstall against developer host installations. Package qualification may download the declared KDE runtime inside the guest. All artifact launches run in a private network namespace after dependency setup, so production API requests cannot reach live services.
 
 ## CI and release qualification
 
@@ -87,3 +87,25 @@ flatpak-builder --user --install-deps-from=flathub build org.kiosque.Kiosque.jso
 ```
 
 For RPM source packaging, use `python3 scripts/build_version.py --write build-version.json --format rpm` as the RPM version, preserve `build-version.json` in the source tarball, and pass `--define "kiosque_version VERSION"` to rpmbuild. CI performs these steps automatically. An archive lacking a snapshot reports the workspace baseline with `-dev.0+unknown` so its provenance remains visible. Generated package AppStream metadata carries the same version and source commit date, preserving authored release history. The frozen snapshot carries that date into Git-free package builds.
+
+## Publishing a release
+
+On GitHub, select **Actions → Release → Run workflow**, keep **main** selected,
+and enter a stable version such as **1.0.0** without a v prefix. The workflow
+tags the current main commit as v1.0.0 and explicitly dispatches CI for that tag.
+It uses the repository token, so no personal access token is needed.
+
+Tagged CI runs the existing security, core, service and desktop checks, builds
+RPM, Flatpak and AppImage packages, and attests them. The packaged artifact smoke
+workflow verifies the source commit and tag, checks attestations, and tests the
+packages inside disposable VMs. Once every package passes, it uploads the exact
+qualified artifacts to a GitHub Release and publishes generated release notes.
+Both storefront and companion RPMs are included.
+
+A failed package build or smoke test prevents publication. A failed asset upload
+leaves a draft release that a rerun can complete. Published releases are preserved.
+To retry after main has advanced, rerun CI with the existing tag selected, then
+rerun its package smoke workflow if needed. An existing tag is never moved.
+A normal successful main build continues to run package smoke tests without
+publishing a release. Pushing a stable vMAJOR.MINOR.PATCH tag also uses this
+release path.
