@@ -48,6 +48,25 @@ FormCard.FormCardPage {
         }
     }
 
+    // Which notice the Automatic Updates section shows: "system" when a host
+    // timer already updates Flatpaks, "missing", "outdated" or "unreachable"
+    // when the Flatpak build cannot reach a usable companion, else "".
+    function updatesNotice(sandboxed, companion, updater, autoUpdate) {
+        if (updater !== "" && !autoUpdate)
+            return "system";
+        if (!sandboxed)
+            return "";
+        if (companion === "missing" || companion === "outdated" || companion === "unreachable")
+            return companion;
+        return "";
+    }
+    readonly property string updatesNoticeKind: updatesNotice(SettingsController.sandboxed,
+        SettingsController.companion_state, SettingsController.system_updater, SettingsController.auto_update)
+    // Inside Flatpak the companion performs the updates: only offer to turn
+    // them on when it is ready (turning them off always works).
+    readonly property bool canEnableAutoUpdates: !SettingsController.sandboxed
+        || SettingsController.companion_state === "ready"
+
     function providerName(provider) {
         switch (provider) {
         case "github": return "GitHub"
@@ -91,6 +110,37 @@ FormCard.FormCardPage {
         title: L10n.i18n("Automatic Updates", [])
     }
 
+    Kirigami.InlineMessage {
+        objectName: "updatesNoticeMessage"
+        Layout.fillWidth: true
+        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+        Layout.alignment: Qt.AlignHCenter
+        Layout.bottomMargin: Kirigami.Units.largeSpacing
+        visible: page.updatesNoticeKind !== ""
+        type: page.updatesNoticeKind === "system" ? Kirigami.MessageType.Information
+                                                  : Kirigami.MessageType.Warning
+        text: {
+            switch (page.updatesNoticeKind) {
+            case "system":
+                return L10n.i18n("Your system already updates Flatpak applications automatically (%1), so Kiosque does not need to.", [SettingsController.system_updater])
+            case "missing":
+                return L10n.i18n("In the Flatpak version, automatic updates are run by the Kiosque companion, a small package on your computer. Install kiosque-companion from your distribution to turn them on.", [])
+            case "outdated":
+                return L10n.i18n("The Kiosque companion on your computer is too old for automatic updates. Update the kiosque-companion package.", [])
+            case "unreachable":
+                return L10n.i18n("The Kiosque companion on your computer could not be reached.", [])
+            default:
+                return ""
+            }
+        }
+        actions: Kirigami.Action {
+            text: L10n.i18n("Check Again", [])
+            icon.name: "view-refresh"
+            visible: page.updatesNoticeKind !== "system"
+            onTriggered: SettingsController.refreshUpdateStatus()
+        }
+    }
+
     FormCard.FormCard {
         objectName: "updatesCard"
 
@@ -100,7 +150,7 @@ FormCard.FormCardPage {
             text: L10n.i18n("Update applications automatically", [])
             description: L10n.i18n("Kiosque checks for and installs updates in the background, even when it is closed.", [])
             checked: SettingsController.auto_update
-            enabled: !SettingsController.saving_settings
+            enabled: !SettingsController.saving_settings && (checked || page.canEnableAutoUpdates)
             onToggled: page.saveSettings()
         }
 
@@ -134,6 +184,17 @@ FormCard.FormCardPage {
                     page.saveSettings()
                 }
             }
+        }
+
+        FormCard.FormDelegateSeparator { visible: SettingsController.sandboxed; above: timeField; below: selfUpdateNote }
+
+        FormCard.FormTextDelegate {
+            id: selfUpdateNote
+            objectName: "selfUpdateNote"
+            visible: SettingsController.sandboxed
+            icon.name: "org.kiosque.Kiosque"
+            text: L10n.i18n("Kiosque keeps itself up to date", [])
+            description: L10n.i18n("New versions of Kiosque are installed through Flatpak in the background, with or without the companion.", [])
         }
     }
 
