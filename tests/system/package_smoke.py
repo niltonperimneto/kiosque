@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -102,6 +103,19 @@ def main(artifact, companion):
         if 'KIOSQUE_UI_READY' not in output:
             raise RuntimeError('application did not confirm QML/resource startup')
         run([*launch, *helper], env=env)
+        if artifact.suffix == '.flatpak':
+            installation = Path(run([*as_user, 'flatpak', 'info', '--user', '--show-location', 'org.kiosque.Kiosque'], env=env).strip())
+            metadata = installation / 'files/share/metainfo/org.kiosque.Kiosque.metainfo.xml'
+        else:
+            metadata = root / 'usr/share/metainfo/org.kiosque.Kiosque.metainfo.xml'
+        release = ET.parse(metadata).getroot().find('releases/release')
+        if release is None or not release.get('version'):
+            raise RuntimeError('package metadata contains no build version')
+        version = release.get('version')
+        if run([*launch, *app[:-1], '--version'], env=env).strip() != 'kiosque ' + version:
+            raise RuntimeError('storefront version does not match package metadata')
+        if run([*launch, *helper[:-1], '--version'], env=env).strip() != 'kiosque-update ' + version:
+            raise RuntimeError('companion version does not match package metadata')
 
 
 if __name__ == '__main__':

@@ -127,14 +127,15 @@ Kirigami.ApplicationWindow {
 
     // Top-level destinations shared by the sidebar and the tab bar.
     function navigate(section) {
+        if (section === "search") {
+            root.openSearch("");
+            return;
+        }
         root.currentCategory = "";
         root.currentSection = section;
         switch (section) {
         case "shopfront":
             root.switchToPage("qrc:/qml/pages/ShopfrontPage.qml");
-            break;
-        case "search":
-            root.switchToPage("qrc:/qml/pages/SearchPage.qml");
             break;
         case "categories":
             root.switchToPage("qrc:/qml/pages/CategoriesPage.qml");
@@ -153,9 +154,33 @@ Kirigami.ApplicationWindow {
     }
 
     function openSearch(query) {
-        root.currentCategory = "";
+        const current = pageStack.currentItem;
+        if (current && current.objectName === "searchPage") {
+            if (query && current.searchField) {
+                current.searchField.text = query;
+            }
+            current.focusSearch();
+            return;
+        }
+        const properties = {
+            query: query || "",
+            previousSection: root.currentSection,
+            previousCategory: root.currentCategory
+        };
         root.currentSection = "search";
-        root.switchToPage("qrc:/qml/pages/SearchPage.qml", { query: query || "" });
+        pageStack.push("qrc:/qml/pages/SearchPage.qml", properties);
+    }
+
+    function returnFromSearch(searchPage) {
+        if (pageStack.currentItem !== searchPage || pageStack.depth <= 1) {
+            return;
+        }
+        root.currentSection = searchPage.previousSection;
+        root.currentCategory = searchPage.previousCategory;
+        const previousDuration = pageStack.columnView.scrollDuration;
+        pageStack.columnView.scrollDuration = 0;
+        pageStack.pop();
+        pageStack.columnView.scrollDuration = previousDuration;
     }
 
     function openCategories() {

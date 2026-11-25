@@ -21,7 +21,6 @@ Kirigami.ScrollablePage {
         id: searchField
         objectName: "storefrontSearchField"
         Layout.fillWidth: true
-        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
         placeholderText: L10n.i18n("Search applications…", [])
         autoAccept: false
         onTextEdited: handOffSearch()

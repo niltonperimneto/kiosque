@@ -21,6 +21,9 @@ Kirigami.ScrollablePage {
     property string query: ""
     property string queryText: query
     property bool searchReady: false
+    property bool hadQuery: false
+    property string previousSection: "shopfront"
+    property string previousCategory: ""
     readonly property string activeQuery: queryText.trim()
 
     // The title field lives in a delegate, outside this page's id scope.
@@ -46,6 +49,11 @@ Kirigami.ScrollablePage {
 
     onActiveQueryChanged: {
         if (searchReady) {
+            if (activeQuery.length === 0 && hadQuery) {
+                applicationWindow().returnFromSearch(page);
+                return;
+            }
+            hadQuery = activeQuery.length > 0;
             runSearch();
         }
     }
@@ -54,7 +62,6 @@ Kirigami.ScrollablePage {
         id: searchField
         objectName: "globalSearchField"
         Layout.fillWidth: true
-        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
         placeholderText: L10n.i18n("Search applications…", [])
         text: page.query
         // AppListModel debounces requests and drops superseded responses.
@@ -65,6 +72,7 @@ Kirigami.ScrollablePage {
     }
 
     Component.onCompleted: {
+        page.hadQuery = page.activeQuery.length > 0;
         page.searchReady = true;
         page.runSearch();
         Qt.callLater(page.focusSearch);

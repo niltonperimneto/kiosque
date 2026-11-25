@@ -63,7 +63,7 @@ Kirigami.ScrollablePage {
         Kirigami.Action {
             objectName: "updateAllAction"
             text: L10n.i18n("Update All", [])
-            icon.name: "system-software-update"
+            icon.name: "system-software-update-symbolic"
             visible: page.availableCount > 0
             enabled: !page.updating && !page.checking
             onTriggered: {
@@ -162,7 +162,7 @@ Kirigami.ScrollablePage {
                 objectName: "updateSelectedButton"
                 visible: page.selectedCount > 0 && page.selectedCount < page.availableCount
                 text: L10n.i18np("Update %1 Selected", "Update %1 Selected", page.selectedCount, [])
-                icon.name: "system-software-update"
+                icon.name: "system-software-update-symbolic"
                 enabled: !page.checking
                 onClicked: page.installedModel.updateSelectedApps()
             }
@@ -183,7 +183,7 @@ Kirigami.ScrollablePage {
             anchors.centerIn: parent
             width: parent.width - Kirigami.Units.gridUnit * 4
             visible: listView.count === 0 && !page.checking && !page.updating
-            icon.name: page.checkError ? "dialog-error-symbolic" : page.hasChecked ? "checkmark" : "system-software-update"
+            icon.name: page.checkError ? "dialog-error-symbolic" : page.hasChecked ? "checkmark" : "system-software-update-symbolic"
             text: page.checkError ? L10n.i18n("Could Not Check for Updates", []) : page.hasChecked ? L10n.i18n("Up to Date", []) : L10n.i18n("No Updates Found Yet", [])
             explanation: page.checkError ? page.checkError : page.hasChecked
                 ? L10n.i18n("All installed applications and runtimes are up to date.", [])
