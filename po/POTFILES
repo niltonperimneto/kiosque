@@ -12,6 +12,7 @@ qml/components/HeroCarousel.qml
 qml/components/HorizontalAppList.qml
 qml/components/RatingSummary.qml
 qml/components/RemoteImageView.qml
+qml/components/RemoveAppDialog.qml
 qml/components/ReviewCard.qml
 qml/components/SearchResults.qml
 qml/components/StorefrontAppCard.qml
@@ -30,6 +31,8 @@ qml/style/Style.qml
 rust/app/src/bridge/installed_model.rs
 rust/app/src/bridge/l10n.rs
 rust/app/src/bridge/repo_model.rs
+rust/app/src/view/runtimes.rs
+rust/core/src/flatpak/mod.rs
 rust/core/src/l10n.rs
 rust/updater/src/shell.rs
 rust/updater/src/tray.rs

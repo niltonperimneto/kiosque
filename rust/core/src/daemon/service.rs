@@ -145,6 +145,61 @@ impl Service {
                 .map_err(failed)?,
         )
     }
+    async fn remove_runtimes(
+        &self,
+        refs: Vec<String>,
+        title: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<u64> {
+        super::auth::authorize(&header, conn).await?;
+        queue(Operation::RemoveRuntimes { refs }, &title)
+    }
+    /// What installing `app_id` would download and install (JSON
+    /// `OperationPlan`), without changing anything.
+    async fn plan_install(
+        &self,
+        app_id: String,
+        remote: String,
+        scope: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<String> {
+        super::auth::authorize(&header, conn).await?;
+        let (remote, scope) = scope_or_default(&app_id, &remote, &scope);
+        plan(Operation::Install {
+            remote,
+            id: app_id,
+            scope,
+        })
+        .await
+    }
+    /// What removing `app_id` would remove, including the runtimes it would
+    /// leave unused (JSON `OperationPlan`).
+    async fn plan_uninstall(
+        &self,
+        app_id: String,
+        scope: String,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<String> {
+        super::auth::authorize(&header, conn).await?;
+        let scope = if scope.is_empty() {
+            None
+        } else {
+            Some(parse_scope(&scope)?)
+        };
+        plan(Operation::Uninstall { id: app_id, scope }).await
+    }
+    /// Installed runtimes and the applications using them (JSON).
+    async fn read_runtimes(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> zbus::fdo::Result<String> {
+        super::auth::authorize(&header, conn).await?;
+        json(crate::flatpak::backend().runtimes().await.map_err(failed)?)
+    }
     async fn read_remotes(
         &self,
         #[zbus(header)] header: zbus::message::Header<'_>,
@@ -278,6 +333,16 @@ fn queue(operation: Operation, title: &str) -> zbus::fdo::Result<u64> {
     crate::transactions::local_manager()
         .try_enqueue(operation, title)
         .map_err(zbus::fdo::Error::LimitsExceeded)
+}
+async fn plan(operation: Operation) -> zbus::fdo::Result<String> {
+    crate::security::operation(&operation, "").map_err(zbus::fdo::Error::InvalidArgs)?;
+    super::touch();
+    json(
+        crate::flatpak::backend()
+            .plan(&operation)
+            .await
+            .map_err(failed)?,
+    )
 }
 fn json(value: impl serde::Serialize) -> zbus::fdo::Result<String> {
     let data = serde_json::to_string(&value)

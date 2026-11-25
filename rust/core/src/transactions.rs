@@ -39,7 +39,7 @@ fn kind_of(op: &Operation) -> JobKind {
     match op {
         Operation::Install { .. } => JobKind::Install,
         Operation::InstallRefFile { .. } => JobKind::InstallRefFile,
-        Operation::Uninstall { .. } => JobKind::Uninstall,
+        Operation::Uninstall { .. } | Operation::RemoveRuntimes { .. } => JobKind::Uninstall,
         Operation::Update { .. } => JobKind::Update,
     }
 }

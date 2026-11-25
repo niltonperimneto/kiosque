@@ -8,8 +8,8 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    FlatpakBackend, FlatpakError, InstalledApp, Operation, Progress, ProgressSink, RemoteInfo,
-    RemoteSource, Result, Scope, UpdateInfo,
+    FlatpakBackend, FlatpakError, InstalledApp, InstalledRuntime, Operation, OperationPlan,
+    Progress, ProgressSink, RemoteInfo, RemoteSource, Result, Scope, UpdateInfo,
 };
 
 #[derive(Default)]
@@ -29,6 +29,10 @@ pub struct MockBackend {
     pub gate: Mutex<Option<std::sync::Arc<tokio::sync::Semaphore>>>,
     /// Metadata keyfiles served by `remote_metadata`, keyed by app id.
     pub metadata: Mutex<std::collections::HashMap<String, String>>,
+    /// Plans served by `plan`, keyed by the operation's app id.
+    pub plans: Mutex<std::collections::HashMap<String, OperationPlan>>,
+    /// Runtimes served by `runtimes`; `RemoveRuntimes` drops entries.
+    pub runtimes: Mutex<Vec<InstalledRuntime>>,
     /// Every `(remote, reference)` passed to `remote_metadata`.
     pub metadata_requests: Mutex<Vec<(String, String)>>,
 }
@@ -150,6 +154,11 @@ impl FlatpakBackend for MockBackend {
                     .unwrap()
                     .retain(|u| !ids.is_empty() && !ids.contains(&u.id));
             }
+            Operation::RemoveRuntimes { refs } => self
+                .runtimes
+                .lock()
+                .unwrap()
+                .retain(|r| !refs.contains(&r.info.ref_string())),
             Operation::InstallRefFile { data, scope } => installed.push(InstalledApp {
                 id: super::keyfile_value(&data, "Name").unwrap_or_default(),
                 scope,
@@ -166,6 +175,21 @@ impl FlatpakBackend for MockBackend {
 
     async fn refresh_appstream(&self, _remote: &RemoteInfo) -> Result<()> {
         Ok(())
+    }
+
+    async fn plan(&self, op: &Operation) -> Result<OperationPlan> {
+        let id = op.app_ids().into_iter().next().unwrap_or_default();
+        Ok(self
+            .plans
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    async fn runtimes(&self) -> Result<Vec<InstalledRuntime>> {
+        Ok(self.runtimes.lock().unwrap().clone())
     }
 
     async fn remote_metadata(

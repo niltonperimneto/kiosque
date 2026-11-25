@@ -242,6 +242,8 @@ mod object {
         pub fn uninstalling_app_id_changed(&mut self);
         #[qsignal(qml_name = "uninstall_progressChanged")]
         pub fn uninstall_progress_changed(&mut self);
+        #[qsignal(qml_name = "uninstallFinished")]
+        pub fn uninstall_finished(&mut self, app_id: String, success: bool);
         #[qsignal(qml_name = "checking_updatesChanged")]
         pub fn checking_updates_changed(&mut self);
         #[qsignal(qml_name = "updatingChanged")]
@@ -383,12 +385,17 @@ mod object {
         }
         #[qslot(qml_name = "uninstallApp")]
         fn uninstall_app(&mut self, index: i32) {
-            if !self.uninstalling_app_id.is_empty() {
+            if let Some(id) = self.app_id_at(index) {
+                self.uninstall(id);
+            }
+        }
+
+        /// Uninstall `id`; `uninstallFinished(id, success)` reports the end.
+        #[qslot]
+        fn uninstall(&mut self, id: String) {
+            if !self.uninstalling_app_id.is_empty() || id.is_empty() {
                 return;
             }
-            let Some(id) = self.app_id_at(index) else {
-                return;
-            };
             self.set_uninstall_error(String::new());
             self.set_uninstall_progress(-1.0);
             self.set_uninstalling_app_id(id.clone());
@@ -406,6 +413,7 @@ mod object {
                 |m, result| {
                     m.uninstall_control = None;
                     m.sync_registry();
+                    let done = matches!(result, crate::bridge::util::JobOutcome::Done);
                     let error = match result {
                         crate::bridge::util::JobOutcome::Done => String::new(),
                         crate::bridge::util::JobOutcome::Failed(e) => e,
@@ -413,7 +421,9 @@ mod object {
                     };
                     m.set_uninstall_error(error);
                     m.set_uninstall_progress(0.0);
-                    m.set_uninstalling_app_id(String::new());
+                    let id = std::mem::take(&mut m.uninstalling_app_id);
+                    m.uninstalling_app_id_changed();
+                    m.uninstall_finished(id, done);
                 },
             );
         }

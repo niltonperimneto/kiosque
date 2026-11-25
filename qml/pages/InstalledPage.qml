@@ -26,6 +26,62 @@ Kirigami.ScrollablePage {
     supportsRefreshing: true
 
     property var installedModel: applicationWindow().installedModel
+    property string filterText: ""
+
+    // Shared runtimes, listed after the applications.
+    RuntimesModel {
+        id: runtimesModel
+    }
+    readonly property RuntimesModel runtimes: runtimesModel
+
+    Connections {
+        target: page.installedModel
+        // Installing or removing an app changes which runtimes are in use.
+        function onCountChanged() {
+            Qt.callLater(runtimesModel.refresh);
+        }
+        function onUninstallFinished(appId, success) {
+            if (removeDialog.appId === appId)
+                removeDialog.appRemoved(success);
+        }
+    }
+
+    Connections {
+        target: removeDialog.planner
+        function onRemovalFinished(success, error) {
+            Qt.callLater(runtimesModel.refresh);
+        }
+    }
+
+    Components.RemoveAppDialog {
+        id: removeDialog
+        onConfirmed: page.installedModel.uninstall(appId)
+    }
+
+    Kirigami.PromptDialog {
+        id: removeUnusedDialog
+        objectName: "removeUnusedRuntimesDialog"
+        title: L10n.i18n("Remove Unused Runtimes?", [])
+        subtitle: L10n.i18n("No installed application uses these runtimes: %1. Applications that need them again will download them.",
+                            [(runtimesModel.unused || []).map(r => r.size ? L10n.i18nc("@item runtime and its size", "%1 (%2)", [r.name, r.size]) : r.name).join(", ")])
+        standardButtons: Kirigami.Dialog.NoButton
+        customFooterActions: [
+            Kirigami.Action {
+                objectName: "confirmRemoveUnusedAction"
+                text: L10n.i18n("Remove", [])
+                icon.name: "edit-delete-remove"
+                onTriggered: {
+                    removeUnusedDialog.close();
+                    runtimesModel.removeUnused();
+                }
+            },
+            Kirigami.Action {
+                text: L10n.i18n("Cancel", [])
+                icon.name: "dialog-cancel"
+                onTriggered: removeUnusedDialog.close()
+            }
+        ]
+    }
 
     // Sorting state — drives installedModel.sortModel().
     property string sortCriterion: "name"
@@ -35,7 +91,10 @@ Kirigami.ScrollablePage {
         id: searchBar
         fieldObjectName: "installedFilterField"
         placeholderText: L10n.i18n("Filter installed…", [])
-        onTextChanged: page.installedModel.applySearchFilter(text)
+        onTextChanged: {
+            page.filterText = text.trim().toLowerCase();
+            page.installedModel.applySearchFilter(text);
+        }
     }
 
     onSortCriterionChanged: installedModel.sortModel(sortCriterion, sortAscending)
@@ -44,6 +103,7 @@ Kirigami.ScrollablePage {
     onRefreshingChanged: {
         if (refreshing) {
             installedModel.refresh();
+            runtimesModel.refresh();
             refreshing = false;
         }
     }
@@ -51,8 +111,11 @@ Kirigami.ScrollablePage {
     // The model is shared with the Updates page; set and clear this page's filters.
     Component.onCompleted: {
         installedModel.applyShowUpdatesOnly(false);
+        // Runtimes have their own section below the applications.
+        installedModel.applyShowRuntimes(false);
         installedModel.applySearchFilter("");
         installedModel.sortModel(sortCriterion, sortAscending);
+        runtimesModel.refresh();
     }
     Component.onDestruction: {
         if (installedModel) {
@@ -72,7 +135,10 @@ Kirigami.ScrollablePage {
         Kirigami.Action {
             text: L10n.i18n("Refresh", [])
             icon.name: "view-refresh"
-            onTriggered: page.installedModel.refresh()
+            onTriggered: {
+                page.installedModel.refresh();
+                runtimesModel.refresh();
+            }
         },
         Kirigami.Action {
             text: L10n.i18n("Sort", [])
@@ -105,15 +171,12 @@ Kirigami.ScrollablePage {
             }
         },
         Kirigami.Action {
-            text: L10n.i18n("View", [])
-            icon.name: "view-filter"
-
-            Kirigami.Action {
-                text: L10n.i18n("Show runtimes", [])
-                checkable: true
-                checked: page.installedModel && page.installedModel.show_runtimes
-                onTriggered: page.installedModel.applyShowRuntimes(checked)
-            }
+            objectName: "removeUnusedRuntimesAction"
+            text: L10n.i18n("Remove Unused Runtimes", [])
+            icon.name: "edit-clear-all"
+            displayHint: Kirigami.DisplayHint.AlwaysHide
+            enabled: (runtimesModel.unused || []).length > 0 && !runtimesModel.removing
+            onTriggered: removeUnusedDialog.open()
         }
     ]
 
@@ -168,6 +231,122 @@ Kirigami.ScrollablePage {
                     text: L10n.i18n("Review Updates", [])
                     icon.name: "system-software-update"
                     onTriggered: applicationWindow().navigate("updates")
+                }
+            }
+        }
+
+        // ── Runtimes ───────────────────────────────────────────────────────────
+        footer: ColumnLayout {
+            objectName: "runtimesSection"
+            width: listView.width
+            spacing: 0
+            visible: runtimesModel.count > 0 || runtimesModel.errorMessage !== ""
+
+            Kirigami.ListSectionHeader {
+                Layout.fillWidth: true
+                text: L10n.i18n("Runtimes", [])
+            }
+
+            Controls.Label {
+                Layout.fillWidth: true
+                Layout.margins: Kirigami.Units.largeSpacing
+                wrapMode: Text.WordWrap
+                color: Kirigami.Theme.disabledTextColor
+                text: runtimesModel.errorMessage !== ""
+                    ? L10n.i18n("Could not read installed runtimes: %1", [runtimesModel.errorMessage])
+                    : L10n.i18n("Shared libraries and services that applications run on. Flatpak installs and updates them with the applications that need them.", [])
+            }
+
+            Kirigami.InlineMessage {
+                objectName: "unusedRuntimesMessage"
+                Layout.fillWidth: true
+                Layout.leftMargin: Kirigami.Units.largeSpacing
+                Layout.rightMargin: Kirigami.Units.largeSpacing
+                type: Kirigami.MessageType.Information
+                visible: (runtimesModel.unused || []).length > 0
+                text: L10n.i18np("%1 runtime is no longer used by any application.",
+                                 "%1 runtimes are no longer used by any application.",
+                                 (runtimesModel.unused || []).length, [])
+                actions: Kirigami.Action {
+                    text: L10n.i18n("Remove Unused", [])
+                    icon.name: "edit-clear-all"
+                    enabled: !runtimesModel.removing
+                    onTriggered: removeUnusedDialog.open()
+                }
+            }
+
+            Repeater {
+                model: runtimesModel
+
+                delegate: Controls.ItemDelegate {
+                    id: runtimeRow
+
+                    required property string reference
+                    required property string name
+                    required property string size
+                    required property string usedBy
+                    required property bool unused
+                    required property string eol
+                    required property string scope
+
+                    objectName: "runtimeRow_" + reference
+                    Layout.fillWidth: true
+                    visible: page.filterText === "" || name.toLowerCase().includes(page.filterText)
+                             || reference.toLowerCase().includes(page.filterText)
+                    hoverEnabled: false
+                    Accessible.name: name
+
+                    contentItem: RowLayout {
+                        spacing: Kirigami.Units.largeSpacing
+
+                        Kirigami.Icon {
+                            Layout.preferredWidth: Kirigami.Units.iconSizes.medium
+                            Layout.preferredHeight: Kirigami.Units.iconSizes.medium
+                            Layout.alignment: Qt.AlignVCenter
+                            source: "run-build"
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: Kirigami.Units.smallSpacing / 2
+
+                            Controls.Label {
+                                Layout.fillWidth: true
+                                text: runtimeRow.name
+                                elide: Text.ElideRight
+                                font.weight: Font.Medium
+                            }
+
+                            Controls.Label {
+                                objectName: "runtimeUsage"
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                color: Kirigami.Theme.disabledTextColor
+                                font: Kirigami.Theme.smallFont
+                                text: {
+                                    const parts = [];
+                                    if (runtimeRow.usedBy !== "")
+                                        parts.push(L10n.i18nc("@info applications using a runtime", "Used by %1", [runtimeRow.usedBy]));
+                                    else if (runtimeRow.unused)
+                                        parts.push(L10n.i18n("Not used by any application", []));
+                                    if (runtimeRow.size !== "")
+                                        parts.push(runtimeRow.size);
+                                    if (runtimeRow.scope === "user")
+                                        parts.push(L10n.i18n("Only for you", []));
+                                    return parts.join("  ·  ");
+                                }
+                            }
+
+                            Controls.Label {
+                                Layout.fillWidth: true
+                                visible: runtimeRow.eol !== ""
+                                wrapMode: Text.WordWrap
+                                color: Kirigami.Theme.neutralTextColor
+                                font: Kirigami.Theme.smallFont
+                                text: L10n.i18n("No longer receives updates: %1", [runtimeRow.eol])
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -263,7 +442,7 @@ Kirigami.ScrollablePage {
                     text: L10n.i18n("Uninstall", [])
                     icon.name: "edit-delete"
                     enabled: !(page.installedModel && page.installedModel.uninstalling_app_id !== "")
-                    onTriggered: page.installedModel.uninstallApp(index)
+                    onTriggered: removeDialog.openFor(model.appId, model.name !== "" ? model.name : model.appId)
                 }
             ]
         }

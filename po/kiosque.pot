@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: kiosque\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-22 17:34-0300\n"
+"POT-Creation-Date: 2026-11-23 16:57+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -28,218 +28,225 @@ msgctxt "@title:window"
 msgid "Kiosque"
 msgstr ""
 
-#: qml/Main.qml:173
+#: qml/Main.qml:198
 msgid "Home"
 msgstr ""
 
-#: qml/Main.qml:180 qml/pages/SearchPage.qml:16
+#: qml/Main.qml:205 qml/pages/SearchPage.qml:16
 msgid "Search"
 msgstr ""
 
-#: qml/Main.qml:187 qml/pages/CategoriesPage.qml:12
+#: qml/Main.qml:212 qml/pages/CategoriesPage.qml:12
 msgid "Categories"
 msgstr ""
 
-#: qml/Main.qml:194 qml/pages/InstalledPage.qml:15
+#: qml/Main.qml:219 qml/pages/InstalledPage.qml:16
 msgid "Installed"
 msgstr ""
 
-#: qml/Main.qml:201 qml/pages/UpdatesPage.qml:16
+#: qml/Main.qml:226 qml/pages/UpdatesPage.qml:16
 msgid "Updates"
 msgstr ""
 
-#: qml/Main.qml:201
+#: qml/Main.qml:226
 msgid "Updates (%1)"
 msgstr ""
 
-#: qml/Main.qml:208 qml/pages/SettingsPage.qml:26
+#: qml/Main.qml:233 qml/pages/SettingsPage.qml:26
 msgid "Settings"
 msgstr ""
 
-#: qml/Main.qml:217 qml/components/TasksDialog.qml:18
+#: qml/Main.qml:242 qml/components/TasksDialog.qml:18
 msgid "Tasks"
 msgstr ""
 
-#: qml/Main.qml:217
+#: qml/Main.qml:242
 msgid "Tasks (%1)"
 msgstr ""
 
-#: qml/Main.qml:291
+#: qml/Main.qml:348
 msgid "Account: %1"
 msgstr ""
 
-#: qml/Main.qml:292
+#: qml/Main.qml:349
 msgid "Sign in to write reviews"
 msgstr ""
 
-#: qml/Main.qml:320
+#: qml/Main.qml:377
 msgid "Sign In"
 msgstr ""
 
-#: qml/Main.qml:327
+#: qml/Main.qml:384
 msgid "Reviews account"
 msgstr ""
 
-#: qml/Main.qml:327
+#: qml/Main.qml:384
 msgid "To rate and review apps"
 msgstr ""
 
-#: qml/Main.qml:347
+#: qml/Main.qml:404
 msgid "Sign in with GitHub"
 msgstr ""
 
-#: qml/Main.qml:353
+#: qml/Main.qml:411
 msgid "Sign in with GitLab"
 msgstr ""
 
-#: qml/Main.qml:359
+#: qml/Main.qml:418
 msgid "Sign in with KDE GitLab"
 msgstr ""
 
-#: qml/Main.qml:365
+#: qml/Main.qml:425
 msgid "Sign in with GNOME GitLab"
 msgstr ""
 
-#: qml/Main.qml:376
+#: qml/Main.qml:437
 msgid "Account Settings"
 msgstr ""
 
-#: qml/Main.qml:382 qml/pages/SettingsPage.qml:222
+#: qml/Main.qml:443 qml/pages/SettingsPage.qml:222
 msgid "Sign Out"
 msgstr ""
 
-#: qml/Main.qml:406
+#: qml/Main.qml:467
 msgid "Repository Status"
 msgstr ""
 
-#: qml/Main.qml:422
+#: qml/Main.qml:483
 msgid "Repository added successfully."
 msgstr ""
 
-#: qml/Main.qml:423
+#: qml/Main.qml:484
 msgid "Could not add the repository: %1"
 msgstr ""
 
-#: qml/Main.qml:428
+#: qml/Main.qml:489
 msgid "Repository removed successfully."
 msgstr ""
 
-#: qml/Main.qml:429
+#: qml/Main.qml:490
 msgid "Could not remove the repository: %1"
 msgstr ""
 
-#: qml/Main.qml:460
+#: qml/Main.qml:521
 msgid "Installing…"
 msgstr ""
 
-#: qml/Main.qml:461
+#: qml/Main.qml:522
 msgid "Installation Complete"
 msgstr ""
 
-#: qml/Main.qml:462
+#: qml/Main.qml:523
 msgid "Installation Failed"
 msgstr ""
 
-#: qml/Main.qml:463
+#: qml/Main.qml:524
 msgid "Install Application?"
 msgstr ""
 
-#: qml/Main.qml:463
+#: qml/Main.qml:524
 msgid "Install Runtime?"
 msgstr ""
 
-#: qml/Main.qml:493
+#: qml/Main.qml:554
 msgid "Reading %1…"
 msgstr ""
 
-#: qml/Main.qml:503 qml/components/AddRepositoryDialog.qml:149
+#: qml/Main.qml:564 qml/components/AddRepositoryDialog.qml:149
 msgid "Name:"
 msgstr ""
 
-#: qml/Main.qml:511
+#: qml/Main.qml:572
 msgid "Identifier:"
 msgstr ""
 
-#: qml/Main.qml:519
+#: qml/Main.qml:580
 msgid "Source:"
 msgstr ""
 
-#: qml/Main.qml:520 qml/pages/AppDetailPage.qml:63
+#: qml/Main.qml:581 qml/pages/AppDetailPage.qml:90
 msgid "Unknown"
 msgstr ""
 
-#: qml/Main.qml:530 qml/components/AddRepositoryDialog.qml:158
+#: qml/Main.qml:591 qml/components/AddRepositoryDialog.qml:158
 msgid "Repository signing key SHA-256: %1"
 msgstr ""
 
-#: qml/Main.qml:539
+#: qml/Main.qml:600
 msgid ""
 "This file was opened from outside Kiosque. Only install software from "
 "sources you trust. It will be installed for your user only, and its "
 "repository may be added."
 msgstr ""
 
-#: qml/Main.qml:563 qml/Main.qml:668
+#: qml/Main.qml:609
+msgid ""
+"Any runtime the application needs is installed from your configured "
+"repositories, such as Flathub. Each one is shown as a step while installing."
+msgstr ""
+
+#: qml/Main.qml:641 qml/Main.qml:746
 msgid "%1 was installed."
 msgstr ""
 
-#: qml/Main.qml:573 qml/pages/AppDetailPage.qml:558
+#: qml/Main.qml:651 qml/pages/AppDetailPage.qml:585
 msgid "Install"
 msgstr ""
 
-#: qml/Main.qml:583 qml/components/AddRepositoryDialog.qml:208
-#: qml/components/TasksDialog.qml:137 qml/pages/AppDetailPage.qml:601
-#: qml/pages/AppDetailPage.qml:1443 qml/pages/InstalledPage.qml:236
-#: qml/pages/SettingsPage.qml:349 qml/pages/UpdatesPage.qml:117
+#: qml/Main.qml:661 qml/components/AddRepositoryDialog.qml:208
+#: qml/components/RemoveAppDialog.qml:110 qml/components/TasksDialog.qml:137
+#: qml/pages/AppDetailPage.qml:628 qml/pages/InstalledPage.qml:72
+#: qml/pages/InstalledPage.qml:416 qml/pages/SettingsPage.qml:349
+#: qml/pages/UpdatesPage.qml:117
 msgid "Cancel"
 msgstr ""
 
-#: qml/Main.qml:593
+#: qml/Main.qml:671
 msgid "Continue in Background"
 msgstr ""
 
-#: qml/Main.qml:600
+#: qml/Main.qml:678
 msgid "Cancel Installation"
 msgstr ""
 
-#: qml/Main.qml:607 qml/components/AddRepositoryDialog.qml:208
-#: qml/pages/AppDetailPage.qml:1359
+#: qml/Main.qml:685 qml/components/AddRepositoryDialog.qml:208
+#: qml/pages/AppDetailPage.qml:1455
 msgid "Close"
 msgstr ""
 
-#: qml/Main.qml:628 qml/components/AddRepositoryDialog.qml:81
+#: qml/Main.qml:706 qml/components/AddRepositoryDialog.qml:81
 msgid "Could not open the file: %1"
 msgstr ""
 
-#: qml/Main.qml:666
+#: qml/Main.qml:744
 msgid "%1 was removed."
 msgstr ""
 
-#: qml/Main.qml:667
+#: qml/Main.qml:745
 msgid "%1 was updated."
 msgstr ""
 
-#: qml/Main.qml:670
+#: qml/Main.qml:748
 msgid "Could not remove %1: %2"
 msgstr ""
 
-#: qml/Main.qml:671
+#: qml/Main.qml:749
 msgid "Could not update %1: %2"
 msgstr ""
 
-#: qml/Main.qml:672
+#: qml/Main.qml:750
 msgid "Could not install %1: %2"
 msgstr ""
 
-#: qml/Main.qml:678
+#: qml/Main.qml:756
 msgid "Details"
 msgstr ""
 
-#: qml/Main.qml:680
+#: qml/Main.qml:758
 msgid "Kiosque"
 msgstr ""
 
-#: qml/Main.qml:680
+#: qml/Main.qml:758
 msgid "Operation Failed"
 msgstr ""
 
@@ -269,7 +276,7 @@ msgstr ""
 msgid "Name (optional):"
 msgstr ""
 
-#: qml/components/AddRepositoryDialog.qml:132 qml/pages/AppDetailPage.qml:1097
+#: qml/components/AddRepositoryDialog.qml:132 qml/pages/AppDetailPage.qml:1193
 msgid "Title:"
 msgstr ""
 
@@ -326,7 +333,7 @@ msgstr ""
 msgid "Graphics"
 msgstr ""
 
-#: qml/components/Categories.qml:22 qml/pages/AboutPage.qml:34
+#: qml/components/Categories.qml:22 qml/pages/AboutPage.qml:35
 msgid "Development"
 msgstr ""
 
@@ -445,6 +452,33 @@ msgid_plural "%1 Reviews"
 msgstr[0] ""
 msgstr[1] ""
 
+#: qml/components/RemoveAppDialog.qml:52
+msgid "Remove %1?"
+msgstr ""
+
+#: qml/components/RemoveAppDialog.qml:61
+msgid ""
+"The application is uninstalled. Its settings and data in your home folder "
+"are kept."
+msgstr ""
+
+#: qml/components/RemoveAppDialog.qml:76
+msgid "No other application uses this runtime. Remove it too to free space:"
+msgid_plural ""
+"No other application uses these runtimes. Remove them too to free space:"
+msgstr[0] ""
+msgstr[1] ""
+
+#: qml/components/RemoveAppDialog.qml:92
+msgctxt "@option:check runtime and its size"
+msgid "%1 (%2)"
+msgstr ""
+
+#: qml/components/RemoveAppDialog.qml:101 qml/pages/AppDetailPage.qml:597
+#: qml/pages/InstalledPage.qml:64
+msgid "Remove"
+msgstr ""
+
 #: qml/components/ReviewCard.qml:69
 msgid "Anonymous"
 msgstr ""
@@ -540,25 +574,25 @@ msgid ""
 "Flathub."
 msgstr ""
 
-#: qml/pages/AboutPage.qml:28
+#: qml/pages/AboutPage.qml:29
 msgid "Flatpak storefront for KDE Plasma"
 msgstr ""
 
-#: qml/pages/AboutPage.qml:32
+#: qml/pages/AboutPage.qml:33
 msgid ""
 "Kiosque combines a Rust backend for Flathub, ODRS reviews and Flatpak "
 "operations with a Qt 6 and Kirigami interface."
 msgstr ""
 
-#: qml/pages/AboutPage.qml:34
+#: qml/pages/AboutPage.qml:35
 msgid "Kiosque Contributors"
 msgstr ""
 
-#: qml/pages/AboutPage.qml:40
+#: qml/pages/AboutPage.qml:41
 msgid "GNU General Public License v3 or later"
 msgstr ""
 
-#: qml/pages/AboutPage.qml:41
+#: qml/pages/AboutPage.qml:42
 msgid ""
 "This program is free software: you can redistribute it and/or modify it "
 "under the terms of the GNU General Public License as published by the Free "
@@ -571,406 +605,433 @@ msgid ""
 "more details: https://www.gnu.org/licenses/gpl-3.0.html"
 msgstr ""
 
-#: qml/pages/AboutPage.qml:45
+#: qml/pages/AboutPage.qml:46
 msgid "© 2026 Kiosque Contributors"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:44
+#: qml/pages/AppDetailPage.qml:68
 msgid "Could not complete the operation: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:52
+#: qml/pages/AppDetailPage.qml:79
 msgid "Could not update the review: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:104
+#: qml/pages/AppDetailPage.qml:131
 msgid "Website"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:105
+#: qml/pages/AppDetailPage.qml:132
 msgid "Documentation"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:106
+#: qml/pages/AppDetailPage.qml:133
 msgid "Report an Issue"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:107
+#: qml/pages/AppDetailPage.qml:134
 msgid "Source Code"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:108
+#: qml/pages/AppDetailPage.qml:135
 msgid "Flatpak Manifest"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:109
+#: qml/pages/AppDetailPage.qml:136
 msgid "Donate"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:137 qml/pages/AppDetailPage.qml:325
+#: qml/pages/AppDetailPage.qml:164 qml/pages/AppDetailPage.qml:352
 msgid "Permissions unavailable"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:138
+#: qml/pages/AppDetailPage.qml:165
 msgid ""
 "The application's permissions could not be verified. Review its manifest "
 "before installing."
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:143 qml/pages/AppDetailPage.qml:317
+#: qml/pages/AppDetailPage.qml:170 qml/pages/AppDetailPage.qml:344
 msgid "No additional permissions declared"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:144 qml/pages/AppDetailPage.qml:318
+#: qml/pages/AppDetailPage.qml:171 qml/pages/AppDetailPage.qml:345
 msgid ""
 "The available manifest declares no additional access. Sandbox security also "
 "depends on the runtime and system."
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:162
+#: qml/pages/AppDetailPage.qml:189
 msgid "Network Access"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:163
+#: qml/pages/AppDetailPage.qml:190
 msgid "Can access the internet or local network"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:176
+#: qml/pages/AppDetailPage.qml:203
 msgid "Display System"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:177
+#: qml/pages/AppDetailPage.qml:204
 msgid "Can show windows and access the screen (%1)"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:185
+#: qml/pages/AppDetailPage.qml:212
 msgid "Audio Access"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:186
+#: qml/pages/AppDetailPage.qml:213
 msgid "Can play audio or record sound using the sound card"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:194
+#: qml/pages/AppDetailPage.qml:221
 msgid "Inter-process Communication"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:195
+#: qml/pages/AppDetailPage.qml:222
 msgid "Can communicate directly with other running processes"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:203
+#: qml/pages/AppDetailPage.qml:230
 msgid "Hardware Access"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:204
+#: qml/pages/AppDetailPage.qml:231
 msgid "Direct access to hardware devices: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:215
+#: qml/pages/AppDetailPage.qml:242
 msgid "read-only"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:215
+#: qml/pages/AppDetailPage.qml:242
 msgid "read/write"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:215
+#: qml/pages/AppDetailPage.qml:242
 msgid "read/write/create"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:219
+#: qml/pages/AppDetailPage.qml:246
 msgid "All system files"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:221
+#: qml/pages/AppDetailPage.qml:248
 msgid "Home directory"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:223
+#: qml/pages/AppDetailPage.qml:250
 msgid "Desktop folder"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:225
+#: qml/pages/AppDetailPage.qml:252
 msgid "Documents folder"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:227
+#: qml/pages/AppDetailPage.qml:254
 msgid "Downloads folder"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:229
+#: qml/pages/AppDetailPage.qml:256
 msgid "Music folder"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:231
+#: qml/pages/AppDetailPage.qml:258
 msgid "Pictures folder"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:233
+#: qml/pages/AppDetailPage.qml:260
 msgid "Public share folder"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:235
+#: qml/pages/AppDetailPage.qml:262
 msgid "Templates folder"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:237
+#: qml/pages/AppDetailPage.qml:264
 msgid "Videos folder"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:239
+#: qml/pages/AppDetailPage.qml:266
 msgid "System keyring"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:242
+#: qml/pages/AppDetailPage.qml:269
 msgid "folder"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:250
+#: qml/pages/AppDetailPage.qml:277
 msgid "File System Access"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:251
+#: qml/pages/AppDetailPage.qml:278
 msgid "Access to files: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:259
+#: qml/pages/AppDetailPage.qml:286
 msgid "Persistent Storage"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:260
+#: qml/pages/AppDetailPage.qml:287
 msgid "Saves persistent data in: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:272
+#: qml/pages/AppDetailPage.qml:299
 msgid "Talks to session services: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:275
+#: qml/pages/AppDetailPage.qml:302
 msgid "Owns session services: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:278
+#: qml/pages/AppDetailPage.qml:305
 msgid "Talks to system services: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:281
+#: qml/pages/AppDetailPage.qml:308
 msgid "Owns system services: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:286
+#: qml/pages/AppDetailPage.qml:313
 msgid "System Integration"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:287
+#: qml/pages/AppDetailPage.qml:314
 msgid "Access to D-Bus services: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:298
+#: qml/pages/AppDetailPage.qml:325
 msgid "Security Agent Access"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:299
+#: qml/pages/AppDetailPage.qml:326
 msgid "Access to authentication agent sockets: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:309
+#: qml/pages/AppDetailPage.qml:336
 msgid "Other System Connections"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:310
+#: qml/pages/AppDetailPage.qml:337
 msgid "Accesses system sockets: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:326
+#: qml/pages/AppDetailPage.qml:353
 msgid "The application permissions could not be verified."
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:365
+#: qml/pages/AppDetailPage.qml:392
 msgid ""
 "This application's permissions could not be read from %1, so it cannot be "
 "installed from here. If the repository publishes them, try again later."
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:366
+#: qml/pages/AppDetailPage.qml:393
 msgid ""
 "Permissions could not be verified. Reload the details before installing."
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:368 qml/pages/AppDetailPage.qml:386
+#: qml/pages/AppDetailPage.qml:395 qml/pages/AppDetailPage.qml:413
 msgid "Retry"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:382
+#: qml/pages/AppDetailPage.qml:409
 msgid "Could not load application details: %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:404
+#: qml/pages/AppDetailPage.qml:431
 msgid "Loading application details"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:503
+#: qml/pages/AppDetailPage.qml:530
 msgid "Unknown Developer"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:558 qml/pages/InstalledPage.qml:244
+#: qml/pages/AppDetailPage.qml:585 qml/pages/InstalledPage.qml:424
 msgid "Open"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:570 qml/pages/AppDetailPage.qml:1435
-msgid "Remove"
-msgstr ""
-
-#: qml/pages/AppDetailPage.qml:592
+#: qml/pages/AppDetailPage.qml:619
 msgid "Working…"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:619
+#: qml/pages/AppDetailPage.qml:646
 msgid "Sandboxed"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:620
+#: qml/pages/AppDetailPage.qml:647
 msgid "Some system access"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:621
+#: qml/pages/AppDetailPage.qml:648
 msgid "Full system access"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:622
+#: qml/pages/AppDetailPage.qml:649
 msgid "Permissions unknown"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:627
+#: qml/pages/AppDetailPage.qml:654
 msgid "%1. Show permissions"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:628
+#: qml/pages/AppDetailPage.qml:655
 msgid "Show sandbox permissions"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:646
+#: qml/pages/AppDetailPage.qml:673
 msgctxt "@info source repository, per-user installation"
 msgid "From %1 (user)"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:647
+#: qml/pages/AppDetailPage.qml:674
 msgctxt "@info source repository"
 msgid "From %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:649
+#: qml/pages/AppDetailPage.qml:676
 msgid "Repository “%1” at %2"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:650
+#: qml/pages/AppDetailPage.qml:677
 msgid "Repository “%1”"
 msgstr ""
 
+#: qml/pages/AppDetailPage.qml:691
+msgctxt "@info the runtime an application uses"
+msgid "Runtime: %1"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:693
+msgid ""
+"Applications share runtimes: libraries and services they need, installed "
+"once for all of them."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:723
+msgid "Checking what the installation needs…"
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:728
+msgid "Downloads %1, uses %2 on disk."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:729
+msgid "Downloads %1."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:731
+msgctxt "@item runtime and its download size"
+msgid "%1 (%2)"
+msgstr ""
+
 #: qml/pages/AppDetailPage.qml:734
+msgid "Also installs %1, shared with other applications."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:736
+msgid "Uses %1, which is already installed."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:749
+msgid ""
+"This application depends on software that no longer receives updates (%1)."
+msgstr ""
+
+#: qml/pages/AppDetailPage.qml:830
 msgid "Screenshot %1 of %2, open larger"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:748
+#: qml/pages/AppDetailPage.qml:844
 msgid "Previous screenshots"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:784
+#: qml/pages/AppDetailPage.qml:880
 msgid "Next screenshots"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:831
+#: qml/pages/AppDetailPage.qml:927
 msgid "What's New"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:844
+#: qml/pages/AppDetailPage.qml:940
 msgid "Version %1, released %2"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:846 qml/pages/SettingsPage.qml:323
+#: qml/pages/AppDetailPage.qml:942 qml/pages/SettingsPage.qml:323
 msgid "Version %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:870
+#: qml/pages/AppDetailPage.qml:966
 msgid "Description"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:891
+#: qml/pages/AppDetailPage.qml:987
 msgid "Links"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:917
+#: qml/pages/AppDetailPage.qml:1013
 msgid "Opens %1 in the web browser"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:927
+#: qml/pages/AppDetailPage.qml:1023
 msgid "Developer"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:927
+#: qml/pages/AppDetailPage.qml:1023
 msgid "More by %1"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:936
+#: qml/pages/AppDetailPage.qml:1032
 msgid "Similar Applications"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:964
+#: qml/pages/AppDetailPage.qml:1060
 msgid "Ratings & Reviews"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:969 qml/pages/AppDetailPage.qml:1044
+#: qml/pages/AppDetailPage.qml:1065 qml/pages/AppDetailPage.qml:1140
 msgid "Write a Review"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:990
+#: qml/pages/AppDetailPage.qml:1086
 msgid "No Reviews Yet"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:991
+#: qml/pages/AppDetailPage.qml:1087
 msgid "Be the first to write a review for this application!"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1033
+#: qml/pages/AppDetailPage.qml:1129
 msgid "Show More Reviews"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1072
+#: qml/pages/AppDetailPage.qml:1168
 msgid "Rating:"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1098
+#: qml/pages/AppDetailPage.qml:1194
 msgid "One-line title of your review"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1105
+#: qml/pages/AppDetailPage.qml:1201
 msgid "Review:"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1112
+#: qml/pages/AppDetailPage.qml:1208
 msgid "Detailed review description"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1121
+#: qml/pages/AppDetailPage.qml:1217
 msgid "Anonymous:"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1429
-msgid "Remove %1?"
-msgstr ""
-
-#: qml/pages/AppDetailPage.qml:1430
-msgid ""
-"The application is uninstalled. Its settings and data in your home folder "
-"are kept."
-msgstr ""
-
-#: qml/pages/AppDetailPage.qml:1452
+#: qml/pages/AppDetailPage.qml:1529
 msgid "Application Permissions"
 msgstr ""
 
-#: qml/pages/AppDetailPage.qml:1461
+#: qml/pages/AppDetailPage.qml:1538
 msgid "This application has permissions to access the following:"
 msgstr ""
 
@@ -982,12 +1043,12 @@ msgstr ""
 msgid "Could Not Load Applications"
 msgstr ""
 
-#: qml/pages/CategoryAppListPage.qml:138 qml/pages/SearchPage.qml:107
-#: qml/pages/ShopfrontPage.qml:97
+#: qml/pages/CategoryAppListPage.qml:138 qml/pages/SearchPage.qml:123
+#: qml/pages/ShopfrontPage.qml:99
 msgid "Try Again"
 msgstr ""
 
-#: qml/pages/CategoryAppListPage.qml:149 qml/pages/SearchPage.qml:119
+#: qml/pages/CategoryAppListPage.qml:149 qml/pages/SearchPage.qml:135
 msgid "No Applications Found"
 msgstr ""
 
@@ -995,103 +1056,155 @@ msgstr ""
 msgid "No application in this category matches “%1”."
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:31
-msgid "Filter installed…"
+#: qml/pages/InstalledPage.qml:57
+msgid "Remove Unused Runtimes?"
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:60
-msgid "Refresh"
+#: qml/pages/InstalledPage.qml:58
+msgid ""
+"No installed application uses these runtimes: %1. Applications that need "
+"them again will download them."
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:65
-msgid "Sort"
-msgstr ""
-
-#: qml/pages/InstalledPage.qml:69
-msgid "Name"
-msgstr ""
-
-#: qml/pages/InstalledPage.qml:75
-msgid "Size"
-msgstr ""
-
-#: qml/pages/InstalledPage.qml:82
-msgid "Ascending"
+#: qml/pages/InstalledPage.qml:59
+msgctxt "@item runtime and its size"
+msgid "%1 (%2)"
 msgstr ""
 
 #: qml/pages/InstalledPage.qml:88
+msgid "Filter installed…"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:124
+msgid "Refresh"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:132
+msgid "Sort"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:136
+msgid "Name"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:142
+msgid "Size"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:149
+msgid "Ascending"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:155
 msgid "Descending"
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:95
-msgid "View"
+#: qml/pages/InstalledPage.qml:163
+msgid "Remove Unused Runtimes"
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:99
-msgid "Show runtimes"
-msgstr ""
-
-#: qml/pages/InstalledPage.qml:127
+#: qml/pages/InstalledPage.qml:191
 msgid "Could not read installed applications"
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:127
+#: qml/pages/InstalledPage.qml:191
 msgid "No Flatpak Applications Installed"
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:129
+#: qml/pages/InstalledPage.qml:193
 msgid "Install applications from the Storefront tab"
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:137 qml/pages/UpdatesPage.qml:187
+#: qml/pages/InstalledPage.qml:201 qml/pages/UpdatesPage.qml:187
 msgid "Up to Date"
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:137
+#: qml/pages/InstalledPage.qml:201
 msgid "Updates Available"
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:152
+#: qml/pages/InstalledPage.qml:216
 msgid "%1 update is available."
 msgid_plural "%1 updates are available."
 msgstr[0] ""
 msgstr[1] ""
 
-#: qml/pages/InstalledPage.qml:155
+#: qml/pages/InstalledPage.qml:219
 msgid "Review Updates"
 msgstr ""
 
-#: qml/pages/InstalledPage.qml:250
+#: qml/pages/InstalledPage.qml:235
+msgid "Runtimes"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:244
+msgid "Could not read installed runtimes: %1"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:245
+msgid ""
+"Shared libraries and services that applications run on. Flatpak installs and "
+"updates them with the applications that need them."
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:255
+msgid "%1 runtime is no longer used by any application."
+msgid_plural "%1 runtimes are no longer used by any application."
+msgstr[0] ""
+msgstr[1] ""
+
+#: qml/pages/InstalledPage.qml:259
+msgid "Remove Unused"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:317
+msgctxt "@info applications using a runtime"
+msgid "Used by %1"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:319
+msgid "Not used by any application"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:323
+msgid "Only for you"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:334
+msgid "No longer receives updates: %1"
+msgstr ""
+
+#: qml/pages/InstalledPage.qml:430
 msgid "Uninstall"
 msgstr ""
 
-#: qml/pages/SearchPage.qml:49 qml/pages/ShopfrontPage.qml:25
+#: qml/pages/SearchPage.qml:65 qml/pages/ShopfrontPage.qml:24
 msgid "Search applications…"
 msgstr ""
 
-#: qml/pages/SearchPage.qml:75
+#: qml/pages/SearchPage.qml:91
 msgid "Search for Applications"
 msgstr ""
 
-#: qml/pages/SearchPage.qml:76
+#: qml/pages/SearchPage.qml:92
 msgid "Type a name, a feature or a developer to search Flathub."
 msgstr ""
 
-#: qml/pages/SearchPage.qml:85
+#: qml/pages/SearchPage.qml:101
 msgid "%1 result for “%2”"
 msgid_plural "%1 results for “%2”"
 msgstr[0] ""
 msgstr[1] ""
 
-#: qml/pages/SearchPage.qml:103
+#: qml/pages/SearchPage.qml:119
 msgid "Search Is Unavailable"
 msgstr ""
 
-#: qml/pages/SearchPage.qml:120
+#: qml/pages/SearchPage.qml:136
 msgid "Try a different search term, or browse the categories."
 msgstr ""
 
-#: qml/pages/SearchPage.qml:123
+#: qml/pages/SearchPage.qml:139
 msgid "Browse Categories"
 msgstr ""
 
@@ -1181,7 +1294,7 @@ msgstr ""
 msgid "Sign in to rate applications and write reviews."
 msgstr ""
 
-#: qml/pages/SettingsPage.qml:245
+#: qml/pages/SettingsPage.qml:238
 msgid "Sign in with %1"
 msgstr ""
 
@@ -1272,31 +1385,31 @@ msgstr ""
 msgid "Storefront"
 msgstr ""
 
-#: qml/pages/ShopfrontPage.qml:95
+#: qml/pages/ShopfrontPage.qml:97
 msgid "Flathub could not be reached: %1"
 msgstr ""
 
-#: qml/pages/ShopfrontPage.qml:150
+#: qml/pages/ShopfrontPage.qml:152
 msgid "Browse by Category"
 msgstr ""
 
-#: qml/pages/ShopfrontPage.qml:203
+#: qml/pages/ShopfrontPage.qml:205
 msgid "Popular Applications"
 msgstr ""
 
-#: qml/pages/ShopfrontPage.qml:214
+#: qml/pages/ShopfrontPage.qml:216
 msgid "On the Go"
 msgstr ""
 
-#: qml/pages/ShopfrontPage.qml:215
+#: qml/pages/ShopfrontPage.qml:217
 msgid "Apps that work great on phones and tablets"
 msgstr ""
 
-#: qml/pages/ShopfrontPage.qml:222
+#: qml/pages/ShopfrontPage.qml:224
 msgid "New & Noteworthy"
 msgstr ""
 
-#: qml/pages/ShopfrontPage.qml:228
+#: qml/pages/ShopfrontPage.qml:230
 msgid "Recently Updated"
 msgstr ""
 
@@ -1358,6 +1471,22 @@ msgstr ""
 
 #: rust/app/src/bridge/repo_model.rs:221
 msgid "Repository removed successfully"
+msgstr ""
+
+#: rust/app/src/view/runtimes.rs:155
+msgid "unused runtimes"
+msgstr ""
+
+#: rust/core/src/flatpak/mod.rs:250
+msgid "Translations for %1"
+msgstr ""
+
+#: rust/core/src/flatpak/mod.rs:253
+msgid "Graphics drivers (%1)"
+msgstr ""
+
+#: rust/core/src/flatpak/mod.rs:282
+msgid "Step %1 of %2: %3"
 msgstr ""
 
 #: rust/core/src/l10n.rs:488
