@@ -418,6 +418,20 @@ fn select_backend(sandbox: bool) -> Arc<dyn FlatpakBackend> {
     }
 }
 
+/// Read installed state once through `backend` for package diagnostics
+/// (`kiosque --check-backend`): `Ok` carries the `KIOSQUE_BACKEND_READY`
+/// line, `Err` the `KIOSQUE_BACKEND_ERROR` line.
+pub async fn probe(backend: &dyn FlatpakBackend) -> std::result::Result<String, String> {
+    match backend.list_installed().await {
+        Ok(refs) => Ok(format!(
+            "KIOSQUE_BACKEND_READY {} {}",
+            backend.name(),
+            refs.len()
+        )),
+        Err(error) => Err(format!("KIOSQUE_BACKEND_ERROR {}: {error}", backend.name())),
+    }
+}
+
 // ── Installation-change notifications ───────────────────────────────────────
 
 /// Broadcast channel fired whenever any Flatpak installation changes.
@@ -796,6 +810,23 @@ mod tests {
 #[cfg(test)]
 mod routing_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_backend_probe_reports_state_or_the_failure() {
+        let backend = mock::MockBackend::with_installed(vec![InstalledApp::default()]);
+        assert_eq!(
+            probe(&backend).await.unwrap(),
+            "KIOSQUE_BACKEND_READY mock 1"
+        );
+        #[cfg(not(feature = "libflatpak"))]
+        {
+            let error = probe(&broker::OutsideSandbox).await.unwrap_err();
+            assert!(
+                error.starts_with("KIOSQUE_BACKEND_ERROR unavailable: "),
+                "{error}"
+            );
+        }
+    }
 
     #[tokio::test]
     async fn backend_matches_the_process_environment() {

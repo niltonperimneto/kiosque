@@ -202,6 +202,15 @@ pub fn classify_version_error(error: &zbus::Error) -> Result<u32, CompanionError
 /// Connect to the host companion (D-Bus activating it) and check that it is
 /// recent enough for this application.
 pub async fn companion() -> Result<DaemonProxy<'static>, CompanionError> {
+    connect_checked().await.map(|(proxy, _)| proxy)
+}
+
+/// The companion's interface version, if it is installed and recent enough.
+pub async fn companion_version() -> Result<u32, CompanionError> {
+    connect_checked().await.map(|(_, version)| version)
+}
+
+async fn connect_checked() -> Result<(DaemonProxy<'static>, u32), CompanionError> {
     let conn = zbus::Connection::session()
         .await
         .map_err(|e| CompanionError::Failed(e.to_string()))?;
@@ -225,7 +234,7 @@ pub async fn companion() -> Result<DaemonProxy<'static>, CompanionError> {
             required: super::REQUIRED_API_VERSION,
         });
     }
-    Ok(proxy)
+    Ok((proxy, version))
 }
 
 /// Send the automatic-update settings to the daemon (D-Bus activating it),

@@ -327,6 +327,9 @@ pub fn init() {
         crate::catalog::loaded().await;
         crate::catalog::refresh_if_stale().await;
     });
+    // The Flatpak build keeps itself current through the Flatpak portal,
+    // with or without the host companion.
+    crate::runtime::runtime().spawn(kiosque_core::update_status::keep_kiosque_current());
 }
 static TEST_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 #[cfg(feature = "test-util")]

@@ -15,6 +15,7 @@ pub mod runtime;
 pub mod security;
 pub mod settings;
 pub mod transactions;
+pub mod update_status;
 
 pub mod entries;
 
