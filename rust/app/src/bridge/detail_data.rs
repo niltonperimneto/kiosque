@@ -1,8 +1,6 @@
-//! Qt-free loading of an app's detail-page data, shared by `AppDetails` and
-//! the `StoreController` compatibility facade.
+//! Detail data and review actions for AppDetails.
 
 use crate::flathub::odrs::{OdrsRatings, OdrsReview};
-use crate::flathub::types::FlathubApp;
 
 pub use kiosque_core::apps::DetailData;
 
@@ -59,11 +57,8 @@ pub async fn submit_review(
             .to_string();
     }
     if version.is_empty()
-        && let Ok(installed_apps) = crate::flatpak::ui::list_installed_cached().await
-        && let Some(v) = installed_apps
-            .iter()
-            .find(|a| a.application_id == app_id)
-            .and_then(|a| a.version.clone())
+        && crate::view::ops::reload_installed().await.is_ok()
+        && let Some(v) = crate::view::ops::installed_version(&app_id)
     {
         version = v;
     }
@@ -104,19 +99,4 @@ pub async fn review_action(action: ReviewAction, review_id: i64) -> Result<(), S
         ReviewAction::Remove => odrs.remove_review(review_id).await,
     };
     result.map_err(|e| e.to_string())
-}
-
-/// Convert a list of apps into the compact `{app_id, name, summary, icon}` JSON
-/// shape consumed by the legacy developer-apps and similar-apps JSON properties.
-pub fn apps_to_json(apps: &[FlathubApp]) -> Vec<serde_json::Value> {
-    apps.iter()
-        .map(|app| {
-            serde_json::json!({
-                "app_id": app.app_id,
-                "name": app.name,
-                "summary": app.summary.clone().unwrap_or_default(),
-                "icon": app.icon.clone().unwrap_or_default()
-            })
-        })
-        .collect()
 }
