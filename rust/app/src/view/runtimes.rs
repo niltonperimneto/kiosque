@@ -153,7 +153,12 @@ pub async fn remove(refs: Vec<String>) -> Result<(), String> {
         return Ok(());
     }
     let title = kiosque_core::l10n::i18n("unused runtimes", &[]);
-    crate::view::ops::run(Operation::RemoveRuntimes { refs }, &title, |_| {}).await
+    use crate::view::ops::JobOutcome;
+    match crate::view::ops::run(Operation::RemoveRuntimes { refs }, &title, |_, _, _| {}).await {
+        JobOutcome::Done => Ok(()),
+        JobOutcome::Failed(error) => Err(error),
+        JobOutcome::Cancelled => Err("operation cancelled".into()),
+    }
 }
 
 #[cfg(test)]

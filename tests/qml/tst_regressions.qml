@@ -8,6 +8,7 @@ TestCase {
     when: windowShown
     visible: true
 
+    Component { id: detailFactory; AppDetails {} }
     SignalSpy { id: settingsSpy; target: SettingsController; signalName: "settingsSaved" }
     SignalSpy { id: reviewSpy; signalName: "reviewActionFinished" }
     SignalSpy { id: installSpy; target: StoreController; signalName: "installFinished" }
@@ -422,7 +423,8 @@ TestCase {
         compare(tasksAction.objectName, "navTasks")
         verify(!tasksAction.visible)
         BackendFixture.holdOperations(true)
-        StoreController.installApp("org.kiosque.TasksFixture")
+        let detail = createTemporaryObject(detailFactory, this, {appId: "org.kiosque.TasksFixture"})
+        detail.install()
         tryCompare(jobs, "active_count", 1, 10000)
         verify(tasksAction.visible)
         compare(tasksAction.text, "Tasks (1)")
@@ -569,6 +571,7 @@ TestCase {
         tryCompare(dialog, "phase", "confirm", 10000)
         press(dialog, "refInstallButton")
         compare(dialog.phase, "installing")
+        StoreController.confirmRefFileInstall()
         tryVerify(() => BackendFixture.operationCount() === before + 1, 10000)
         let progress = findItem(dialog.contentItem, "refInstallProgress")
         verify(progress !== null && progress.visible)
@@ -586,9 +589,10 @@ TestCase {
         tryCompare(dialog, "phase", "done", 10000)
         compare(installSpy.signalArguments[0][0], true)
         press(dialog, "refCloseButton")
-        installSpy.clear()
-        StoreController.uninstallApp("org.kiosque.RefFixture")
-        tryCompare(installSpy, "count", 1, 10000)
+        let detail = createTemporaryObject(detailFactory, this, {appId: "org.kiosque.RefFixture"})
+        tryCompare(detail, "installed", true, 10000)
+        detail.uninstall()
+        tryCompare(detail, "installed", false, 10000)
 
         // Unreadable files are reported, never installed.
         let count = BackendFixture.operationCount()
@@ -741,9 +745,9 @@ TestCase {
         model.uninstallApp(0)
         tryCompare(model, "uninstalling_app_id", "", 10000)
         tryVerify(() => rows(model) === 0, 10000)
-        installSpy.clear()
-        StoreController.installApp("org.kiosque.Fixture")
-        tryCompare(installSpy, "count", 1, 10000)
+        let detail = createTemporaryObject(detailFactory, this, {appId: "org.kiosque.Fixture"})
+        detail.install()
+        tryCompare(detail, "installed", true, 10000)
         tryVerify(() => rows(model) === 1, 10000)
     }
     function test_detail_page_shows_what_an_install_downloads() {
@@ -792,9 +796,7 @@ TestCase {
         tryVerify(() => BackendFixture.operationCount() === before + 2, 10000)
         compare(BackendFixture.lastRemovedRuntimes(), kde)
 
-        installSpy.clear()
-        StoreController.installApp("org.kiosque.Fixture")
-        tryCompare(installSpy, "count", 1, 10000)
+        page.details.install()
         tryCompare(page.details, "installed", true, 10000)
 
         // Unticking keeps the runtime.
@@ -812,9 +814,8 @@ TestCase {
         wait(300)
         compare(BackendFixture.operationCount(), before + 1)
 
-        installSpy.clear()
-        StoreController.installApp("org.kiosque.Fixture")
-        tryCompare(installSpy, "count", 1, 10000)
+        page.details.install()
+        tryCompare(page.details, "installed", true, 10000)
     }
     function test_installed_page_lists_runtimes_and_removes_unused() {
         verify(BackendFixture.seedRuntimes())
@@ -859,8 +860,8 @@ TestCase {
         tryVerify(() => BackendFixture.lastRemovedRuntimes() === "runtime/org.kde.Platform/x86_64/6.9", 10000)
         tryCompare(page.runtimes, "count", 0, 10000)
 
-        installSpy.clear()
-        StoreController.installApp("org.kiosque.Fixture")
-        tryCompare(installSpy, "count", 1, 10000)
+        let detail = createTemporaryObject(detailFactory, this, {appId: "org.kiosque.Fixture"})
+        detail.install()
+        tryCompare(detail, "installed", true, 10000)
     }
 }

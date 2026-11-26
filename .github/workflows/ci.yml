@@ -32,6 +32,12 @@ jobs:
       - run: python3 scripts/test.py security
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - name: Review dependency changes
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: low
+          fail-on-scopes: runtime, development, unknown
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:

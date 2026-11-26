@@ -58,9 +58,7 @@ mod object {
             let username = settings.oauth_username.unwrap_or_default();
             self.set_oauth_username(String::from(&username));
 
-            let avatar_url =
-                crate::image_cache::image_url(&settings.oauth_avatar_url.unwrap_or_default());
-            self.set_oauth_avatar_url(String::from(&avatar_url));
+            self.set_oauth_avatar_url(settings.oauth_avatar_url.unwrap_or_default());
 
             let user_hash = crate::flathub::odrs::get_user_hash();
             self.set_odrs_user_hash(String::from(&user_hash));

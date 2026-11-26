@@ -1,11 +1,11 @@
-//! Feature-parity adapter for the current storefront.
+//! Per-page app details and actions.
 pub use object::AppDetails;
 use qtbridge::qobject;
 #[qobject(NoQmlElement)]
 mod object {
     //! Per-page app detail object.
     //!
-    //! Unlike the `StoreController` singleton, every `AppDetails` instance holds
+    //! Each `AppDetails` instance holds
     //! the state of one app id, so several detail pages can coexist. Metadata is
     //! loaded from Flathub/ODRS when `appId` is set (superseded loads are
     //! dropped by request generation); installed/busy/progress/statusText are
@@ -341,24 +341,14 @@ mod object {
                 description_changed,
                 q(&details.description)
             );
-            update!(
-                self,
-                icon_url,
-                icon_url_changed,
-                q(&crate::image_cache::image_url(&details.icon))
-            );
+            update!(self, icon_url, icon_url_changed, q(&details.icon));
             update!(self, developer, developer_changed, q(&details.developer));
             update!(self, license, license_changed, q(&details.license));
-            let screenshots: Vec<String> = details
-                .screenshots
-                .iter()
-                .map(|url| crate::image_cache::image_url(url))
-                .collect();
             replace!(
                 self,
                 screenshots,
                 screenshots_changed,
-                util::string_list(screenshots.iter().map(String::as_str))
+                util::string_list(details.screenshots.iter().map(String::as_str))
             );
             replace!(
                 self,
@@ -496,7 +486,7 @@ mod object {
                 return;
             }
             crate::runtime::runtime().spawn(async move {
-                if let Err(e) = crate::flatpak::ui::launch_app(&app_id).await {
+                if let Err(e) = crate::view::ops::launch(&app_id).await {
                     kerr!("AppDetails::launch: {}", e);
                 }
             });

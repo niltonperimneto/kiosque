@@ -103,16 +103,15 @@ mod backend_fixture {
     impl BackendFixture {
         #[qslot(qml_name = "setUpdates")]
         fn set_updates(&self, ids: Vec<String>) -> bool {
-            let ids = std::ffi::CString::new(ids.join("\n")).unwrap();
-            unsafe { crate::services::kiosque_test_set_updates(ids.as_ptr()) }
+            crate::services::set_test_updates(&ids)
         }
         #[qslot(qml_name = "holdOperations")]
         fn hold_operations(&self, hold: bool) {
-            crate::services::kiosque_test_hold_operations(hold);
+            crate::services::hold_test_operations(hold);
         }
         #[qslot(qml_name = "operationCount")]
         fn operation_count(&self) -> i64 {
-            crate::services::kiosque_test_operation_count() as i64
+            crate::services::test_operation_count() as i64
         }
         /// Reset the canned runtime data: Atlas needs GNOME Platform 48 (not
         /// installed); removing Fixture leaves KDE Platform 6.9 unused; and
@@ -148,10 +147,7 @@ mod backend_fixture {
         /// The remote of the most recent mock install ("" if none).
         #[qslot(qml_name = "lastInstallRemote")]
         fn last_install_remote(&self) -> String {
-            let remote = crate::services::kiosque_test_last_install_remote();
-            unsafe { std::ffi::CStr::from_ptr(remote) }
-                .to_string_lossy()
-                .into_owned()
+            crate::services::last_test_install_remote()
         }
     }
 }

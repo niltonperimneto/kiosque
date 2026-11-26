@@ -12,6 +12,7 @@ TestCase {
     }
     width: 640
     height: 480
+    Component { id: detailFactory; AppDetails {} }
     Component { id: appFactory; AppListModel {} }
     Component { id: installedFactory; InstalledModel {} }
     Component {
@@ -67,10 +68,9 @@ TestCase {
     }
 
     function test_details_and_object_destruction() {
-        let detail = StoreController
-        detail.loadAppDetails("org.kiosque.Fixture")
+        let detail = createTemporaryObject(detailFactory, this, {appId: "org.kiosque.Fixture"})
         tryCompare(detail, "loading", false, 10000)
-        compare(detail.detail_name, "Fixture")
+        compare(detail.name, "Fixture")
         let pending = appFactory.createObject(this)
         pending.search("slow")
         pending.destroy()
@@ -79,18 +79,18 @@ TestCase {
 
     function test_transaction_state_is_shared() {
         let installed = createTemporaryObject(installedFactory, this)
-        let detail = StoreController
+        let detail = createTemporaryObject(detailFactory, this, {appId: "org.kiosque.Fixture"})
         let view = createTemporaryObject(viewFactory, this, { model: installed })
         installed.refresh()
-        detail.loadAppDetails("org.kiosque.Fixture")
         tryCompare(installed, "loading", false, 10000)
         tryCompare(detail, "loading", false, 10000)
         tryCompare(view, "count", 1)
-        detail.uninstallApp("org.kiosque.Fixture")
-        tryCompare(detail, "detail_is_installed", false, 10000)
+        tryCompare(detail, "installed", true, 10000)
+        detail.uninstall()
+        tryCompare(detail, "installed", false, 10000)
         tryCompare(view, "count", 0, 10000)
-        detail.installApp("org.kiosque.Fixture")
-        tryCompare(detail, "detail_is_installed", true, 10000)
+        detail.install()
+        tryCompare(detail, "installed", true, 10000)
         tryCompare(view, "count", 1, 10000)
     }
 
