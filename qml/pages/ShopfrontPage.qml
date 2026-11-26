@@ -13,27 +13,43 @@ Kirigami.ScrollablePage {
 
     title: L10n.i18n("Storefront", [])
     supportsRefreshing: true
-    // Its title search field handles Ctrl+F (see Main.qml).
+    // Search happens in place: typing anywhere (see Main.qml), Ctrl+F or the
+    // Search action pulls the bar down, and results replace the shelves.
     readonly property bool hasOwnSearch: true
+    readonly property string searchQuery: searchBar.text.trim()
+    readonly property bool searchActive: searchBar.shown
+    readonly property alias searchBar: searchBar
+    // A private model, so searching never disturbs the shelves.
+    property AppListModel searchModel: AppListModel {}
 
-    // The toolbar field starts a catalog search on the Search page.
-    titleDelegate: Kirigami.SearchField {
-        id: searchField
-        objectName: "storefrontSearchField"
-        Layout.fillWidth: true
-        placeholderText: L10n.i18n("Search applications…", [])
-        autoAccept: false
-        onTextEdited: handOffSearch()
-        onAccepted: handOffSearch()
+    function openSearch(typed) {
+        searchBar.start(typed || "");
+    }
 
-        function handOffSearch() {
-            const query = text;
-            if (query.trim().length > 0) {
-                text = "";
-                applicationWindow().openSearch(query);
-            }
+    onSearchQueryChanged: {
+        if (searchQuery.length > 0) {
+            searchModel.search(searchQuery);
+        } else {
+            searchModel.clear();
         }
     }
+
+    header: Components.DropDownSearchBar {
+        id: searchBar
+        fieldObjectName: "storefrontSearchField"
+        placeholderText: L10n.i18n("Search applications…", [])
+    }
+
+    actions: [
+        Kirigami.Action {
+            objectName: "storefrontSearchAction"
+            text: L10n.i18n("Search", [])
+            icon.name: "search"
+            displayHint: Kirigami.DisplayHint.IconOnly
+            visible: !searchBar.shown
+            onTriggered: page.openSearch("")
+        }
+    ]
 
     property var appListModel: applicationWindow().appListModel
     property var featuredModel: applicationWindow().featuredModel
@@ -78,8 +94,24 @@ Kirigami.ScrollablePage {
 
     // ── Page content ────────────────────────────────────────────────────
     ColumnLayout {
-        id: pageContentLayout
         width: page.width
+        spacing: 0
+
+    // Results replace the shelves while there is a query.
+    Components.SearchResults {
+        objectName: "storefrontSearchResults"
+        Layout.fillWidth: true
+        Layout.topMargin: Kirigami.Units.largeSpacing
+        visible: page.searchQuery.length > 0
+        model: page.searchModel
+        query: page.searchQuery
+    }
+
+    ColumnLayout {
+        id: pageContentLayout
+        objectName: "storefrontShelves"
+        Layout.fillWidth: true
+        visible: page.searchQuery.length === 0
         // Dashboard-style air between content zones.
         spacing: Kirigami.Units.gridUnit * 2
         // No animation to prevent blank screen issues
@@ -236,5 +268,6 @@ Kirigami.ScrollablePage {
         Item {
             Layout.preferredHeight: Kirigami.Units.largeSpacing * 2
         }
+    }
     }
 }

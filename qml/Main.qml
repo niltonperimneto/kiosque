@@ -136,6 +136,14 @@ Kirigami.ApplicationWindow {
         switch (section) {
         case "shopfront":
             root.switchToPage("qrc:/qml/pages/ShopfrontPage.qml");
+            // Home shows the shelves, not a search left open earlier.
+            if (root.pageStack.currentItem && root.pageStack.currentItem.searchBar) {
+                root.pageStack.currentItem.searchBar.close();
+            }
+            break;
+        case "search":
+            // Search lives on the storefront: go there with the bar down.
+            root.openSearch("");
             break;
         case "categories":
             root.switchToPage("qrc:/qml/pages/CategoriesPage.qml");
@@ -153,35 +161,34 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    // Search the whole catalog: show the storefront and pull its search bar
+    // down with `query` typed in.
     function openSearch(query) {
-        const current = pageStack.currentItem;
-        if (current && current.objectName === "searchPage") {
-            if (query && current.searchField) {
-                current.searchField.text = query;
+        root.currentCategory = "";
+        root.currentSection = "shopfront";
+        root.switchToPage("qrc:/qml/pages/ShopfrontPage.qml");
+        Qt.callLater(function() {
+            const page = root.pageStack.currentItem;
+            if (page && page.openSearch) {
+                page.openSearch(query || "");
             }
-            current.focusSearch();
-            return;
-        }
-        const properties = {
-            query: query || "",
-            previousSection: root.currentSection,
-            previousCategory: root.currentCategory
-        };
-        root.currentSection = "search";
-        pageStack.push("qrc:/qml/pages/SearchPage.qml", properties);
+        });
     }
 
-    function returnFromSearch(searchPage) {
-        if (pageStack.currentItem !== searchPage || pageStack.depth <= 1) {
-            return;
+    // Search the current page in place when it can (storefront, a category,
+    // Installed); otherwise search the whole catalog.
+    function searchHere(query) {
+        const page = root.pageStack.currentItem;
+        if (page && page.hasOwnSearch === true && page.openSearch) {
+            page.openSearch(query || "");
+        } else {
+            root.openSearch(query);
         }
-        root.currentSection = searchPage.previousSection;
-        root.currentCategory = searchPage.previousCategory;
-        const previousDuration = pageStack.columnView.scrollDuration;
-        pageStack.columnView.scrollDuration = 0;
-        pageStack.pop();
-        pageStack.columnView.scrollDuration = previousDuration;
     }
+
+    // True while the storefront's search bar is pulled down.
+    readonly property bool storefrontSearching: root.currentSection === "shopfront"
+        && root.pageStack.currentItem !== null && root.pageStack.currentItem.searchActive === true
 
     function openCategories() {
         root.navigate("categories");
@@ -197,14 +204,14 @@ Kirigami.ApplicationWindow {
             objectName: "navHome"
             text: L10n.i18n("Home", [])
             icon.name: "go-home-symbolic"
-            checked: root.currentSection === "shopfront"
+            checked: root.currentSection === "shopfront" && !root.storefrontSearching
             onTriggered: root.navigate("shopfront")
         },
         Kirigami.Action {
             objectName: "navSearch"
             text: L10n.i18n("Search", [])
             icon.name: "search-symbolic"
-            checked: root.currentSection === "search"
+            checked: root.storefrontSearching
             onTriggered: root.navigate("search")
         },
         Kirigami.Action {
@@ -255,25 +262,15 @@ Kirigami.ApplicationWindow {
                 || event.text.charCodeAt(0) < 32 || event.text === "\u007f") {
             return;
         }
-        const page = root.pageStack.currentItem;
-        if (page && page.objectName === "searchPage" && page.searchField) {
-            const field = page.searchField;
-            field.forceActiveFocus();
-            field.deselect();
-            field.insert(field.text.length, event.text);
-            field.cursorPosition = field.text.length;
-        } else {
-            root.openSearch(event.text);
-        }
+        root.searchHere(event.text);
         event.accepted = true;
     }
 
-    // Ctrl+F: pages with their own search field handle it (Kirigami.SearchField
-    // binds StandardKey.Find); everywhere else it opens the Search page.
+    // Ctrl+F: pull the current page's search bar down, or search the catalog
+    // from the storefront.
     Shortcut {
         sequences: [StandardKey.Find]
-        enabled: !(root.pageStack.currentItem && root.pageStack.currentItem.hasOwnSearch === true)
-        onActivated: root.navigate("search")
+        onActivated: root.searchHere("")
     }
 
     // Ctrl+R / F5: reload the current page.

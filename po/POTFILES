@@ -4,6 +4,7 @@ qml/components/AppCard.qml
 qml/components/AppOfTheDayCard.qml
 qml/components/Categories.qml
 qml/components/CategoryChip.qml
+qml/components/DropDownSearchBar.qml
 qml/components/FeatureCard.qml
 qml/components/GamesSection.qml
 qml/components/HeroBanner.qml
@@ -13,6 +14,7 @@ qml/components/RatingSummary.qml
 qml/components/RemoteImageView.qml
 qml/components/RemoveAppDialog.qml
 qml/components/ReviewCard.qml
+qml/components/SearchResults.qml
 qml/components/StorefrontAppCard.qml
 qml/components/TasksDialog.qml
 qml/components/TopCropImage.qml
@@ -22,7 +24,6 @@ qml/pages/AppDetailPage.qml
 qml/pages/CategoriesPage.qml
 qml/pages/CategoryAppListPage.qml
 qml/pages/InstalledPage.qml
-qml/pages/SearchPage.qml
 qml/pages/SettingsPage.qml
 qml/pages/ShopfrontPage.qml
 qml/pages/UpdatesPage.qml
