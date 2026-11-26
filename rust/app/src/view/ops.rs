@@ -1,9 +1,87 @@
 //! Backend operations and registry snapshots used by the views.
 
 use kiosque_core::entries::InstalledEntry;
-use kiosque_core::flatpak::{RemoteInfo, RemoteSource, Scope};
+use kiosque_core::flatpak::{Operation, RemoteInfo, RemoteSource, Scope};
+use std::sync::Arc;
 
 use crate::services::services;
+
+struct CancelOnDrop {
+    client: Arc<crate::transactions::Transactions>,
+    id: u64,
+    finished: bool,
+}
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        if !self.finished {
+            let client = self.client.clone();
+            let id = self.id;
+            crate::runtime::runtime().spawn(async move {
+                client.cancel(id).await;
+            });
+        }
+    }
+}
+/// Terminal state of a registry job driven by [`run`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum JobOutcome {
+    Done,
+    Failed(String),
+    Cancelled,
+}
+
+/// Enqueue `op` on the shared transaction client and follow its registry
+/// job until it reaches a terminal state.
+///
+/// `progress` receives `(job.progress, job.status, job.id)` on every
+/// change of the job (progress is negative while indeterminate). It is
+/// called once with `(-1.0, "", id)` straight after enqueueing when the
+/// registry does not know the job yet, so callers learn the id needed for
+/// [`crate::transactions::Transactions::cancel`] immediately.
+/// Dropping the returned future cancels the job.
+pub async fn run(
+    op: Operation,
+    title: &str,
+    progress: impl Fn(f64, String, u64) + Send,
+) -> JobOutcome {
+    use crate::registry::JobState;
+    let mut events = services().registry.subscribe();
+    let client = services().transactions().await;
+    let id = match client.enqueue(op, title).await {
+        Ok(id) => id,
+        Err(error) => return JobOutcome::Failed(error),
+    };
+    let mut guard = CancelOnDrop {
+        client,
+        id,
+        finished: false,
+    };
+    if services().registry.job(id).is_none() {
+        progress(-1.0, String::new(), id);
+    }
+    loop {
+        if let Some(job) = services().registry.job(id) {
+            let outcome = match job.state {
+                JobState::Done => Some(JobOutcome::Done),
+                JobState::Failed(ref error) => Some(JobOutcome::Failed(error.clone())),
+                JobState::Cancelled => Some(JobOutcome::Cancelled),
+                JobState::Queued | JobState::Running => None,
+            };
+            progress(job.progress, job.status.clone(), job.id);
+            if let Some(outcome) = outcome {
+                guard.finished = true;
+                return outcome;
+            }
+        }
+        match events.recv().await {
+            Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+            Err(_) => {
+                guard.finished = true;
+                return JobOutcome::Failed("transaction registry closed".into());
+            }
+        }
+    }
+}
 
 pub async fn launch(id: &str) -> Result<(), String> {
     services()
