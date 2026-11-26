@@ -107,14 +107,15 @@ def no_cpp():
 
 
 def security():
-    require('python3', 'tar', 'git')
+    require('python3', 'tar', 'git', 'cargo')
+    cargo('tree', '--locked', '--workspace', '--all-features', '--depth', '0')
     tools = RESULTS / 'security-tools'
     tools.mkdir(parents=True, exist_ok=True)
     archive = tools / 'cargo-audit.tgz'
     run(['python3', 'scripts/download_build_tool.py', 'cargo-audit', archive])
     run(['tar', '-xzf', archive, '-C', tools, '--strip-components=1'])
     run(['python3', 'scripts/dependency_sbom.py', ROOT / 'rust/Cargo.lock', RESULTS / 'rust-dependencies.spdx.json'])
-    run([tools / 'cargo-audit', 'audit', '--file', ROOT / 'rust/Cargo.lock', '--json', '--deny', 'warnings'], timeout=600)
+    run([tools / 'cargo-audit', 'audit', '--file', ROOT / 'rust/Cargo.lock', '--json', '--deny', 'warnings', '--deny', 'yanked'], timeout=600)
     secrets = tools / 'gitleaks.tgz'
     run(['python3', 'scripts/download_build_tool.py', 'gitleaks', secrets])
     run(['tar', '-xzf', secrets, '-C', tools])
@@ -210,8 +211,8 @@ def selected_suites(paths):
             selected.update(('core', 'services', 'qt', 'qml'))
         if '/flatpak/' in path or '/transactions' in path or '/daemon/' in path:
             selected.add('system')
-        if path in ('rust/Cargo.toml', 'rust/Cargo.lock') or path.startswith('.github/'):
-            selected.update(('core', 'services', 'qt', 'qml'))
+        if path.endswith(('Cargo.toml', 'Cargo.lock')) or path.startswith('.github/'):
+            selected.update(('security', 'core', 'services', 'qt', 'qml'))
         if path.endswith(('.spec', '.desktop', '.metainfo.xml')) or path == 'org.kiosque.Kiosque.json' or path.startswith('flatpak/'):
             selected.add('packages')
     return sorted(selected)
@@ -223,7 +224,7 @@ def environment_record(suite, backend):
               'platform': platform.platform(), 'cargo_build_jobs': os.environ.get('CARGO_BUILD_JOBS'),
               'lock_sha256': hashlib.sha256(lock.read_bytes()).hexdigest() if lock.exists() else None,
               'tools': {}}
-    names = ['cargo', 'rustc'] if suite in ('lint', 'core', 'services', 'qt', 'qml', 'pr') else []
+    names = ['cargo', 'rustc'] if suite in ('security', 'lint', 'core', 'services', 'qt', 'qml', 'pr') else []
     if suite in ('qt', 'qml', 'pr'):
         names += ['meson', 'ninja']
     for name in names:

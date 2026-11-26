@@ -23,6 +23,10 @@ class RoutingTests(unittest.TestCase):
     def test_updater_changes_run_core(self):
         self.assertIn('core', runner.selected_suites(['rust/updater/src/main.rs']))
 
+    def test_dependency_and_ci_changes_require_security_suite(self):
+        for path in ('rust/Cargo.toml', 'rust/core/Cargo.toml', 'rust/Cargo.lock', '.github/dependabot.yml'):
+            self.assertIn('security', runner.selected_suites([path]), path)
+
     def test_no_cpp_guard_rejects_sources(self):
         runner.no_cpp()  # the tree itself must pass
 

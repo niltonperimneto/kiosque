@@ -7,7 +7,7 @@ Run suites from the repository root with `python3 scripts/test.py <suite>`. Comm
 | Suite | Prerequisites | Contract |
 | --- | --- | --- |
 | `guidance` | Python 3 | Skill frontmatter, local Markdown links, instruction inventory, change-to-suite routing |
-| `security` | Python 3, tar, Git and public network | Checksummed RustSec audit and redacted source/history secret scan; SPDX inventory of locked Rust dependencies |
+| `security` | Python 3, Cargo, tar, Git and public network | Locked workspace sync, crates.io SHA-256 provenance check, checksummed RustSec/yanked audit, redacted source/history secret scan, and SPDX inventory |
 | `lint` | Stable Rust with rustfmt and Clippy | Workspace formatting; core Clippy with warnings denied |
 | `core` | Stable Rust, C/C++ build tools | Domain, registry, queue, parsers, scheduling, images, cache codecs; no Qt/KDE/libflatpak headers |
 | `services` | Core tools, Python, loopback sockets | Local HTTP responses, cache behavior, temporary persistence, private D-Bus authorization |
@@ -53,7 +53,7 @@ Guest provisioning installs packages from the pinned Fedora release and updates 
 
 ## CI and release qualification
 
-Pull requests run core/service checks and a native/broker desktop matrix before packaging. The existing RPM, Flatpak and AppImage builds remain. Scheduled/manual system qualification runs the native signed fixture lifecycle in disposable VMs. Trusted successful push builds trigger artifact smoke tests for the exact source commit and packaging run; untrusted pull-request artifacts are never promoted to the VM workflow.
+Pull requests run security/dependency review, core/service checks and a native/broker desktop matrix before packaging. Dependabot groups minor and patch Cargo updates with a publication cooldown (bypassed automatically for security updates) and updates manifests alongside `Cargo.lock`; a daily scheduled `Dependency audit` workflow re-runs `security` against fresh RustSec and crates.io metadata so newly disclosed advisories or yanks in locked crates fail promptly even without code pushes. The existing RPM, Flatpak and AppImage builds remain. Scheduled/manual system qualification runs the native signed fixture lifecycle in disposable VMs. Trusted successful push builds trigger artifact smoke tests for the exact source commit and packaging run; untrusted pull-request artifacts are never promoted to the VM workflow.
 
 Release tags also trigger builds and system qualification. Before publishing, require green CI, the native system check, and all three package smoke checks for the same commit. Release publication remains a separate action. Configure main to require pull requests and the core/native/broker checks, including administrators, with resolved conversations and force-push/deletion disabled. Dependency alerts, automatic security fixes, secret push protection and private vulnerability reporting are enabled. Keep the Security audit context required.
 
@@ -69,7 +69,7 @@ No coverage percentage or screenshot-equality gate is imposed. Sanitizers, perfo
 
 The service suite runs a private D-Bus daemon and confirms that unrelated clients cannot invoke even valid-looking mutation requests. Streaming HTTP fixtures exercise length headers and chunked bodies; core tests cover private settings migration, invalid origins, PKCE/callback handling, queue bounds and image dimension budgets. Dedicated desktop fixtures supply an explicit local transport; release constructors retain public HTTPS restrictions.
 
-Use `KIOSQUE_TEST_BUILD_DIR` to select a separate Meson directory when another session is building the checkout. The security audit emits an SPDX lockfile inventory under its results directory; this covers Rust source dependencies, including optional/test/build crates, and is not a complete inventory of bundled system libraries. Trusted package pushes produce GitHub provenance attestations. Scheduled/trusted CodeQL scans cover Rust, Python and Actions; no successful scan is claimed before those workflows execute.
+Use `KIOSQUE_TEST_BUILD_DIR` to select a separate Meson directory when another session is building the checkout. The security audit verifies `--locked` Cargo workspace resolution, rejects non-crates.io sources, missing SHA-256 checksums, yanked crates and `[patch]`/`[replace]` overrides, and emits an SPDX lockfile inventory under its results directory; this covers Rust source dependencies, including optional/test/build crates, and is not a complete inventory of bundled system libraries. Pull requests also run GitHub dependency review across Cargo and Actions diffs. Trusted package pushes produce GitHub provenance attestations. Scheduled/trusted CodeQL scans cover Rust, Python and Actions; no successful scan is claimed before those workflows execute.
 
 Live OAuth provider registration, signed native lifecycle, Flatpak-to-native companion identity/activation and exact package smoke checks require separate release qualification. See [the hardening record](security-hardening.md) for the current execution evidence.
 

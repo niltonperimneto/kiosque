@@ -44,6 +44,9 @@ pub struct InstalledEntry {
     pub is_runtime: bool,
 }
 
+pub const POPULAR_CACHE_SCHEMA: u32 = 1;
+pub const FEATURED_CACHE_SCHEMA: u32 = 3;
+
 /// Disk-cache schema of `Vec<InstalledEntry>`. The cache is postcard, which is
 /// not self-describing: bump this whenever the struct's fields change so older
 /// files are ignored instead of misread. 2: added `size_bytes`.
@@ -72,6 +75,21 @@ pub fn format_size(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_existing_collection_cache_files() {
+        // Pre-migration postcard files containing one entry at timestamp 7.
+        let popular = b"KQC\0\x01\0\0\0\x01\0\0\0\x07\x01\x01A\0\0\x02id";
+        let featured = b"KQC\0\x01\0\0\0\x03\0\0\0\x07\x01\x01B\0\0\x02id\0\0\0\0\0\0\x01";
+        let (stamp, entries) =
+            crate::disk_cache::decode::<Vec<AppEntry>>(POPULAR_CACHE_SCHEMA, popular).unwrap();
+        assert_eq!((stamp, entries[0].name.as_str()), (7, "A"));
+        let (stamp, entries) =
+            crate::disk_cache::decode::<Vec<FeaturedEntry>>(FEATURED_CACHE_SCHEMA, featured)
+                .unwrap();
+        assert_eq!((stamp, entries[0].name.as_str()), (7, "B"));
+        assert!(entries[0].is_app_of_the_day);
+    }
 
     #[test]
     fn formats_sizes_with_si_units() {

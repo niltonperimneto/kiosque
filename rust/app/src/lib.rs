@@ -5,13 +5,11 @@
 extern crate kiosque_core;
 
 pub use kiosque_core::{
-    cache, catalog, config, daemon, flathub, registry, runtime, settings, transactions,
+    cache, catalog, config, daemon, flathub, flatpak, registry, runtime, settings, transactions,
 };
 #[macro_use]
 pub mod bridge;
 pub mod disk_cache;
-pub mod flatpak;
-pub mod image_cache;
 #[cfg(feature = "test-util")]
 pub mod quicktest_ffi;
 pub mod services;

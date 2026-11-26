@@ -1,120 +1,86 @@
-//! Flatpak operations as the views use them: everything goes through the
-//! shared transaction client, and progress comes from the registry's job
-//! state (the same numbers the Installed page and the daemon see).
-
-use std::sync::Arc;
+//! Backend operations and registry snapshots used by the views.
 
 use kiosque_core::entries::InstalledEntry;
 use kiosque_core::flatpak::{Operation, RemoteInfo, RemoteSource, Scope};
-use kiosque_core::registry::JobState;
-use kiosque_core::transactions::Transactions;
+use std::sync::Arc;
 
 use crate::services::services;
 
-/// Cancels the queued/running job if the waiting future is dropped early.
 struct CancelOnDrop {
-    client: Arc<Transactions>,
+    client: Arc<crate::transactions::Transactions>,
     id: u64,
     finished: bool,
 }
-
 impl Drop for CancelOnDrop {
     fn drop(&mut self) {
         if !self.finished {
             let client = self.client.clone();
             let id = self.id;
-            kiosque_core::runtime::runtime().spawn(async move {
+            crate::runtime::runtime().spawn(async move {
                 client.cancel(id).await;
             });
         }
     }
 }
-
-/// Job progress as reported to views: `fraction` in 0…1 (negative while
-/// unknown) and a status line.
+/// Terminal state of a registry job driven by [`run`].
 #[derive(Debug, Clone, PartialEq)]
-pub struct JobProgress {
-    pub id: u64,
-    pub fraction: f64,
-    pub status: String,
+pub enum JobOutcome {
+    Done,
+    Failed(String),
+    Cancelled,
 }
 
-/// Enqueue `op` and wait for its terminal state, reporting progress.
+/// Enqueue `op` on the shared transaction client and follow its registry
+/// job until it reaches a terminal state.
+///
+/// `progress` receives `(job.progress, job.status, job.id)` on every
+/// change of the job (progress is negative while indeterminate). It is
+/// called once with `(-1.0, "", id)` straight after enqueueing when the
+/// registry does not know the job yet, so callers learn the id needed for
+/// [`crate::transactions::Transactions::cancel`] immediately.
+/// Dropping the returned future cancels the job.
 pub async fn run(
     op: Operation,
     title: &str,
-    progress: impl Fn(JobProgress) + Send,
-) -> Result<(), String> {
+    progress: impl Fn(f64, String, u64) + Send,
+) -> JobOutcome {
+    use crate::registry::JobState;
     let mut events = services().registry.subscribe();
     let client = services().transactions().await;
-    let id = client.enqueue(op, title).await?;
+    let id = match client.enqueue(op, title).await {
+        Ok(id) => id,
+        Err(error) => return JobOutcome::Failed(error),
+    };
     let mut guard = CancelOnDrop {
         client,
         id,
         finished: false,
     };
+    if services().registry.job(id).is_none() {
+        progress(-1.0, String::new(), id);
+    }
     loop {
         if let Some(job) = services().registry.job(id) {
-            match job.state {
-                JobState::Done => {
-                    guard.finished = true;
-                    return Ok(());
-                }
-                JobState::Failed(error) => {
-                    guard.finished = true;
-                    return Err(error);
-                }
-                JobState::Cancelled => {
-                    guard.finished = true;
-                    return Err("operation cancelled".into());
-                }
-                _ => progress(JobProgress {
-                    id,
-                    fraction: job.progress,
-                    status: job.status.clone(),
-                }),
+            let outcome = match job.state {
+                JobState::Done => Some(JobOutcome::Done),
+                JobState::Failed(ref error) => Some(JobOutcome::Failed(error.clone())),
+                JobState::Cancelled => Some(JobOutcome::Cancelled),
+                JobState::Queued | JobState::Running => None,
+            };
+            progress(job.progress, job.status.clone(), job.id);
+            if let Some(outcome) = outcome {
+                guard.finished = true;
+                return outcome;
             }
         }
         match events.recv().await {
             Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-            Err(_) => return Err("transaction registry closed".into()),
+            Err(_) => {
+                guard.finished = true;
+                return JobOutcome::Failed("transaction registry closed".into());
+            }
         }
     }
-}
-
-/// Cancel a job started by [`run`].
-pub async fn cancel(id: u64) {
-    services().transactions().await.cancel(id).await;
-}
-
-pub async fn install(id: &str, progress: impl Fn(JobProgress) + Send) -> Result<(), String> {
-    let (remote, scope) = services().install_target(id);
-    run(
-        Operation::Install {
-            remote,
-            id: id.into(),
-            scope,
-        },
-        id,
-        progress,
-    )
-    .await
-}
-
-pub async fn uninstall(id: &str, progress: impl Fn(JobProgress) + Send) -> Result<(), String> {
-    run(
-        Operation::Uninstall {
-            id: id.into(),
-            scope: None,
-        },
-        id,
-        progress,
-    )
-    .await
-}
-
-pub async fn update(ids: &[String], progress: impl Fn(JobProgress) + Send) -> Result<(), String> {
-    run(Operation::Update { ids: ids.to_vec() }, "Update", progress).await
 }
 
 pub async fn launch(id: &str) -> Result<(), String> {
@@ -167,13 +133,6 @@ pub async fn reload_updates() -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-pub async fn is_installed(id: &str) -> bool {
-    if !services().registry.installed_loaded() {
-        let _ = reload_installed().await;
-    }
-    services().registry.is_installed(id)
-}
-
 /// Installed version of `id`, if known.
 pub fn installed_version(id: &str) -> Option<String> {
     services()
@@ -221,21 +180,4 @@ pub fn installed_entries() -> Vec<InstalledEntry> {
         }
     }
     entries
-}
-
-/// The registry's job for `app_id`, if one is queued or running.
-pub fn active_job(app_id: &str) -> Option<JobProgress> {
-    services()
-        .registry
-        .jobs()
-        .into_iter()
-        .find(|j| {
-            j.app_ids.iter().any(|a| a == app_id)
-                && matches!(j.state, JobState::Queued | JobState::Running)
-        })
-        .map(|j| JobProgress {
-            id: j.id,
-            fraction: j.progress,
-            status: j.status,
-        })
 }

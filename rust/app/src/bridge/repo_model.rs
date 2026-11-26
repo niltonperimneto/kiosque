@@ -114,13 +114,20 @@ mod object {
             let name = name.to_string();
             let qt_thread = std::sync::Arc::new(self.get_thread_handle());
             crate::runtime::runtime().spawn(async move {
-                let result = crate::flatpak::ui::add_repository_file(&name, data).await;
+                let result = crate::services::services()
+                    .backend
+                    .add_remote(
+                        &name,
+                        crate::flatpak::RemoteSource::FlatpakRepo(data),
+                        crate::flatpak::Scope::User,
+                    )
+                    .await;
                 if result.is_ok() {
                     super::index_new_remote(name.clone());
                 }
                 let (success, msg) = match result {
                     Ok(_) => (true, "Repository added successfully".to_string()),
-                    Err(e) => (false, e),
+                    Err(e) => (false, e.to_string()),
                 };
                 qt_thread.invoke_mut(move |qobject| {
                     qobject.remote_added(success, String::from(&msg));
