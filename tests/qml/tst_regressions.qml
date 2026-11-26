@@ -318,6 +318,9 @@ TestCase {
         page.forceActiveFocus()
         keyClick(Qt.Key_A)
         tryVerify(() => page.searchActive)
+        // Escape only reaches the field once it holds focus.
+        const categoryField = findChild(page, "categorySearchField")
+        tryVerify(() => categoryField.activeFocus)
         compare(root.pageStack.currentItem, page)
         compare(page.searchQuery.toLowerCase(), "a")
         verify(page.hasVisibleApps)
