@@ -113,6 +113,37 @@ mod backend_fixture {
         fn operation_count(&self) -> i64 {
             crate::services::test_operation_count() as i64
         }
+        /// Reset the canned runtime data: Atlas needs GNOME Platform 48 (not
+        /// installed); removing Fixture leaves KDE Platform 6.9 unused; and
+        /// Freedesktop Platform 24.08 is installed but unused.
+        #[qslot(qml_name = "seedRuntimes")]
+        fn seed_runtimes(&self) -> bool {
+            let Some(backend) = crate::services::test_backend() else {
+                return false;
+            };
+            super::seed_runtimes(backend);
+            true
+        }
+        /// Refs of the most recent runtime removal, newline-separated.
+        #[qslot(qml_name = "lastRemovedRuntimes")]
+        fn last_removed_runtimes(&self) -> String {
+            crate::services::test_backend()
+                .and_then(|backend| {
+                    backend
+                        .ran
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .rev()
+                        .find_map(|op| match op {
+                            kiosque_core::flatpak::Operation::RemoveRuntimes { refs } => {
+                                Some(refs.join("\n"))
+                            }
+                            _ => None,
+                        })
+                })
+                .unwrap_or_default()
+        }
         /// The remote of the most recent mock install ("" if none).
         #[qslot(qml_name = "lastInstallRemote")]
         fn last_install_remote(&self) -> String {
@@ -120,6 +151,83 @@ mod backend_fixture {
         }
     }
 }
+fn seed_runtimes(backend: &kiosque_core::flatpak::mock::MockBackend) {
+    use kiosque_core::flatpak::{
+        InstalledApp, InstalledRuntime, OperationPlan, PlannedStep, RefKind, Scope, StepAction,
+    };
+    let step = |reference: &str, kind, action, download, installed| PlannedStep {
+        reference: reference.into(),
+        kind,
+        action,
+        download_size: download,
+        installed_size: installed,
+        ..Default::default()
+    };
+    let mut plans = backend.plans.lock().unwrap();
+    plans.clear();
+    plans.insert(
+        "org.example.Atlas".into(),
+        OperationPlan {
+            steps: vec![
+                step(
+                    "app/org.example.Atlas/x86_64/stable",
+                    RefKind::App,
+                    StepAction::Install,
+                    12_000_000,
+                    40_000_000,
+                ),
+                step(
+                    "runtime/org.gnome.Platform/x86_64/48",
+                    RefKind::Runtime,
+                    StepAction::Install,
+                    400_000_000,
+                    1_200_000_000,
+                ),
+            ],
+        },
+    );
+    plans.insert(
+        "org.kiosque.Fixture".into(),
+        OperationPlan {
+            steps: vec![
+                step(
+                    "app/org.kiosque.Fixture/x86_64/stable",
+                    RefKind::App,
+                    StepAction::Uninstall,
+                    0,
+                    565_400_000,
+                ),
+                step(
+                    "runtime/org.kde.Platform/x86_64/6.9",
+                    RefKind::Runtime,
+                    StepAction::Uninstall,
+                    0,
+                    900_000_000,
+                ),
+            ],
+        },
+    );
+    let runtime = |id: &str, branch: &str, used_by: &[&str]| InstalledRuntime {
+        info: InstalledApp {
+            id: id.into(),
+            name: id.into(),
+            arch: "x86_64".into(),
+            branch: branch.into(),
+            kind: RefKind::Runtime,
+            scope: Scope::System,
+            installed_size: 900_000_000,
+            ..Default::default()
+        },
+        used_by: used_by.iter().map(|s| s.to_string()).collect(),
+        unused: used_by.is_empty(),
+        eol: String::new(),
+    };
+    *backend.runtimes.lock().unwrap() = vec![
+        runtime("org.kde.Platform", "6.9", &["org.kiosque.Fixture"]),
+        runtime("org.freedesktop.Platform", "24.08", &[]),
+    ];
+}
+
 qml_element!(
     fixtures::BackgroundPortalFixture,
     "BackgroundPortalFixture",

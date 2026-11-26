@@ -33,6 +33,22 @@ Kirigami.ScrollablePage {
         appId: page.appId
     }
 
+    // What installing this app downloads: the app itself plus any runtime
+    // that is not installed yet.
+    RuntimePlanner {
+        id: installPlanner
+    }
+
+    function planInstall() {
+        if (details.installed || !details.permissionsKnown || details.errorMessage !== "") {
+            installPlanner.clear();
+            return;
+        }
+        installPlanner.planInstall(page.appId, (details.origin || {}).name || "", details.runtime);
+    }
+
+    readonly property var installSummary: installPlanner.summary || ({})
+
     Connections {
         target: details
 
@@ -40,8 +56,19 @@ Kirigami.ScrollablePage {
             page.reviewsShown = page.reviewsBatchSize;
         }
 
+        function onLoaded() {
+            Qt.callLater(page.planInstall);
+        }
+
+        function onInstalledChanged() {
+            Qt.callLater(page.planInstall);
+        }
+
         function onOperationFinished(success, error) {
             page.actionError = success ? "" : L10n.i18n("Could not complete the operation: %1", [error])
+            // Runtimes confirmed in the remove dialog go once the app is gone.
+            if (removeConfirmDialog.pendingRuntimes.length > 0)
+                removeConfirmDialog.appRemoved(success)
         }
 
         function onReviewActionFinished(success, error) {
@@ -570,7 +597,7 @@ Kirigami.ScrollablePage {
                 text: L10n.i18n("Remove", [])
                 icon.name: "edit-delete-remove"
                 height: Kirigami.Units.gridUnit * 2
-                onClicked: removeConfirmDialog.open()
+                onClicked: removeConfirmDialog.openFor(page.appId, details.name !== "" ? details.name : page.appId)
             }
 
             // Progress of the running operation, with Cancel.
@@ -651,6 +678,75 @@ Kirigami.ScrollablePage {
                 Controls.ToolTip.visible: hovered
                 Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
+
+            // The shared platform the app runs on.
+            Kirigami.Chip {
+                objectName: "runtimeChip"
+                visible: details.runtimeName !== ""
+                height: Kirigami.Units.gridUnit * 2
+                checkable: false
+                closable: false
+                hoverEnabled: true
+                icon.name: "run-build"
+                text: L10n.i18nc("@info the runtime an application uses", "Runtime: %1", [details.runtimeName])
+                Accessible.name: text
+                Controls.ToolTip.text: L10n.i18n("Applications share runtimes: libraries and services they need, installed once for all of them.", [])
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+            }
+        }
+
+        // What an installation downloads, including runtimes it needs.
+        RowLayout {
+            objectName: "installPlanRow"
+            Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            spacing: Kirigami.Units.smallSpacing
+            visible: !details.loading && !details.installed
+                     && (installPlanner.loading || page.installSummary.known === true)
+
+            Controls.BusyIndicator {
+                visible: installPlanner.loading
+                running: visible
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+            }
+
+            Controls.Label {
+                objectName: "installPlanLabel"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: Kirigami.Theme.disabledTextColor
+                text: {
+                    if (installPlanner.loading)
+                        return L10n.i18n("Checking what the installation needs…", []);
+                    const plan = page.installSummary;
+                    const parts = [];
+                    if (plan.download)
+                        parts.push(plan.installed
+                            ? L10n.i18n("Downloads %1, uses %2 on disk.", [plan.download, plan.installed])
+                            : L10n.i18n("Downloads %1.", [plan.download]));
+                    const extra = (plan.runtimes || []).map(r => r.download
+                        ? L10n.i18nc("@item runtime and its download size", "%1 (%2)", [r.name, r.download])
+                        : r.name);
+                    if (extra.length > 0)
+                        parts.push(L10n.i18n("Also installs %1, shared with other applications.", [extra.join(", ")]));
+                    else if (plan.runtimeInstalled)
+                        parts.push(L10n.i18n("Uses %1, which is already installed.", [plan.runtime]));
+                    return parts.join(" ");
+                }
+            }
+        }
+
+        Kirigami.InlineMessage {
+            objectName: "runtimeEolMessage"
+            Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            visible: !details.loading && !details.installed && (page.installSummary.eol || "") !== ""
+            type: Kirigami.MessageType.Warning
+            text: L10n.i18n("This application depends on software that no longer receives updates (%1).", [page.installSummary.eol || ""])
         }
 
         // ── Separator ───────────────────────────────────────────────────
@@ -1422,31 +1518,12 @@ Kirigami.ScrollablePage {
         }
     }
 
-    // ── Sandbox Permissions Dialog ─────────────────────────────────────
-    Kirigami.PromptDialog {
+    Components.RemoveAppDialog {
         id: removeConfirmDialog
-        objectName: "removeConfirmDialog"
-        title: L10n.i18n("Remove %1?", [details.name !== "" ? details.name : page.appId])
-        subtitle: L10n.i18n("The application is uninstalled. Its settings and data in your home folder are kept.", [])
-        standardButtons: Kirigami.Dialog.NoButton
-        customFooterActions: [
-            Kirigami.Action {
-                objectName: "confirmRemoveAction"
-                text: L10n.i18n("Remove", [])
-                icon.name: "edit-delete-remove"
-                onTriggered: {
-                    removeConfirmDialog.close();
-                    details.uninstall();
-                }
-            },
-            Kirigami.Action {
-                text: L10n.i18n("Cancel", [])
-                icon.name: "dialog-cancel"
-                onTriggered: removeConfirmDialog.close()
-            }
-        ]
+        onConfirmed: details.uninstall()
     }
 
+    // ── Sandbox Permissions Dialog ─────────────────────────────────────
     Kirigami.PromptDialog {
         id: permissionsDialog
         title: L10n.i18n("Application Permissions", [])

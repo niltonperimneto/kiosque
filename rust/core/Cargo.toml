@@ -57,8 +57,8 @@ quick-xml = "0.42.0"
 serde-saphyr = { version = "2.2.0", default-features = false, features = ["deserialize"] }
 regex = "1.13.2"
 
-# libflatpak backend (optional, see [features]); gio/glib are consumed via libflatpak re-exports
-libflatpak = { version = "0.7.0", features = ["v1_1"], optional = true }
+# libflatpak backend (optional, see [features]); gio/glib use its re-exports
+libflatpak = { version = "0.7.0", features = ["v1_9_1"], optional = true }
 jiff.workspace = true
 
 gettext-catalog = "0.1.0"

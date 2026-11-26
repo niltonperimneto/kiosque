@@ -20,6 +20,13 @@ mod object {
         pub(super) oauth_username: String,
         pub(super) oauth_avatar_url: String,
         pub(super) odrs_user_hash: String,
+        /// Running inside the Flatpak sandbox, where the host companion
+        /// performs automatic updates.
+        pub(super) sandboxed: bool,
+        /// `ready`, `outdated`, `missing` or `unreachable` (empty until checked).
+        pub(super) companion_state: String,
+        /// An enabled host timer that already updates Flatpaks, if any.
+        pub(super) system_updater: String,
     }
 
     impl Drop for SettingsController {
@@ -55,6 +62,30 @@ mod object {
 
             let user_hash = crate::flathub::odrs::get_user_hash();
             self.set_odrs_user_hash(String::from(&user_hash));
+
+            self.refresh_update_status();
+        }
+
+        /// Re-check who can keep applications updated: the host companion
+        /// and any system timer that already does it.
+        #[qslot(qml_name = "refreshUpdateStatus")]
+        pub fn refresh_update_status(&mut self) {
+            self.set_sandboxed(kiosque_core::flatpak::in_sandbox());
+            let thread = std::sync::Arc::new(self.get_thread_handle());
+            crate::runtime::runtime().spawn(async move {
+                let companion = kiosque_core::update_status::companion_state().await;
+                let updater = tokio::task::spawn_blocking(
+                    kiosque_core::update_status::detect_system_auto_updater,
+                )
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+                thread.invoke_mut(move |object| {
+                    object.set_companion_state(companion.id().to_string());
+                    object.set_system_updater(updater);
+                });
+            });
         }
 
         #[qslot(qml_name = "saveSettings")]
@@ -343,6 +374,37 @@ mod object {
         pub fn login_failed(&mut self, error: String);
         #[qsignal(qml_name = "settingsSaved")]
         pub fn settings_saved(&mut self, success: bool, error: String);
+
+        qproperty!(
+            "sandboxed",
+            Read = get_sandboxed,
+            Notify = sandboxed_changed
+        );
+        fn get_sandboxed(&self) -> bool {
+            self.sandboxed
+        }
+        #[qsignal(qml_name = "sandboxedChanged")]
+        pub fn sandboxed_changed(&mut self);
+        qproperty!(
+            "companion_state",
+            Read = get_companion_state,
+            Notify = companion_state_changed
+        );
+        fn get_companion_state(&self) -> String {
+            self.companion_state.clone()
+        }
+        #[qsignal(qml_name = "companion_stateChanged")]
+        pub fn companion_state_changed(&mut self);
+        qproperty!(
+            "system_updater",
+            Read = get_system_updater,
+            Notify = system_updater_changed
+        );
+        fn get_system_updater(&self) -> String {
+            self.system_updater.clone()
+        }
+        #[qsignal(qml_name = "system_updaterChanged")]
+        pub fn system_updater_changed(&mut self);
     }
 }
 notify_setters!(SettingsController {
@@ -357,7 +419,10 @@ set_is_authenticated: is_authenticated: bool => is_authenticated_changed,
 set_oauth_provider: oauth_provider: String => oauth_provider_changed,
 set_oauth_username: oauth_username: String => oauth_username_changed,
 set_oauth_avatar_url: oauth_avatar_url: String => oauth_avatar_url_changed,
-set_odrs_user_hash: odrs_user_hash: String => odrs_user_hash_changed
+set_odrs_user_hash: odrs_user_hash: String => odrs_user_hash_changed,
+set_sandboxed: sandboxed: bool => sandboxed_changed,
+set_companion_state: companion_state: String => companion_state_changed,
+set_system_updater: system_updater: String => system_updater_changed
 });
 qml_element!(SettingsController, "SettingsController", singleton);
 

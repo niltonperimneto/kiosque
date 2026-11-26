@@ -125,6 +125,9 @@ pub enum Operation {
     Uninstall { id: String, scope: Option<Scope> },
     /// Update the given ids; an empty list means "update everything".
     Update { ids: Vec<String> },
+    /// Remove runtimes (full `runtime/…` refs) the user confirmed are no
+    /// longer needed. Flatpak refuses to remove one that is still in use.
+    RemoveRuntimes { refs: Vec<String> },
 }
 
 impl Operation {
@@ -133,8 +136,154 @@ impl Operation {
         match self {
             Operation::Install { id, .. } | Operation::Uninstall { id, .. } => vec![id.clone()],
             Operation::Update { ids } => ids.clone(),
-            Operation::InstallRefFile { .. } => vec![],
+            Operation::InstallRefFile { .. } | Operation::RemoveRuntimes { .. } => vec![],
         }
+    }
+}
+
+/// What one step of a planned transaction does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum StepAction {
+    #[default]
+    Install,
+    Update,
+    Uninstall,
+}
+
+/// One ref a transaction would install, update or remove.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct PlannedStep {
+    /// Full ref, e.g. `runtime/org.gnome.Platform/x86_64/48`.
+    pub reference: String,
+    pub kind: RefKind,
+    pub action: StepAction,
+    pub remote: String,
+    /// Bytes to download (0 for removals or when unknown).
+    pub download_size: u64,
+    /// Bytes on disk once installed, or freed by a removal.
+    pub installed_size: u64,
+    /// End-of-life notice of the ref, if its repository marked it.
+    pub eol: String,
+}
+
+impl PlannedStep {
+    pub fn display_name(&self) -> String {
+        runtime_display_name(&self.reference)
+    }
+}
+
+/// What a transaction would do, computed without downloading or changing
+/// anything ([`FlatpakBackend::plan`]).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct OperationPlan {
+    pub steps: Vec<PlannedStep>,
+}
+
+impl OperationPlan {
+    pub fn total_download(&self) -> u64 {
+        self.steps.iter().map(|s| s.download_size).sum()
+    }
+    pub fn total_installed(&self) -> u64 {
+        self.steps.iter().map(|s| s.installed_size).sum()
+    }
+    /// Runtime (and extension) steps, i.e. everything except applications.
+    pub fn runtimes(&self) -> impl Iterator<Item = &PlannedStep> {
+        self.steps.iter().filter(|s| s.kind == RefKind::Runtime)
+    }
+}
+
+/// An installed runtime and the applications that use it.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct InstalledRuntime {
+    pub info: InstalledApp,
+    /// Ids of installed applications whose metadata names this runtime.
+    pub used_by: Vec<String>,
+    /// Flatpak considers it unused (nothing installed depends on it).
+    pub unused: bool,
+    /// End-of-life notice, if its repository marked it.
+    pub eol: String,
+}
+
+/// The runtime an application's metadata keyfile names
+/// (`[Application] runtime=org.gnome.Platform/x86_64/48`), as a full ref.
+pub fn metadata_runtime(metadata: &str) -> Option<String> {
+    let mut in_application = false;
+    for line in metadata.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_application = line == "[Application]";
+        } else if in_application && let Some(value) = line.strip_prefix("runtime=") {
+            let value = value.trim();
+            return (!value.is_empty()).then(|| format!("runtime/{value}"));
+        }
+    }
+    None
+}
+
+/// A readable name for a ref: "GNOME Platform 48", "Translations for KDE
+/// Platform 6.9", "Graphics drivers (25.08)", else "<id> <branch>".
+pub fn runtime_display_name(reference: &str) -> String {
+    let (id, branch) = match parse_ref(reference) {
+        Some((_, id, _, branch)) => (id, branch),
+        None => (reference.to_string(), String::new()),
+    };
+    let with_branch = |name: &str| {
+        if branch.is_empty() {
+            name.to_string()
+        } else {
+            format!("{name} {branch}")
+        }
+    };
+    let platform = |base: &str| match base {
+        "org.gnome.Platform" => Some("GNOME Platform"),
+        "org.gnome.Sdk" => Some("GNOME SDK"),
+        "org.kde.Platform" => Some("KDE Platform"),
+        "org.kde.Sdk" => Some("KDE SDK"),
+        "org.freedesktop.Platform" => Some("Freedesktop Platform"),
+        "org.freedesktop.Sdk" => Some("Freedesktop SDK"),
+        "org.gtk.Gtk3theme" => Some("GTK 3 theme"),
+        _ => None,
+    };
+    if let Some(base) = id.strip_suffix(".Locale") {
+        let name = platform(base)
+            .map(with_branch)
+            .unwrap_or_else(|| base.to_string());
+        return crate::l10n::i18n("Translations for %1", &[name]);
+    }
+    if id.starts_with("org.freedesktop.Platform.GL") || id.contains(".GL.") {
+        return crate::l10n::i18n("Graphics drivers (%1)", &[branch]);
+    }
+    match platform(&id) {
+        Some(name) => with_branch(name),
+        None => with_branch(&id),
+    }
+}
+
+/// Status line for step `index` (0-based) of `total` while `reference` is
+/// processed, e.g. "Step 2 of 3: Downloading GNOME Platform 48 (45%)".
+pub fn step_status(
+    index: usize,
+    total: usize,
+    action: StepAction,
+    reference: &str,
+    percent: Option<u32>,
+) -> String {
+    let name = runtime_display_name(reference);
+    let doing = match action {
+        StepAction::Install => crate::l10n::i18n("Installing %1", &[name]),
+        StepAction::Update => crate::l10n::i18n("Updating %1", &[name]),
+        StepAction::Uninstall => crate::l10n::i18n("Removing %1", &[name]),
+    };
+    let doing = match percent {
+        Some(p) => format!("{doing} ({p}%)"),
+        None => doing,
+    };
+    if total > 1 {
+        crate::l10n::i18n(
+            "Step %1 of %2: %3",
+            &[(index + 1).to_string(), total.to_string(), doing],
+        )
+    } else {
+        doing
     }
 }
 
@@ -201,6 +350,25 @@ pub trait FlatpakBackend: Send + Sync {
     /// Refresh the AppStream metadata of a remote on disk.
     async fn refresh_appstream(&self, remote: &RemoteInfo) -> Result<()>;
 
+    /// What `op` would install, update or remove, with sizes, without
+    /// downloading or changing anything. Removals include the runtimes the
+    /// operation would leave unused.
+    async fn plan(&self, op: &Operation) -> Result<OperationPlan> {
+        let _ = op;
+        Err(FlatpakError::Failed(format!(
+            "{} cannot plan transactions",
+            self.name()
+        )))
+    }
+
+    /// Installed runtimes with the applications that use them.
+    async fn runtimes(&self) -> Result<Vec<InstalledRuntime>> {
+        Err(FlatpakError::Failed(format!(
+            "{} cannot list runtimes",
+            self.name()
+        )))
+    }
+
     /// The metadata keyfile (`[Context]`, bus policies, …) that `remote`
     /// publishes for `reference`: an app id or a full ref. It states the
     /// permissions an installation would grant; see [`permissions_from_metadata`].
@@ -247,6 +415,20 @@ fn select_backend(sandbox: bool) -> Arc<dyn FlatpakBackend> {
     #[cfg(not(feature = "libflatpak"))]
     {
         Arc::new(broker::OutsideSandbox)
+    }
+}
+
+/// Read installed state once through `backend` for package diagnostics
+/// (`kiosque --check-backend`): `Ok` carries the `KIOSQUE_BACKEND_READY`
+/// line, `Err` the `KIOSQUE_BACKEND_ERROR` line.
+pub async fn probe(backend: &dyn FlatpakBackend) -> std::result::Result<String, String> {
+    match backend.list_installed().await {
+        Ok(refs) => Ok(format!(
+            "KIOSQUE_BACKEND_READY {} {}",
+            backend.name(),
+            refs.len()
+        )),
+        Err(error) => Err(format!("KIOSQUE_BACKEND_ERROR {}: {error}", backend.name())),
     }
 }
 
@@ -533,6 +715,74 @@ mod tests {
     }
 
     #[test]
+    fn refs_get_readable_names() {
+        assert_eq!(
+            runtime_display_name("runtime/org.gnome.Platform/x86_64/48"),
+            "GNOME Platform 48"
+        );
+        assert_eq!(
+            runtime_display_name("runtime/org.kde.Platform.Locale/x86_64/6.9"),
+            "Translations for KDE Platform 6.9"
+        );
+        assert_eq!(
+            runtime_display_name("runtime/org.freedesktop.Platform.GL.default/x86_64/25.08"),
+            "Graphics drivers (25.08)"
+        );
+        assert_eq!(
+            runtime_display_name("app/org.example.App/x86_64/stable"),
+            "org.example.App stable"
+        );
+    }
+
+    #[test]
+    fn the_runtime_comes_from_the_application_section() {
+        let keyfile = "[Application]\nname=org.example.App\nruntime=org.gnome.Platform/x86_64/48\nsdk=org.gnome.Sdk/x86_64/48\n\n[Context]\nshared=network;\n";
+        assert_eq!(
+            metadata_runtime(keyfile).as_deref(),
+            Some("runtime/org.gnome.Platform/x86_64/48")
+        );
+        assert_eq!(metadata_runtime("[Context]\nruntime=x\n"), None);
+    }
+
+    #[test]
+    fn steps_describe_progress() {
+        let r = "runtime/org.gnome.Platform/x86_64/48";
+        assert_eq!(
+            step_status(1, 3, StepAction::Install, r, Some(45)),
+            "Step 2 of 3: Installing GNOME Platform 48 (45%)"
+        );
+        assert_eq!(
+            step_status(0, 1, StepAction::Uninstall, r, None),
+            "Removing GNOME Platform 48"
+        );
+    }
+
+    #[test]
+    fn plans_total_their_steps() {
+        let plan = OperationPlan {
+            steps: vec![
+                PlannedStep {
+                    reference: "app/org.example.App/x86_64/stable".into(),
+                    kind: RefKind::App,
+                    download_size: 10,
+                    installed_size: 30,
+                    ..Default::default()
+                },
+                PlannedStep {
+                    reference: "runtime/org.gnome.Platform/x86_64/48".into(),
+                    kind: RefKind::Runtime,
+                    download_size: 100,
+                    installed_size: 300,
+                    ..Default::default()
+                },
+            ],
+        };
+        assert_eq!(plan.total_download(), 110);
+        assert_eq!(plan.total_installed(), 330);
+        assert_eq!(plan.runtimes().count(), 1);
+    }
+
+    #[test]
     fn keyfile_lookup() {
         let data = b"[Flatpak Ref]\nName=org.foo.Bar\nBranch=stable\n";
         assert_eq!(keyfile_value(data, "Name").as_deref(), Some("org.foo.Bar"));
@@ -560,6 +810,23 @@ mod tests {
 #[cfg(test)]
 mod routing_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_backend_probe_reports_state_or_the_failure() {
+        let backend = mock::MockBackend::with_installed(vec![InstalledApp::default()]);
+        assert_eq!(
+            probe(&backend).await.unwrap(),
+            "KIOSQUE_BACKEND_READY mock 1"
+        );
+        #[cfg(not(feature = "libflatpak"))]
+        {
+            let error = probe(&broker::OutsideSandbox).await.unwrap_err();
+            assert!(
+                error.starts_with("KIOSQUE_BACKEND_ERROR unavailable: "),
+                "{error}"
+            );
+        }
+    }
 
     #[tokio::test]
     async fn backend_matches_the_process_environment() {

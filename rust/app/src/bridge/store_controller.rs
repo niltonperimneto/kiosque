@@ -13,6 +13,8 @@ mod object {
     pub struct StoreController {
         pub(super) error_message: String,
         pub(super) install_progress: f64,
+        /// Status line of the current reference-file installation.
+        pub(super) install_status: String,
         pub(super) job: Option<Arc<JobControl>>,
         pub(super) ref_key_sha256: String,
         pub(super) pending_ref: Option<(Vec<u8>, String)>,
@@ -32,6 +34,7 @@ mod object {
         /// through `install_progress` and completion through `installFinished`.
         fn start_job(&mut self, op: Operation, title: String) {
             self.set_install_progress(-1.0);
+            self.set_install_status(String::new());
             self.set_error_message(String::new());
             let control = JobControl::new();
             self.job = Some(control.clone());
@@ -41,7 +44,10 @@ mod object {
                 op,
                 title,
                 control.clone(),
-                |q, p, _| q.set_install_progress(p),
+                |q, p, status| {
+                    q.set_install_progress(p);
+                    q.set_install_status(status);
+                },
                 move |q, outcome| {
                     let current = q.job.as_ref().is_some_and(|job| Arc::ptr_eq(job, &control));
                     if current {
@@ -258,6 +264,16 @@ mod object {
         }
         #[qsignal(qml_name = "install_progressChanged")]
         pub fn install_progress_changed(&mut self);
+        qproperty!(
+            "install_status",
+            Read = get_install_status,
+            Notify = install_status_changed
+        );
+        fn get_install_status(&self) -> String {
+            self.install_status.clone()
+        }
+        #[qsignal(qml_name = "install_statusChanged")]
+        pub fn install_status_changed(&mut self);
         #[qsignal(qml_name = "refFileInspected")]
         pub fn ref_file_inspected(
             &mut self,
@@ -275,6 +291,7 @@ mod object {
 notify_setters!(StoreController {
 set_ref_key_sha256: ref_key_sha256: String => ref_key_sha256_changed,
 set_error_message: error_message: String => error_message_changed,
-set_install_progress: install_progress: f64 => install_progress_changed
+set_install_progress: install_progress: f64 => install_progress_changed,
+set_install_status: install_status: String => install_status_changed
 });
 qml_element!(StoreController, "StoreController", singleton);

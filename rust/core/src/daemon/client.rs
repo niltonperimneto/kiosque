@@ -31,6 +31,10 @@ pub trait Daemon {
     fn cancel(&self, job_id: u64) -> zbus::Result<bool>;
     fn get_jobs(&self) -> zbus::Result<Vec<JobWire>>;
     fn check_updates(&self) -> zbus::Result<u32>;
+    fn remove_runtimes(&self, refs: &[String], title: &str) -> zbus::Result<u64>;
+    fn plan_install(&self, app_id: &str, remote: &str, scope: &str) -> zbus::Result<String>;
+    fn plan_uninstall(&self, app_id: &str, scope: &str) -> zbus::Result<String>;
+    fn read_runtimes(&self) -> zbus::Result<String>;
     fn configure_automatic_updates(
         &self,
         enabled: bool,
@@ -121,6 +125,7 @@ impl DaemonClient {
                     .await
             }
             Operation::Update { ids } => self.proxy.update(ids, title).await,
+            Operation::RemoveRuntimes { refs } => self.proxy.remove_runtimes(refs, title).await,
         };
         res.map_err(|e| e.to_string())
     }
@@ -197,6 +202,15 @@ pub fn classify_version_error(error: &zbus::Error) -> Result<u32, CompanionError
 /// Connect to the host companion (D-Bus activating it) and check that it is
 /// recent enough for this application.
 pub async fn companion() -> Result<DaemonProxy<'static>, CompanionError> {
+    connect_checked().await.map(|(proxy, _)| proxy)
+}
+
+/// The companion's interface version, if it is installed and recent enough.
+pub async fn companion_version() -> Result<u32, CompanionError> {
+    connect_checked().await.map(|(_, version)| version)
+}
+
+async fn connect_checked() -> Result<(DaemonProxy<'static>, u32), CompanionError> {
     let conn = zbus::Connection::session()
         .await
         .map_err(|e| CompanionError::Failed(e.to_string()))?;
@@ -220,7 +234,7 @@ pub async fn companion() -> Result<DaemonProxy<'static>, CompanionError> {
             required: super::REQUIRED_API_VERSION,
         });
     }
-    Ok(proxy)
+    Ok((proxy, version))
 }
 
 /// Send the automatic-update settings to the daemon (D-Bus activating it),
