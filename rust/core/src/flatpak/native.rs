@@ -15,10 +15,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use gio::glib;
-use gio::prelude::*;
+use libflatpak::gio::prelude::*;
 use libflatpak::prelude::*;
-use libflatpak::{Installation, InstalledRef, Remote, Transaction};
+use libflatpak::{Installation, InstalledRef, Remote, Transaction, gio, glib};
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
