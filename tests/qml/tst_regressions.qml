@@ -796,9 +796,7 @@ TestCase {
         tryVerify(() => BackendFixture.operationCount() === before + 2, 10000)
         compare(BackendFixture.lastRemovedRuntimes(), kde)
 
-        installSpy.clear()
-        StoreController.installApp("org.kiosque.Fixture")
-        tryCompare(installSpy, "count", 1, 10000)
+        page.details.install()
         tryCompare(page.details, "installed", true, 10000)
 
         // Unticking keeps the runtime.
@@ -816,9 +814,8 @@ TestCase {
         wait(300)
         compare(BackendFixture.operationCount(), before + 1)
 
-        installSpy.clear()
-        StoreController.installApp("org.kiosque.Fixture")
-        tryCompare(installSpy, "count", 1, 10000)
+        page.details.install()
+        tryCompare(page.details, "installed", true, 10000)
     }
     function test_installed_page_lists_runtimes_and_removes_unused() {
         verify(BackendFixture.seedRuntimes())
@@ -863,8 +860,8 @@ TestCase {
         tryVerify(() => BackendFixture.lastRemovedRuntimes() === "runtime/org.kde.Platform/x86_64/6.9", 10000)
         tryCompare(page.runtimes, "count", 0, 10000)
 
-        installSpy.clear()
-        StoreController.installApp("org.kiosque.Fixture")
-        tryCompare(installSpy, "count", 1, 10000)
+        let detail = createTemporaryObject(detailFactory, this, {appId: "org.kiosque.Fixture"})
+        detail.install()
+        tryCompare(detail, "installed", true, 10000)
     }
 }
